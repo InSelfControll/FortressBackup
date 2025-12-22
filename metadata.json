@@ -1,5 +1,5 @@
 {
   "name": "Fortress Backup Manager",
-  "description": "Enterprise-grade backup orchestration dashboard featuring AI-powered scheduling, SSO integration, and support for Borg, Restic, Rsync, and Rclone.",
+  "description": "Enterprise-grade backup orchestration dashboard with optional AI assist (Gemini/OpenAI), SSO integration, and support for Borg, Restic, Rsync, and Rclone.",
   "requestFramePermissions": []
 }

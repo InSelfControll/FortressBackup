@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { View, User, BackupJob, BackupTool, JobStatus, System, JobPriority, SSHKey, Location } from './types';
+import { View, User, BackupJob, BackupTool, JobStatus, System, JobPriority, SSHKey, Location, AIConfig, AIProvider } from './types';
 import { Login } from './components/Login';
 import { Setup } from './components/Setup';
 import { Dashboard } from './components/Dashboard';
@@ -46,6 +46,7 @@ const INITIAL_LOCATIONS: Location[] = [
 
 const SSH_KEYS_STORAGE_KEY = 'fortress_vault_ssh_keys_v2';
 const SETUP_COMPLETE_KEY = 'fortress_setup_complete_v2';
+const AI_CONFIG_KEY = 'fortress_ai_config_v2';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -57,6 +58,7 @@ function App() {
   const [systems, setSystems] = useState<System[]>(INITIAL_SYSTEMS);
   const [locations, setLocations] = useState<Location[]>(INITIAL_LOCATIONS);
   const [sshKeys, setSshKeys] = useState<SSHKey[]>([]);
+  const [aiConfig, setAiConfig] = useState<AIConfig>({ provider: AIProvider.NONE });
 
   // Load state on mount
   useEffect(() => {
@@ -64,8 +66,12 @@ function App() {
     if (savedKeys) {
       try { setSshKeys(JSON.parse(savedKeys)); } catch (e) { console.error(e); }
     }
+
+    const savedAi = localStorage.getItem(AI_CONFIG_KEY);
+    if (savedAi) {
+      try { setAiConfig(JSON.parse(savedAi)); } catch (e) { console.error(e); }
+    }
     
-    // Explicitly check setup completion state
     const setupDone = localStorage.getItem(SETUP_COMPLETE_KEY);
     setIsSetupComplete(setupDone === 'true');
   }, []);
@@ -80,10 +86,11 @@ function App() {
     setIsAuthenticated(false);
   };
 
-  const completeSetup = (masterPassword?: string) => {
+  const completeSetup = (masterPassword: string, config: AIConfig) => {
     setIsSetupComplete(true);
+    setAiConfig(config);
     localStorage.setItem(SETUP_COMPLETE_KEY, 'true');
-    // In a production app, the masterPassword would be used to derive keys for initial secrets.
+    localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config));
   };
 
   const addJob = (job: BackupJob) => setJobs([...jobs, job]);
@@ -108,8 +115,6 @@ function App() {
 
   if (!isAuthenticated) return <Login onLogin={handleLogin} />;
   
-  // Show setup ONLY if not complete. 
-  // Once completed, this state persists in localStorage ensuring it never shows again.
   if (!isSetupComplete) return <Setup onComplete={completeSetup} />;
 
   return (
@@ -144,7 +149,7 @@ function App() {
         </header>
         <div className="p-8 flex-1">
           {currentView === 'dashboard' && <Dashboard jobs={jobs} />}
-          {currentView === 'jobs' && <Jobs jobs={jobs} systems={systems} locations={locations} onAddJob={addJob} onDeleteJob={deleteJob} onRunJob={runJob} />}
+          {currentView === 'jobs' && <Jobs jobs={jobs} systems={systems} locations={locations} aiConfig={aiConfig} onAddJob={addJob} onDeleteJob={deleteJob} onRunJob={runJob} />}
           {currentView === 'systems' && <Systems systems={systems} jobs={jobs} onAddSystem={addSystem} sshKeys={sshKeys} onAddSSHKey={addSSHKey} onDeleteSSHKey={deleteSSHKey} onUpdateSSHKeysOrder={updateSSHKeysOrder} />}
           {currentView === 'locations' && <Locations locations={locations} onAddLocation={addLocation} onDeleteLocation={deleteLocation} />}
         </div>

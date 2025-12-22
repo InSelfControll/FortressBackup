@@ -20,6 +20,19 @@ export enum JobPriority {
   LOW = 'Low'
 }
 
+export enum AIProvider {
+  NONE = 'None',
+  GEMINI = 'Gemini',
+  OPENAI = 'OpenAI Compatible'
+}
+
+export interface AIConfig {
+  provider: AIProvider;
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+}
+
 export interface RetentionPolicy {
   keepHourly: number;
   keepDaily: number;

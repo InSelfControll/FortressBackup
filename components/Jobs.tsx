@@ -1,17 +1,18 @@
 
 import React, { useState, useEffect } from 'react';
-import { BackupJob, BackupTool, RetentionPolicy, JobStatus, JobPriority, System, Location } from '../types';
+import { BackupJob, BackupTool, RetentionPolicy, JobStatus, JobPriority, System, Location, AIConfig, AIProvider } from '../types';
 import { 
   Play, Trash2, Plus, Sparkles, Clock, Archive, Settings2, Loader2, 
   Info, RefreshCw, AlertTriangle, Save, ArrowUp, ArrowDown, Minus, 
-  Calendar, CheckCircle2, XCircle, Circle, Shield, X, FileText, HardDrive 
+  Calendar, CheckCircle2, XCircle, Circle, Shield, X, FileText, HardDrive, Cpu 
 } from 'lucide-react';
-import { generateBackupConfig } from '../services/geminiService';
+import { generateBackupConfig } from '../services/aiService';
 
 interface JobsProps {
   jobs: BackupJob[];
   systems: System[];
   locations: Location[];
+  aiConfig: AIConfig;
   onAddJob: (job: BackupJob) => void;
   onDeleteJob: (id: string) => void;
   onRunJob: (id: string) => void;
@@ -30,11 +31,12 @@ const RETENTION_PRESETS = [
   { label: 'Archival', policy: { keepHourly: 0, keepDaily: 30, keepWeekly: 24, keepMonthly: 60, keepYearly: 10 } },
 ];
 
-export const Jobs: React.FC<JobsProps> = ({ jobs, systems, locations, onAddJob, onDeleteJob, onRunJob }) => {
+export const Jobs: React.FC<JobsProps> = ({ jobs, systems, locations, aiConfig, onAddJob, onDeleteJob, onRunJob }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [aiPrompt, setAiPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   
   const [formData, setFormData] = useState<{
     name: string; tool: BackupTool; schedule: string; priority: JobPriority;
@@ -78,6 +80,20 @@ export const Jobs: React.FC<JobsProps> = ({ jobs, systems, locations, onAddJob, 
     );
   };
 
+  const handleAiGeneration = async () => {
+    if (!aiPrompt) return;
+    setIsGenerating(true);
+    setAiError(null);
+    try {
+      const cfg = await generateBackupConfig(aiPrompt, aiConfig);
+      if (cfg.tool) setFormData(prev => ({ ...prev, ...cfg, name: cfg.jobName || prev.name }));
+    } catch (e: any) {
+      setAiError(e.message || "Failed to generate config.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -88,6 +104,13 @@ export const Jobs: React.FC<JobsProps> = ({ jobs, systems, locations, onAddJob, 
       </div>
 
       <div className="grid grid-cols-1 gap-4">
+        {jobs.length === 0 && (
+          <div className="py-12 text-center border-2 border-dashed border-slate-800 rounded-xl bg-slate-800/20">
+             <Archive size={48} className="mx-auto text-slate-700 mb-4" />
+             <h3 className="text-lg font-medium text-slate-400">No backup jobs yet</h3>
+             <p className="text-slate-500 text-sm mt-2">Create your first automated backup orchestration.</p>
+          </div>
+        )}
         {jobs.map((job) => (
           <div key={job.id} className="bg-slate-800 border border-slate-700 rounded-xl p-5 flex flex-col md:flex-row items-center justify-between gap-4 hover:border-indigo-500/30 transition-all group">
             <div className="flex items-center gap-4 flex-1">
@@ -120,7 +143,7 @@ export const Jobs: React.FC<JobsProps> = ({ jobs, systems, locations, onAddJob, 
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="p-6 border-b border-slate-800 flex justify-between items-center">
               <h3 className="text-xl font-bold text-white">Configure New Job</h3>
-              <button onClick={() => setIsModalOpen(false)}><X size={24} /></button>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white"><X size={24} /></button>
             </div>
             
             <div className="p-6 overflow-y-auto flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -173,17 +196,29 @@ export const Jobs: React.FC<JobsProps> = ({ jobs, systems, locations, onAddJob, 
                        ))}
                     </div>
                  </div>
-                 <div className="bg-indigo-600/5 border border-indigo-500/20 p-4 rounded-xl">
-                   <div className="flex items-center gap-2 text-indigo-400 text-sm font-bold mb-3"><Sparkles size={16}/> AI Architect Suggestion</div>
-                   <textarea value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500" rows={3} placeholder="Describe your needs, e.g., 'Backup my database hourly, keep 2 days of archives'"/>
-                   <button onClick={async () => {
-                     setIsGenerating(true);
-                     const cfg = await generateBackupConfig(aiPrompt);
-                     setFormData(prev => ({...prev, ...cfg}));
-                     setIsGenerating(false);
-                   }} disabled={isGenerating} className="mt-3 w-full py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white text-xs font-bold transition-all disabled:opacity-50">
-                     {isGenerating ? 'Generating...' : 'Apply AI Configuration'}
-                   </button>
+
+                 {/* AI Architect is now optional and only shows if configured */}
+                 <div className={`p-4 rounded-xl border transition-all ${aiConfig.provider !== AIProvider.NONE ? 'bg-indigo-600/5 border-indigo-500/20' : 'bg-slate-800/50 border-slate-700/50 opacity-60'}`}>
+                   <div className="flex items-center gap-2 text-indigo-400 text-sm font-bold mb-3">
+                     <Sparkles size={16}/> {aiConfig.provider !== AIProvider.NONE ? 'AI Architect Suggestion' : 'AI Assistant (Disabled)'}
+                   </div>
+                   
+                   {aiConfig.provider !== AIProvider.NONE ? (
+                     <>
+                        <textarea value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500" rows={3} placeholder="Describe your needs, e.g., 'Backup my database hourly, keep 2 days of archives'"/>
+                        {aiError && <p className="text-rose-400 text-[10px] mt-2 font-bold uppercase">{aiError}</p>}
+                        <button 
+                          onClick={handleAiGeneration}
+                          disabled={isGenerating || !aiPrompt} 
+                          className="mt-3 w-full py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white text-xs font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          {isGenerating ? <Loader2 size={14} className="animate-spin" /> : <Cpu size={14} />}
+                          {isGenerating ? 'Generating...' : `Apply ${aiConfig.provider} Configuration`}
+                        </button>
+                     </>
+                   ) : (
+                     <p className="text-xs text-slate-500 italic">Configure an AI provider in Settings or Setup to enable intelligent plan generation.</p>
+                   )}
                  </div>
                </div>
             </div>
@@ -213,7 +248,7 @@ export const Jobs: React.FC<JobsProps> = ({ jobs, systems, locations, onAddJob, 
                </div>
                <button onClick={() => setSelectedJobId(null)} className="p-2 hover:bg-slate-800 rounded-lg"><X size={20}/></button>
             </div>
-            <div className="p-6 space-y-8 overflow-y-auto">
+            <div className="p-6 space-y-8 overflow-y-auto flex-1">
                <div className="grid grid-cols-2 gap-4">
                   <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
                     <div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Avg Speed</div>
