@@ -1,12 +1,11 @@
-
 import React, { useState, useEffect } from 'react';
-import { BackupJob, BackupTool, RetentionPolicy, JobStatus, JobPriority, System, Location, AIConfig, AIProvider } from '../types';
+import { BackupJob, BackupTool, RetentionPolicy, JobStatus, JobPriority, System, Location, AIConfig, AIProvider } from '../types.ts';
 import { 
   Play, Trash2, Plus, Sparkles, Clock, Archive, Settings2, Loader2, 
   Info, RefreshCw, AlertTriangle, Save, ArrowUp, ArrowDown, Minus, 
   Calendar, CheckCircle2, XCircle, Circle, Shield, X, FileText, HardDrive, Cpu 
 } from 'lucide-react';
-import { generateBackupConfig } from '../services/aiService';
+import { generateBackupConfig } from '../services/aiService.ts';
 
 interface JobsProps {
   jobs: BackupJob[];
@@ -197,7 +196,6 @@ export const Jobs: React.FC<JobsProps> = ({ jobs, systems, locations, aiConfig, 
                     </div>
                  </div>
 
-                 {/* AI Architect is now optional and only shows if configured */}
                  <div className={`p-4 rounded-xl border transition-all ${aiConfig.provider !== AIProvider.NONE ? 'bg-indigo-600/5 border-indigo-500/20' : 'bg-slate-800/50 border-slate-700/50 opacity-60'}`}>
                    <div className="flex items-center gap-2 text-indigo-400 text-sm font-bold mb-3">
                      <Sparkles size={16}/> {aiConfig.provider !== AIProvider.NONE ? 'AI Architect Suggestion' : 'AI Assistant (Disabled)'}

@@ -1,6 +1,5 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
-import { BackupTool, AIProvider, AIConfig } from '../types';
+import { BackupTool, AIProvider, AIConfig } from '../types.ts';
 
 const backupConfigSchema = {
   type: Type.OBJECT,
@@ -36,14 +35,23 @@ const backupConfigSchema = {
 const SYSTEM_PROMPT = `Suggest a backup configuration in JSON format.
 Ensure fields: tool (BorgBackup, Restic, Rsync, Rclone), schedule (cron), jobName (string), and retention (object with keepHourly, keepDaily, keepWeekly, keepMonthly, keepYearly as integers).`;
 
+// Safety check for process.env to avoid reference errors in browser ESM environments
+const getApiKey = () => {
+  try {
+    return process.env.API_KEY || '';
+  } catch (e) {
+    return '';
+  }
+};
+
 export const generateBackupConfig = async (userPrompt: string, config: AIConfig) => {
   if (config.provider === AIProvider.NONE) {
     throw new Error("AI is not configured.");
   }
 
   if (config.provider === AIProvider.GEMINI) {
-    // FIX: Initialize Gemini using process.env.API_KEY directly, ignoring config.apiKey to follow strict SDK guidelines.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const apiKey = getApiKey();
+    const ai = new GoogleGenAI({ apiKey: apiKey });
     try {
       const response = await ai.models.generateContent({
         model: config.model || 'gemini-3-flash-preview',
@@ -54,7 +62,6 @@ export const generateBackupConfig = async (userPrompt: string, config: AIConfig)
           systemInstruction: SYSTEM_PROMPT,
         }
       });
-      // FIX: response.text is a property, not a method.
       const text = response.text?.trim() || '{}';
       return JSON.parse(text);
     } catch (error) {

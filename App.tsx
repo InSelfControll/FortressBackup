@@ -1,12 +1,11 @@
-
 import React, { useState, useEffect } from 'react';
-import { View, User, BackupJob, BackupTool, JobStatus, System, JobPriority, SSHKey, Location, AIConfig, AIProvider } from './types';
-import { Login } from './components/Login';
-import { Setup } from './components/Setup';
-import { Dashboard } from './components/Dashboard';
-import { Jobs } from './components/Jobs';
-import { Systems } from './components/Systems';
-import { Locations } from './components/Locations';
+import { View, User, BackupJob, BackupTool, JobStatus, System, JobPriority, SSHKey, Location, AIConfig, AIProvider } from './types.ts';
+import { Login } from './components/Login.tsx';
+import { Setup } from './components/Setup.tsx';
+import { Dashboard } from './components/Dashboard.tsx';
+import { Jobs } from './components/Jobs.tsx';
+import { Systems } from './components/Systems.tsx';
+import { Locations } from './components/Locations.tsx';
 import { Layout, LayoutDashboard, Server, HardDrive, Settings, LogOut, ShieldCheck, Search } from 'lucide-react';
 
 const MOCK_USER: User = {
