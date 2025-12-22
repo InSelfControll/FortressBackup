@@ -1,0 +1,77 @@
+
+version: '3.9'
+
+services:
+  # Fortress Web Dashboard & Orchestrator
+  fortress-dashboard:
+    image: node:20-alpine
+    container_name: fortress-dashboard
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - API_KEY=${GEMINI_API_KEY}
+      - NODE_ENV=production
+    volumes:
+      - .:/app
+    working_dir: /app
+    networks:
+      - fortress-net
+
+  # Fortress Execution Worker (Borg/Restic/Rsync Runner)
+  fortress-worker:
+    image: instrumentisto/borg:latest
+    container_name: fortress-worker
+    restart: always
+    environment:
+      - BORG_PASSPHRASE=${BORG_PASSPHRASE}
+      - RESTIC_PASSWORD=${RESTIC_PASSWORD}
+      - AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY}
+      - AWS_SECRET_ACCESS_KEY=${S3_SECRET_KEY}
+    volumes:
+      - ./backups:/backups
+      - ./cache:/root/.cache
+      - ./config:/root/.config
+      - ~/.ssh:/root/.ssh:ro
+    networks:
+      - fortress-net
+    # Conceptual entrypoint for custom orchestration
+    command: tail -f /dev/null
+
+  # Mock S3 Storage for local testing (MinIO)
+  fortress-storage-mock:
+    image: minio/minio
+    container_name: fortress-storage
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=fortress_admin
+      - MINIO_ROOT_PASSWORD=fortress_secret_password
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - fortress-net
+
+  # Vault for secret management (Optional persistence)
+  fortress-vault:
+    image: hashicorp/vault:latest
+    container_name: fortress-vault
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=fortress-token
+    cap_add:
+      - IPC_LOCK
+    networks:
+      - fortress-net
+
+networks:
+  fortress-net:
+    driver: bridge
+
+volumes:
+  minio-data:
+  backups:
+  cache:
