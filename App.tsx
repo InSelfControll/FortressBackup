@@ -39,26 +39,29 @@ function App() {
   const [ssoConfig, setSsoConfig] = useState<SSOConfig | null>(null);
 
   useEffect(() => {
+    // Key used to determine if setup was run: 'fortress_setup_complete_v2'
     const setupDone = localStorage.getItem('fortress_setup_complete_v2');
     const savedSystems = localStorage.getItem('fortress_systems_v2');
+    const savedDb = localStorage.getItem('fortress_db_config');
     
-    if (setupDone === 'true') {
+    // We only skip setup if both the flag is set AND we have a valid DB config
+    if (setupDone === 'true' && savedDb) {
       setIsSetupComplete(true);
       try {
         setAiConfig(JSON.parse(localStorage.getItem('fortress_ai_config_v2') || '{}'));
-        setDbConfig(JSON.parse(localStorage.getItem('fortress_db_config') || '{}'));
+        setDbConfig(JSON.parse(savedDb));
         setSsoConfig(JSON.parse(localStorage.getItem('fortress_sso_config') || '{}'));
         setSshKeys(JSON.parse(localStorage.getItem('fortress_vault_ssh_keys_v2') || '[]'));
         if (savedSystems) setSystems(JSON.parse(savedSystems));
       } catch (e) {
-        console.error("Config parse error:", e);
+        console.error("Config load failed. Resetting setup state.", e);
+        setIsSetupComplete(false);
       }
     } else {
       setIsSetupComplete(false);
     }
   }, []);
 
-  // Persist systems whenever they change
   useEffect(() => {
     if (isSetupComplete) {
       localStorage.setItem('fortress_systems_v2', JSON.stringify(systems));
@@ -119,8 +122,12 @@ function App() {
   if (!isAuthenticated) return <Login onLogin={handleLogin} ssoConfig={ssoConfig} />;
 
   return (
-    <div className="flex h-screen bg-slate-900 text-slate-100 font-sans selection:bg-indigo-500/30">
-      <aside className="w-72 bg-slate-950 border-r border-slate-800/50 flex flex-col shadow-2xl">
+    <div className="flex h-screen bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500/30 overflow-hidden relative">
+      {/* High Fidelity CSS Noise & Background Gradients */}
+      <div className="absolute inset-0 pointer-events-none opacity-20 z-0" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}></div>
+      <div className="absolute top-0 right-0 w-[50%] h-[50%] bg-indigo-600/5 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
+      
+      <aside className="w-72 bg-slate-950 border-r border-slate-800/40 flex flex-col shadow-2xl relative z-10">
         <div className="p-8 flex items-center gap-4">
           <div className="bg-indigo-600 p-2.5 rounded-[1.25rem] shadow-2xl shadow-indigo-600/40 border border-indigo-400/30">
             <ShieldCheck className="w-7 h-7 text-white" />
@@ -145,7 +152,7 @@ function App() {
                 key={item.id}
                 onClick={() => setCurrentView(item.id as View)} 
                 className={`flex items-center gap-4 w-full px-5 py-4 rounded-2xl transition-all group ${
-                  active ? 'bg-indigo-600/10 text-white font-bold border border-indigo-500/20 shadow-lg' : 'text-slate-500 hover:text-slate-100 hover:bg-slate-900'
+                  active ? 'bg-indigo-600/10 text-white font-bold border border-indigo-500/20 shadow-lg' : 'text-slate-500 hover:text-slate-100 hover:bg-slate-900/40'
                 }`}
               >
                 <Icon size={20} className={active ? 'text-indigo-400' : 'group-hover:text-indigo-400 transition-colors'} /> 
@@ -155,7 +162,7 @@ function App() {
           })}
         </nav>
         
-        <div className="p-6 border-t border-slate-800/50 m-4 bg-slate-900/50 rounded-[2rem] border border-slate-800 shadow-inner">
+        <div className="p-6 border-t border-slate-800/50 m-4 bg-slate-900/30 rounded-[2rem] border border-slate-800/50 shadow-inner">
            <div className="flex items-center gap-4 mb-4">
              <img src={MOCK_USER.avatar} alt="User" className="w-10 h-10 rounded-2xl ring-2 ring-indigo-600/20 border-2 border-slate-800" />
              <div className="flex-1 overflow-hidden">
@@ -169,8 +176,8 @@ function App() {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto flex flex-col relative bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-fixed opacity-[0.98]">
-        <header className="sticky top-0 z-30 bg-slate-900/60 backdrop-blur-2xl border-b border-slate-800/50 px-10 py-6 flex justify-between items-center">
+      <main className="flex-1 overflow-auto flex flex-col relative z-10">
+        <header className="sticky top-0 z-30 bg-slate-950/60 backdrop-blur-2xl border-b border-slate-800/40 px-10 py-6 flex justify-between items-center">
            <div className="flex items-center gap-3">
              <div className="w-1.5 h-6 bg-indigo-600 rounded-full shadow-[0_0_10px_rgba(79,70,229,0.5)]"/>
              <h2 className="text-lg font-black uppercase tracking-[0.3em] text-indigo-400 text-[10px]">{currentView}</h2>
@@ -183,10 +190,10 @@ function App() {
                   placeholder="Query Infrastructure..." 
                   value={searchQuery} 
                   onChange={(e) => setSearchQuery(e.target.value)} 
-                  className="bg-slate-950/50 border border-slate-800/80 rounded-2xl pl-12 pr-6 py-3 text-xs text-white focus:ring-2 focus:ring-indigo-500 outline-none w-64 transition-all focus:w-96 shadow-inner font-mono"
+                  className="bg-slate-900/50 border border-slate-800/60 rounded-2xl pl-12 pr-6 py-3 text-xs text-white focus:ring-2 focus:ring-indigo-500 outline-none w-64 transition-all focus:w-96 shadow-inner font-mono"
                 />
               </div>
-              <button className="p-3 text-slate-500 hover:text-white transition-all bg-slate-950/50 rounded-2xl border border-slate-800/80 hover:border-indigo-500/40 shadow-xl group">
+              <button className="p-3 text-slate-500 hover:text-white transition-all bg-slate-900/50 rounded-2xl border border-slate-800/60 hover:border-indigo-500/40 shadow-xl group">
                 <Settings size={20} className="group-rotate-90 transition-transform duration-700"/>
               </button>
            </div>
