@@ -26,6 +26,27 @@ export enum AIProvider {
   OPENAI = 'OpenAI Compatible'
 }
 
+export enum DatabaseType {
+  SQLITE = 'SQLite',
+  POSTGRES = 'PostgreSQL'
+}
+
+export interface DatabaseConfig {
+  type: DatabaseType;
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  password?: string;
+}
+
+export interface SSOConfig {
+  provider: 'google' | 'github' | 'oidc' | null;
+  clientId?: string;
+  clientSecret?: string;
+  discoveryUrl?: string;
+}
+
 export interface AIConfig {
   provider: AIProvider;
   apiKey?: string;
@@ -49,10 +70,8 @@ export interface EncryptedData {
 export interface SSHKey {
   id: string;
   name: string;
-  // Encrypted fields
   privateKeyPath: string | EncryptedData;
   passphrase?: string | EncryptedData;
-  // Metadata
   createdAt: string;
   expiryDate?: string;
   order: number;
@@ -68,7 +87,8 @@ export interface System {
   type: 'local' | 'remote';
   status: 'online' | 'offline';
   lastSeen: string;
-  health: number; // 0 to 100
+  health: number;
+  installedTools?: BackupTool[];
 }
 
 export interface Location {
@@ -76,6 +96,10 @@ export interface Location {
   name: string;
   type: 's3' | 'sftp' | 'local' | 'b2';
   path: string;
+  endpoint?: string; // For S3 compatible
+  region?: string;
+  accessKey?: string;
+  secretKey?: string;
 }
 
 export interface BackupJob {
@@ -84,7 +108,7 @@ export interface BackupJob {
   tool: BackupTool;
   sourceId: string;
   destinationId: string;
-  schedule: string; // Cron expression
+  schedule: string;
   retention: RetentionPolicy;
   priority: JobPriority;
   lastRun?: string;

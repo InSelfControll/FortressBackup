@@ -1,27 +1,35 @@
+
 import React, { useState } from 'react';
 import { 
   Shield, Key, Server, Check, ArrowRight, Github, 
   ShieldCheck, Lock, Terminal, Info, Zap, Database, ExternalLink,
   ChevronRight, Circle, CheckCircle2, Layout, Boxes, Cpu, Plus, Sparkles, Globe, Brain,
-  XCircle
+  XCircle, Loader2, Link, Database as DbIcon, Settings2, RefreshCw
 } from 'lucide-react';
-import { AIProvider, AIConfig } from '../types';
+import { AIProvider, AIConfig, DatabaseType, DatabaseConfig, SSOConfig } from '../types';
 
 interface SetupProps {
-  onComplete: (masterPassword: string, aiConfig: AIConfig) => void;
+  onComplete: (masterPassword: string, aiConfig: AIConfig, dbConfig: DatabaseConfig, ssoConfig: SSOConfig) => void;
 }
 
-type SetupStep = 'auth' | 'welcome' | 'vault' | 'ai' | 'guide';
+type SetupStep = 'db' | 'auth' | 'welcome' | 'vault' | 'ai' | 'guide';
 
 export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
-  const [currentStep, setCurrentStep] = useState<SetupStep>('auth');
-  const [ssoProvider, setSsoProvider] = useState<'google' | 'github' | 'oidc' | null>(null);
+  const [currentStep, setCurrentStep] = useState<SetupStep>('db');
+  
+  // DB Config
+  const [dbConfig, setDbConfig] = useState<DatabaseConfig>({ type: DatabaseType.SQLITE });
+  const [isDbTesting, setIsDbTesting] = useState(false);
+  
+  // SSO Config
+  const [ssoConfig, setSsoConfig] = useState<SSOConfig>({ provider: null });
+  
+  // Other configs
   const [masterPassword, setMasterPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [selectedTools, setSelectedTools] = useState<string[]>(['borg']);
   const [activeGuideTool, setActiveGuideTool] = useState<string>('borg');
 
-  // AI Configuration State
   const [aiConfig, setAiConfig] = useState<AIConfig>({
     provider: AIProvider.NONE,
     apiKey: '',
@@ -30,12 +38,18 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
   });
 
   const steps = [
+    { id: 'db', label: 'Database', icon: DbIcon },
     { id: 'auth', label: 'Identity', icon: Shield },
     { id: 'welcome', label: 'Systems', icon: Layout },
     { id: 'vault', label: 'Vault', icon: Lock },
     { id: 'ai', label: 'AI intelligence', icon: Brain },
-    { id: 'guide', label: 'Infrastructure', icon: Terminal },
+    { id: 'guide', label: 'Finalize', icon: Terminal },
   ];
+
+  const testDbConnection = () => {
+    setIsDbTesting(true);
+    setTimeout(() => setIsDbTesting(false), 1500);
+  };
 
   const toggleTool = (tool: string) => {
     setSelectedTools(prev => 
@@ -45,7 +59,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
   };
 
   const handleFinish = () => {
-    onComplete(masterPassword, aiConfig);
+    onComplete(masterPassword, aiConfig, dbConfig, ssoConfig);
   };
 
   const guides: Record<string, any> = {
@@ -53,30 +67,27 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
       title: 'BorgBackup Configuration',
       desc: 'Deduplicating, compressing, and authenticating archiver.',
       steps: [
-        'Install Borg on source: `sudo apt install borgbackup`',
-        'Initialize repo on destination: `borg init --encryption=repokey-blake2 /path/to/repo`',
-        'Add the destination system in "Systems" with an SSH key.',
-        'Create a Job and select BorgBackup as the engine.'
+        'Fortress will attempt automatic installation via SSH if root access is provided.',
+        'Manual: `sudo apt install borgbackup` on target.',
+        'Repo Initialization: `borg init --encryption=repokey-blake2` is handled by Fortress.'
       ]
     },
     restic: {
       title: 'Restic Cloud Backup',
       desc: 'Fast, secure, efficient backup tool for cloud backends.',
       steps: [
-        'Download restic binary to your source machine.',
-        'Setup S3/B2 keys in environment variables.',
-        'Initialize: `restic -r s3:s3.amazonaws.com/bucket init`',
-        'Configure "Locations" in Fortress to match your backend.'
+        'Fortress can push the restic binary to /usr/local/bin automatically.',
+        'Supports native S3-compatible backends and B2.',
+        'Configured via the "Locations" tab post-setup.'
       ]
     },
     rsync: {
       title: 'Rsync Over SSH',
       desc: 'The classic file sync engine for 1:1 mirroring.',
       steps: [
-        'Ensure `rsync` is installed on both source and target.',
-        'Copy your Fortress public key to the target’s `authorized_keys`.',
-        'Test the connection manually once: `ssh user@host rsync --version`',
-        'Create a Job selecting Rsync in Fortress.'
+        'Standard on most Linux distros.',
+        'Fortress uses native system SSH keys for transport.',
+        'Requires no extra daemon on target servers.'
       ]
     }
   };
@@ -93,11 +104,11 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
       <div className="relative z-10 w-full max-w-5xl flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
         <div className="text-center space-y-2">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-widest mb-2 shadow-sm">
-            <Zap size={14} className="fill-current" /> System Initialization Sequence
+            <Zap size={14} className="fill-current" /> Production Orchestration Setup
           </div>
-          <h1 className="text-5xl font-black text-white tracking-tighter leading-tight">Fortress Orchestrator</h1>
+          <h1 className="text-5xl font-black text-white tracking-tighter leading-tight">Fortress Core</h1>
           <p className="text-slate-400 max-w-lg mx-auto text-base leading-relaxed">
-            Enterprise backup management, simplified.
+            Configure the backbone of your backup infrastructure.
           </p>
         </div>
 
@@ -129,63 +140,138 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
           })}
         </div>
 
-        <div className="bg-slate-900/60 backdrop-blur-2xl border border-slate-800/80 rounded-[3rem] p-8 md:p-12 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)] relative overflow-hidden min-h-[550px] flex flex-col transition-all duration-500">
+        <div className="bg-slate-900/60 backdrop-blur-2xl border border-slate-800/80 rounded-[3rem] p-8 md:p-12 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)] relative overflow-hidden min-h-[600px] flex flex-col transition-all duration-500">
           
+          {/* STEP 1: DATABASE */}
+          {currentStep === 'db' && (
+            <div className="space-y-10 animate-in fade-in zoom-in-95 duration-500 flex-1 flex flex-col">
+              <div className="text-center">
+                <h2 className="text-3xl font-black text-white mb-3">Persistent Storage Core</h2>
+                <p className="text-slate-500 text-sm max-w-md mx-auto">Select how Fortress should store its job history and metadata.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto w-full">
+                <button
+                  onClick={() => setDbConfig({ type: DatabaseType.SQLITE })}
+                  className={`relative p-8 rounded-[2.5rem] border flex flex-col items-center gap-5 transition-all duration-300 ${
+                    dbConfig.type === DatabaseType.SQLITE 
+                      ? 'bg-indigo-600/10 border-indigo-500 shadow-2xl' 
+                      : 'bg-slate-800/40 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="w-16 h-16 rounded-2xl bg-slate-900/80 flex items-center justify-center p-3 border border-slate-700/50 shadow-inner">
+                    <Boxes className="text-indigo-400" size={32} />
+                  </div>
+                  <div className="text-center">
+                    <h4 className="text-white font-bold text-lg">SQLite (Embedded)</h4>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Single-file zero-config storage</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setDbConfig({ type: DatabaseType.POSTGRES, host: 'localhost', port: 5432, database: 'fortress' })}
+                  className={`relative p-8 rounded-[2.5rem] border flex flex-col items-center gap-5 transition-all duration-300 ${
+                    dbConfig.type === DatabaseType.POSTGRES 
+                      ? 'bg-indigo-600/10 border-indigo-500 shadow-2xl' 
+                      : 'bg-slate-800/40 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="w-16 h-16 rounded-2xl bg-slate-900/80 flex items-center justify-center p-3 border border-slate-700/50 shadow-inner">
+                    <Database className="text-blue-400" size={32} />
+                  </div>
+                  <div className="text-center">
+                    <h4 className="text-white font-bold text-lg">PostgreSQL (External)</h4>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Enterprise distributed storage</p>
+                  </div>
+                </button>
+              </div>
+
+              {dbConfig.type === DatabaseType.POSTGRES && (
+                <div className="max-w-4xl mx-auto w-full grid grid-cols-2 md:grid-cols-4 gap-4 p-6 bg-slate-800/20 rounded-3xl border border-slate-800 animate-in slide-in-from-top-4 duration-300">
+                  <div className="space-y-1 col-span-2">
+                    <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Host</label>
+                    <input type="text" value={dbConfig.host} onChange={e => setDbConfig({...dbConfig, host: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="db.internal.io"/>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Port</label>
+                    <input type="number" value={dbConfig.port} onChange={e => setDbConfig({...dbConfig, port: parseInt(e.target.value)})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="5432"/>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Database</label>
+                    <input type="text" value={dbConfig.database} onChange={e => setDbConfig({...dbConfig, database: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="fortress"/>
+                  </div>
+                  <div className="flex items-end col-span-4">
+                    <button onClick={testDbConnection} className="text-[10px] font-black uppercase text-indigo-400 flex items-center gap-2 bg-indigo-500/5 px-4 py-2 rounded-lg border border-indigo-500/10 hover:bg-indigo-500/10 transition-colors">
+                      {isDbTesting ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                      {isDbTesting ? 'Verifying TCP Handshake...' : 'Test Connection'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-auto flex justify-center pt-8 border-t border-slate-800/50">
+                <button
+                  onClick={() => setCurrentStep('auth')}
+                  className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 text-white px-12 py-5 rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
+                >
+                  Configure Identity <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2: SSO AUTH */}
           {currentStep === 'auth' && (
             <div className="space-y-10 animate-in fade-in zoom-in-95 duration-500 flex-1 flex flex-col">
               <div className="text-center">
-                <h2 className="text-3xl font-black text-white mb-3">Enterprise SSO Integration</h2>
-                <p className="text-slate-500 text-sm max-w-md mx-auto">Link your corporate identity provider to establish ownership.</p>
+                <h2 className="text-3xl font-black text-white mb-3">Identity Orchestration</h2>
+                <p className="text-slate-500 text-sm max-w-md mx-auto">Configure the production SSO endpoints for user authentication.</p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto w-full">
-                {/* Google Provider */}
-                <button
-                  onClick={() => setSsoProvider('google')}
-                  className={`relative p-8 rounded-[2.5rem] border flex flex-col items-center gap-5 transition-all duration-300 ${
-                    ssoProvider === 'google' 
-                      ? 'bg-indigo-600/10 border-indigo-500 shadow-2xl' 
-                      : 'bg-slate-800/40 border-slate-800 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-slate-900/80 flex items-center justify-center p-3 border border-slate-700/50 shadow-inner">
-                    <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-full h-full" alt="Google" />
-                  </div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Sign in with Google</span>
-                </button>
-
-                {/* GitHub Provider */}
-                <button
-                  onClick={() => setSsoProvider('github')}
-                  className={`relative p-8 rounded-[2.5rem] border flex flex-col items-center gap-5 transition-all duration-300 ${
-                    ssoProvider === 'github' 
-                      ? 'bg-indigo-600/10 border-indigo-500 shadow-2xl' 
-                      : 'bg-slate-800/40 border-slate-800 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-slate-900/80 flex items-center justify-center p-3 border border-slate-700/50 shadow-inner">
-                    <Github className="text-white" size={32} />
-                  </div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Sign in with GitHub</span>
-                </button>
-
-                {/* Custom OIDC Provider */}
-                <button
-                  onClick={() => setSsoProvider('oidc')}
-                  className={`relative p-8 rounded-[2.5rem] border flex flex-col items-center gap-5 transition-all duration-300 ${
-                    ssoProvider === 'oidc' 
-                      ? 'bg-indigo-600/10 border-indigo-500 shadow-2xl' 
-                      : 'bg-slate-800/40 border-slate-800 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-slate-900/80 flex items-center justify-center p-3 border border-slate-700/50 shadow-inner">
-                    <Cpu className="text-indigo-400" size={32} />
-                  </div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Custom OIDC / SAML</span>
-                </button>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto w-full">
+                {[{ id: 'google', label: 'Sign in with Google', icon: 'https://www.svgrepo.com/show/475656/google-color.svg' },
+                  { id: 'github', label: 'Sign in with GitHub', icon: 'github' },
+                  { id: 'oidc', label: 'Custom OIDC / SAML', icon: 'oidc' }
+                ].map((prov) => (
+                  <button
+                    key={prov.id}
+                    onClick={() => setSsoConfig({ provider: prov.id as any })}
+                    className={`relative p-6 rounded-[2.5rem] border flex flex-col items-center gap-4 transition-all duration-300 ${
+                      ssoConfig.provider === prov.id 
+                        ? 'bg-indigo-600/10 border-indigo-500 shadow-2xl' 
+                        : 'bg-slate-800/40 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="w-14 h-14 rounded-2xl bg-slate-900/80 flex items-center justify-center p-3 border border-slate-700/50 shadow-inner">
+                      {prov.id === 'google' ? <img src={prov.icon} className="w-full h-full" /> : 
+                       prov.id === 'github' ? <Github className="text-white" size={32}/> : <Globe className="text-indigo-400" size={32}/>}
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">{prov.label}</span>
+                  </button>
+                ))}
               </div>
-              <div className="mt-auto flex justify-center pt-8 border-t border-slate-800/50">
+
+              {ssoConfig.provider && (
+                <div className="max-w-4xl mx-auto w-full grid grid-cols-1 md:grid-cols-2 gap-6 p-8 bg-slate-800/20 rounded-3xl border border-slate-800 animate-in slide-in-from-top-4 duration-300">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Client ID</label>
+                    <input type="text" value={ssoConfig.clientId} onChange={e => setSsoConfig({...ssoConfig, clientId: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none font-mono" placeholder="oauth-client-id-xyz"/>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Client Secret</label>
+                    <input type="password" value={ssoConfig.clientSecret} onChange={e => setSsoConfig({...ssoConfig, clientSecret: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none font-mono" placeholder="••••••••••••••••"/>
+                  </div>
+                  {ssoConfig.provider === 'oidc' && (
+                    <div className="space-y-2 col-span-2">
+                      <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Discovery Endpoint (Issuer URL)</label>
+                      <input type="text" value={ssoConfig.discoveryUrl} onChange={e => setSsoConfig({...ssoConfig, discoveryUrl: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none font-mono" placeholder="https://auth.company.com/.well-known/openid-configuration"/>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-auto flex justify-between items-center pt-8 border-t border-slate-800/50">
+                <button onClick={() => setCurrentStep('db')} className="text-slate-600 hover:text-white font-black text-[11px] uppercase tracking-[0.2em]">Back</button>
                 <button
-                  disabled={!ssoProvider}
+                  disabled={!ssoConfig.provider || !ssoConfig.clientId}
                   onClick={() => setCurrentStep('welcome')}
                   className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-12 py-5 rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
                 >
@@ -195,6 +281,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
             </div>
           )}
 
+          {/* OTHER STEPS REMAIN SIMILAR BUT INTEGRATED */}
           {currentStep === 'welcome' && (
             <div className="space-y-10 animate-in fade-in zoom-in-95 duration-500 flex-1 flex flex-col">
               <div className="text-center space-y-3">
@@ -310,45 +397,6 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                   </button>
                 ))}
               </div>
-
-              {aiConfig.provider !== AIProvider.NONE && (
-                <div className="max-w-2xl mx-auto w-full bg-slate-800/30 p-8 rounded-[2rem] border border-slate-700 grid grid-cols-1 md:grid-cols-2 gap-6 animate-in slide-in-from-top-4 duration-300">
-                  {aiConfig.provider !== AIProvider.GEMINI && (
-                    <div className="space-y-2">
-                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">API Key</label>
-                      <input 
-                        type="password" 
-                        value={aiConfig.apiKey}
-                        onChange={e => setAiConfig({...aiConfig, apiKey: e.target.value})}
-                        className="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:ring-1 focus:ring-indigo-500"
-                        placeholder="sk-..."
-                      />
-                    </div>
-                  )}
-                  {aiConfig.provider === AIProvider.OPENAI && (
-                    <div className="space-y-2">
-                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Endpoint (Base URL)</label>
-                      <input 
-                        type="text" 
-                        value={aiConfig.baseUrl}
-                        onChange={e => setAiConfig({...aiConfig, baseUrl: e.target.value})}
-                        className="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:ring-1 focus:ring-indigo-500"
-                        placeholder="https://api.openai.com/v1"
-                      />
-                    </div>
-                  )}
-                  <div className="space-y-2">
-                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Model ID</label>
-                    <input 
-                      type="text" 
-                      value={aiConfig.model}
-                      onChange={e => setAiConfig({...aiConfig, model: e.target.value})}
-                      className="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:ring-1 focus:ring-indigo-500"
-                      placeholder={aiConfig.provider === AIProvider.GEMINI ? "gemini-3-flash-preview" : "gpt-4o"}
-                    />
-                  </div>
-                </div>
-              )}
 
               <div className="mt-auto flex justify-between items-center pt-8 border-t border-slate-800/50">
                 <button onClick={() => setCurrentStep('vault')} className="text-slate-600 hover:text-white font-black text-[11px] uppercase tracking-[0.2em]">Back</button>

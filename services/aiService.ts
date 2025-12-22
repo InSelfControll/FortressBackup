@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { BackupTool, AIProvider, AIConfig } from '../types.ts';
 
@@ -35,24 +36,17 @@ const backupConfigSchema = {
 const SYSTEM_PROMPT = `Suggest a backup configuration in JSON format.
 Ensure fields: tool (BorgBackup, Restic, Rsync, Rclone), schedule (cron), jobName (string), and retention (object with keepHourly, keepDaily, keepWeekly, keepMonthly, keepYearly as integers).`;
 
-// Safety check for process.env to avoid reference errors in browser ESM environments
-const getApiKey = () => {
-  try {
-    return process.env.API_KEY || '';
-  } catch (e) {
-    return '';
-  }
-};
-
 export const generateBackupConfig = async (userPrompt: string, config: AIConfig) => {
   if (config.provider === AIProvider.NONE) {
     throw new Error("AI is not configured.");
   }
 
+  // Fix: Strictly following Gemini SDK guidelines for initialization and API key retrieval.
   if (config.provider === AIProvider.GEMINI) {
-    const apiKey = getApiKey();
-    const ai = new GoogleGenAI({ apiKey: apiKey });
+    // Guidelines: Use new GoogleGenAI({ apiKey: process.env.API_KEY }) exclusively.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     try {
+      // Guidelines: Use ai.models.generateContent for querying models.
       const response = await ai.models.generateContent({
         model: config.model || 'gemini-3-flash-preview',
         contents: `Expert DevOps analysis of: "${userPrompt}"`,
@@ -62,6 +56,7 @@ export const generateBackupConfig = async (userPrompt: string, config: AIConfig)
           systemInstruction: SYSTEM_PROMPT,
         }
       });
+      // Fix: Access .text property (not a method) from GenerateContentResponse as per guidelines.
       const text = response.text?.trim() || '{}';
       return JSON.parse(text);
     } catch (error) {
