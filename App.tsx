@@ -112,9 +112,10 @@ function App() {
   // Loading state for setup check
   if (isSetupComplete === null) return <div className="min-h-screen bg-slate-950" />;
 
-  if (!isAuthenticated) return <Login onLogin={handleLogin} />;
-  
+  // NEW LOGIC: Setup first, then Auth
   if (!isSetupComplete) return <Setup onComplete={completeSetup} />;
+  
+  if (!isAuthenticated) return <Login onLogin={handleLogin} />;
 
   return (
     <div className="flex h-screen bg-slate-900 text-slate-100 font-sans">

@@ -64,7 +64,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               className="w-5 h-5" 
               alt="Google" 
             />
-            <span className="text-sm">Continue with Google Workspace</span>
+            <span className="text-sm">Sign in with Google</span>
           </button>
 
           <button 
@@ -72,7 +72,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             className="w-full flex items-center justify-center gap-4 bg-slate-800 hover:bg-slate-700 text-white py-4 px-6 rounded-2xl font-bold transition-all active:scale-[0.98] border border-slate-700"
           >
             <Github size={20} />
-            <span className="text-sm">Continue with GitHub Enterprise</span>
+            <span className="text-sm">Sign in with GitHub</span>
           </button>
 
           <div className="relative py-4">
