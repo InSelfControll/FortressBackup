@@ -22,7 +22,6 @@ const INITIAL_JOBS: BackupJob[] = [];
 const INITIAL_SYSTEMS: System[] = [
   { id: 'sys-1', name: 'Primary DB Node', host: '10.0.0.50', username: 'root', type: 'remote', status: 'online', lastSeen: 'Now', health: 98, installedTools: [] },
 ];
-const INITIAL_LOCATIONS: Location[] = [];
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -32,34 +31,39 @@ function App() {
   
   const [jobs, setJobs] = useState<BackupJob[]>(INITIAL_JOBS);
   const [systems, setSystems] = useState<System[]>(INITIAL_SYSTEMS);
-  const [locations, setLocations] = useState<Location[]>(INITIAL_LOCATIONS);
+  const [locations, setLocations] = useState<Location[]>([]);
   const [sshKeys, setSshKeys] = useState<SSHKey[]>([]);
   const [aiConfig, setAiConfig] = useState<AIConfig>({ provider: AIProvider.NONE });
   const [dbConfig, setDbConfig] = useState<DatabaseConfig | null>(null);
   const [ssoConfig, setSsoConfig] = useState<SSOConfig | null>(null);
 
   useEffect(() => {
-    // Key used to determine if setup was run: 'fortress_setup_complete_v2'
+    // Logic for knowing when setup was already run: 
+    // We check 'fortress_setup_complete_v2' flag and ensure 'fortress_db_config' exists.
     const setupDone = localStorage.getItem('fortress_setup_complete_v2');
-    const savedSystems = localStorage.getItem('fortress_systems_v2');
     const savedDb = localStorage.getItem('fortress_db_config');
+    const savedSystems = localStorage.getItem('fortress_systems_v2');
     
-    // We only skip setup if both the flag is set AND we have a valid DB config
-    if (setupDone === 'true' && savedDb) {
-      setIsSetupComplete(true);
+    if (setupDone === 'true' && savedDb && savedDb !== 'undefined') {
       try {
-        setAiConfig(JSON.parse(localStorage.getItem('fortress_ai_config_v2') || '{}'));
-        setDbConfig(JSON.parse(savedDb));
-        setSsoConfig(JSON.parse(localStorage.getItem('fortress_sso_config') || '{}'));
-        setSshKeys(JSON.parse(localStorage.getItem('fortress_vault_ssh_keys_v2') || '[]'));
-        if (savedSystems) setSystems(JSON.parse(savedSystems));
+        const parsedDb = JSON.parse(savedDb);
+        // Basic validation that we actually have a config
+        if (parsedDb.type) {
+          setDbConfig(parsedDb);
+          setAiConfig(JSON.parse(localStorage.getItem('fortress_ai_config_v2') || '{"provider":"None"}'));
+          setSsoConfig(JSON.parse(localStorage.getItem('fortress_sso_config') || '{"provider":null}'));
+          setSshKeys(JSON.parse(localStorage.getItem('fortress_vault_ssh_keys_v2') || '[]'));
+          if (savedSystems) setSystems(JSON.parse(savedSystems));
+          setIsSetupComplete(true);
+          return;
+        }
       } catch (e) {
-        console.error("Config load failed. Resetting setup state.", e);
-        setIsSetupComplete(false);
+        console.error("Critical: Storage corrupted, forcing setup re-run.", e);
       }
-    } else {
-      setIsSetupComplete(false);
     }
+    
+    // If anything fails or is missing, we drop into setup
+    setIsSetupComplete(false);
   }, []);
 
   useEffect(() => {
@@ -115,17 +119,31 @@ function App() {
   const addLocation = (loc: Location) => setLocations([...locations, loc]);
   const deleteLocation = (id: string) => setLocations(locations.filter(l => l.id !== id));
 
-  if (isSetupComplete === null) return <div className="min-h-screen bg-slate-950 flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" size={48}/></div>;
+  // Loading state with fail-safe reset
+  if (isSetupComplete === null) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-6">
+        <Loader2 className="animate-spin text-indigo-500" size={48}/>
+        <button 
+          onClick={() => { localStorage.clear(); window.location.reload(); }}
+          className="text-[10px] font-black uppercase text-slate-600 tracking-widest hover:text-rose-500 transition-colors"
+        >
+          Taking too long? Clear State & Reset
+        </button>
+      </div>
+    );
+  }
 
   if (!isSetupComplete) return <Setup onComplete={completeSetup} />;
   
   if (!isAuthenticated) return <Login onLogin={handleLogin} ssoConfig={ssoConfig} />;
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500/30 overflow-hidden relative">
-      {/* High Fidelity CSS Noise & Background Gradients */}
-      <div className="absolute inset-0 pointer-events-none opacity-20 z-0" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}></div>
-      <div className="absolute top-0 right-0 w-[50%] h-[50%] bg-indigo-600/5 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
+    <div className="flex h-screen bg-[#020617] text-slate-100 font-sans selection:bg-indigo-500/30 overflow-hidden relative">
+      {/* High Fidelity Robust Background Elements */}
+      <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.03]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")` }}></div>
+      <div className="absolute top-0 right-0 w-[60%] h-[60%] bg-indigo-600/5 blur-[140px] rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+      <div className="absolute bottom-0 left-0 w-[40%] h-[40%] bg-blue-600/5 blur-[140px] rounded-full translate-y-1/2 -translate-x-1/2 pointer-events-none"></div>
       
       <aside className="w-72 bg-slate-950 border-r border-slate-800/40 flex flex-col shadow-2xl relative z-10">
         <div className="p-8 flex items-center gap-4">

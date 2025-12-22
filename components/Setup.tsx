@@ -4,7 +4,7 @@ import {
   Shield, Key, Server, Check, ArrowRight, Github, 
   ShieldCheck, Lock, Terminal, Info, Zap, Database, ExternalLink,
   ChevronRight, Circle, CheckCircle2, Layout, Boxes, Cpu, Plus, Sparkles, Globe, Brain,
-  XCircle, Loader2, Link, Database as DbIcon, Settings2, RefreshCw
+  XCircle, Loader2, Link, Database as DbIcon, Settings2, RefreshCw, Copy
 } from 'lucide-react';
 import { AIProvider, AIConfig, DatabaseType, DatabaseConfig, SSOConfig } from '../types';
 
@@ -62,6 +62,8 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
     onComplete(masterPassword, aiConfig, dbConfig, ssoConfig);
   };
 
+  const redirectUri = window.location.origin + '/';
+
   const guides: Record<string, any> = {
     borg: {
       title: 'BorgBackup Configuration',
@@ -96,6 +98,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.03]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")` }}></div>
       <div className="absolute top-0 left-0 w-full h-full z-0 pointer-events-none">
         <div className="absolute top-[-20%] left-[-10%] w-[70%] h-[70%] bg-indigo-600/10 rounded-full blur-[140px]" />
         <div className="absolute bottom-[-20%] right-[-10%] w-[70%] h-[70%] bg-blue-600/10 rounded-full blur-[140px]" />
@@ -250,21 +253,42 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
               </div>
 
               {ssoConfig.provider && (
-                <div className="max-w-4xl mx-auto w-full grid grid-cols-1 md:grid-cols-2 gap-6 p-8 bg-slate-800/20 rounded-3xl border border-slate-800 animate-in slide-in-from-top-4 duration-300">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Client ID</label>
-                    <input type="text" value={ssoConfig.clientId} onChange={e => setSsoConfig({...ssoConfig, clientId: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none font-mono" placeholder="oauth-client-id-xyz"/>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Client Secret</label>
-                    <input type="password" value={ssoConfig.clientSecret} onChange={e => setSsoConfig({...ssoConfig, clientSecret: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none font-mono" placeholder="••••••••••••••••"/>
-                  </div>
-                  {ssoConfig.provider === 'oidc' && (
-                    <div className="space-y-2 col-span-2">
-                      <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Discovery Endpoint (Issuer URL)</label>
-                      <input type="text" value={ssoConfig.discoveryUrl} onChange={e => setSsoConfig({...ssoConfig, discoveryUrl: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none font-mono" placeholder="https://auth.company.com/.well-known/openid-configuration"/>
+                <div className="max-w-4xl mx-auto w-full space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-8 bg-slate-800/20 rounded-3xl border border-slate-800 animate-in slide-in-from-top-4 duration-300">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Client ID</label>
+                      <input type="text" value={ssoConfig.clientId} onChange={e => setSsoConfig({...ssoConfig, clientId: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none font-mono" placeholder="oauth-client-id-xyz"/>
                     </div>
-                  )}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Client Secret</label>
+                      <input type="password" value={ssoConfig.clientSecret} onChange={e => setSsoConfig({...ssoConfig, clientSecret: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none font-mono" placeholder="••••••••••••••••"/>
+                    </div>
+                    {ssoConfig.provider === 'oidc' && (
+                      <div className="space-y-2 col-span-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Discovery Endpoint (Issuer URL)</label>
+                        <input type="text" value={ssoConfig.discoveryUrl} onChange={e => setSsoConfig({...ssoConfig, discoveryUrl: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none font-mono" placeholder="https://auth.company.com/.well-known/openid-configuration"/>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="p-6 bg-indigo-500/5 rounded-3xl border border-indigo-500/10 space-y-4">
+                     <div className="flex items-center gap-3">
+                       <Info size={16} className="text-indigo-400" />
+                       <h4 className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">OAuth Config Guidance</h4>
+                     </div>
+                     <p className="text-xs text-slate-400 leading-relaxed">
+                       Configure the following <strong>Redirect URI</strong> in your provider console to allow Fortress to finalize the identity handshake:
+                     </p>
+                     <div className="flex items-center gap-4 bg-slate-950 p-4 rounded-xl border border-slate-800">
+                        <code className="flex-1 text-[10px] font-mono text-indigo-300 truncate">{redirectUri}</code>
+                        <button 
+                          onClick={() => navigator.clipboard.writeText(redirectUri)}
+                          className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-white transition-colors"
+                        >
+                          <Copy size={14} />
+                        </button>
+                     </div>
+                  </div>
                 </div>
               )}
 
@@ -281,7 +305,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
             </div>
           )}
 
-          {/* OTHER STEPS REMAIN SIMILAR BUT INTEGRATED */}
+          {/* OTHER STEPS REMAIN SIMILAR */}
           {currentStep === 'welcome' && (
             <div className="space-y-10 animate-in fade-in zoom-in-95 duration-500 flex-1 flex flex-col">
               <div className="text-center space-y-3">
