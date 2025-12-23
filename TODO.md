@@ -15,6 +15,7 @@ Help us make Fortress the best self-hosted backup orchestrator! Here is what's c
 - [ ] **Engine Expansion**:
   - [ ] Verify and stable-test **Rclone** integration.
   - [ ] Verify and stable-test **Rsync** over SSH.
+  - [ ] **Cloud Storage Integration**: Test S3-compatible storage and Google Drive connectivity.
 
 ## 🎨 Design & Experience
 - [ ] **New Landing Page**: Create a high-converting, premium landing page that explains the project's value proposition.
