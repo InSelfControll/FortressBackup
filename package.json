@@ -9,6 +9,7 @@
     "dev:server": "tsx watch server/index.ts",
     "server": "tsx server/index.ts",
     "build": "vite build",
+    "start": "NODE_ENV=production tsx server/index.ts",
     "preview": "vite preview"
   },
   "dependencies": {

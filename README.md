@@ -71,13 +71,24 @@ Featuring an automatic **SSH Deployment Service**, an AI-powered job architect, 
 
 3. **Running the System**:
    ```bash
-   # Start both API and Web UI (using concurrently)
+   # Development (with hot-reload)
    npm run dev
-   
-   # Or run separately
-   npm run dev:server    # Backend only
-   npm run dev:frontend  # Frontend only
    ```
+
+### Production Deployment
+
+For a stable production environment, follow these steps:
+
+1. **Build the Frontend**:
+   ```bash
+   npm run build
+   ```
+
+2. **Start the Integrated Server**:
+   ```bash
+   npm start
+   ```
+   The server will now serve both the API and the pre-built frontend assets.
 
 ---
 
