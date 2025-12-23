@@ -89,12 +89,13 @@ export interface System {
   lastSeen: string;
   health: number;
   installedTools?: BackupTool[];
+  sshKeyId?: string;
 }
 
 export interface Location {
   id: string;
   name: string;
-  type: 's3' | 'sftp' | 'local' | 'b2';
+  type: 's3' | 'sftp' | 'nfs' | 'b2' | 'gcs' | 'azure' | 'gdrive' | 'onedrive';
   path: string;
   endpoint?: string; // For S3 compatible
   region?: string;
@@ -107,10 +108,12 @@ export interface BackupJob {
   name: string;
   tool: BackupTool;
   sourceId: string;
+  sourcePaths: string[];
   destinationId: string;
   schedule: string;
   retention: RetentionPolicy;
   priority: JobPriority;
+  repoPassword?: string;
   lastRun?: string;
   status: JobStatus;
   nextRun: string;
@@ -120,6 +123,16 @@ export interface BackupJob {
     dedupeRatio: number;
     filesProcessed: number;
   }
+}
+
+export interface Snapshot {
+  id: string;
+  shortId: string;
+  time: string;
+  paths: string[];
+  hostname: string;
+  username?: string;
+  tags?: string[];
 }
 
 export interface User {

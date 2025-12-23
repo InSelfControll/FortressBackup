@@ -22,7 +22,6 @@ export async function deriveKey(password: string, salt: Uint8Array): Promise<Cry
   return crypto.subtle.deriveKey(
     {
       name: KEY_DERIVATION_ALGORITHM,
-      salt,
       iterations: ITERATIONS,
       hash: HASH_ALGORITHM,
     },

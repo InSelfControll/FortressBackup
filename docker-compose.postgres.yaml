@@ -1,0 +1,53 @@
+# PostgreSQL configuration for Fortress
+# Use this when running with external PostgreSQL
+
+version: '3.8'
+
+services:
+  fortress:
+    build: .
+    container_name: fortress-backup
+    restart: unless-stopped
+    ports:
+      - "9001:9001"
+    environment:
+      - NODE_ENV=production
+      - DB_TYPE=postgres
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_DATABASE=fortress
+      - PG_USER=fortress
+      - PG_PASSWORD=${PG_PASSWORD:-fortress-secure-password}
+      - JWT_SECRET=${JWT_SECRET:-fortress-change-me-in-production}
+      - PORT=9001
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - fortress-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: fortress-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fortress
+      POSTGRES_USER: fortress
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-fortress-secure-password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - fortress-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U fortress" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
+    driver: local
+
+networks:
+  fortress-network:
+    driver: bridge

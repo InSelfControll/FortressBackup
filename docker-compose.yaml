@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # Fortress Backup Manager - Main Application
+  fortress:
+    build: .
+    container_name: fortress-backup
+    restart: unless-stopped
+    ports:
+      - "9001:9001"
+    environment:
+      - NODE_ENV=production
+      - DB_TYPE=sqlite
+      - SQLITE_PATH=/app/data/fortress.db
+      - JWT_SECRET=${JWT_SECRET:-fortress-change-me-in-production}
+      - PORT=9001
+    volumes:
+      - fortress-data:/app/data
+    networks:
+      - fortress-network
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "--spider", "http://localhost:9001/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  # Optional: PostgreSQL for enterprise deployments
+  # Uncomment to use PostgreSQL instead of SQLite
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: fortress-postgres
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_DB: fortress
+  #     POSTGRES_USER: fortress
+  #     POSTGRES_PASSWORD: ${PG_PASSWORD:-fortress-secure-password}
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   networks:
+  #     - fortress-network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U fortress"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # Nginx reverse proxy (optional - for production with SSL)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: fortress-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ssl-certs:/etc/ssl/certs
+  #   depends_on:
+  #     - fortress
+  #   networks:
+  #     - fortress-network
+
+volumes:
+  fortress-data:
+    driver: local
+  # postgres-data:
+  #   driver: local
+  # ssl-certs:
+  #   driver: local
+
+networks:
+  fortress-network:
+    driver: bridge

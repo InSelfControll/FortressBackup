@@ -1,9 +1,8 @@
-
 # 🛡️ Fortress Backup Manager
 
-**Fortress** is an enterprise-grade, stunning orchestration dashboard designed for modern infrastructure. It provides a unified, secure interface for managing disparate backup backends including **BorgBackup**, **Restic**, **Rsync**, and **Rclone**.
+**Fortress** is an enterprise-grade orchestration dashboard designed for modern infrastructure management. It provides a unified, secure interface for managing disparate backup engines including **BorgBackup**, **Restic**, **Rsync**, and **Rclone**.
 
-Featuring an **optional** AI-powered job architect, a zero-trust cryptographic vault for identity management, and native SSO integration, Fortress transforms complex CLI-based backup workflows into a streamlined, high-visibility experience.
+Featuring an automatic **SSH Deployment Service**, an AI-powered job architect, and a zero-trust cryptographic vault, Fortress simplifies complex CLI-based backup workflows into a high-visibility, professional experience.
 
 ---
 
@@ -13,50 +12,74 @@ Featuring an **optional** AI-powered job architect, a zero-trust cryptographic v
   - **BorgBackup**: High-efficiency deduplication and compression.
   - **Restic**: Modern, secure cloud-native backups.
   - **Rsync over SSH**: Reliable 1:1 file mirroring.
-  - **Rclone**: The "Swiss army knife" for S3, B2, and 50+ cloud providers.
-- **AI Backup Architect (Optional)**: Support for **Google Gemini** or any **OpenAI-compatible** API to translate natural language requirements into optimized cron schedules and retention policies.
-- **Zero-Trust Identity Vault**: Local-first AES-256-GCM encryption for SSH private keys and secrets. Your master password never leaves the browser.
-- **Enterprise SSO**: Out-of-the-box integration for Google Workspace and GitHub Enterprise authentication.
-- **Health Monitoring**: Real-time "Vitality Index" visualization for managed systems and detailed process logs for every snapshot.
-- **Visual Analytics**: Interactive Recharts-powered dashboard for storage growth tracking and deduplication ratios.
+  - **Rclone**: Cloud storage synchronization (S3, B2, Google Drive, etc.).
+- **🚀 SSH Deployment Service**: Automatically detect remote OS and install required backup tools (Borg, Restic, Rsync) with one click. Rsync & Rclone are not tested yet.
+- **AI Backup Architect**: Leverages **Google Gemini** and **OpenAI COMPATIBLE** to translate natural language requirements into optimized cron schedules and retention policies. - Not tested yet
+- **Zero-Trust Identity Vault**: Local-first AES-256-GCM encryption for SSH private keys. Keys are only decrypted at the last possible moment for connection.
+- **Universal Health Monitoring**: Real-time "Vitality Index" for all managed systems with live log streaming.
+- **Visual Analytics**: Interactive Recharts-powered dashboard for storage growth and deduplication tracking.
+
+---
+
+## 🛠️ Tech Stack
+
+### Frontend
+- **Framework**: React 19 + TypeScript
+- **Build Tool**: Vite 6
+- **Styling**: Tailwind CSS
+- **Charts**: Recharts
+- **Icons**: Lucide React
+
+### Backend
+- **Runtime**: Node.js 22
+- **Framework**: Express 5
+- **Execution**: `tsx` (TypeScript Execution)
+- **SSH**: `ssh2` for remote orchestration
+- **Auth**: JWT + bcryptjs
+
+### Database
+- **Primary**: PostgreSQL (via `pg`)
+- **Local/Cache**: Better-SQLite3
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-
-- **Node.js**: Version 20.x or higher.
-- **AI Config (Optional)**: OpenAI-compatible or Gemini API key.
-- **SSH Access**: To the systems you intend to back up.
+- **Node.js**: v22.x or higher
+- **PostgreSQL**: A running instance (or use the provided Docker setup)
+- **(Optional) Gemini API Key**: For natural language backup configuration
 
 ### Installation
 
-1. **Clone the repository**:
+1. **Clone and Install**:
    ```bash
-   git clone https://github.com/your-org/fortress-backup-manager.git
-   cd fortress-backup-manager
-   ```
-
-2. **Install dependencies**:
-   ```bash
+   git clone https://github.com/your-org/FortressBackup.git
+   cd FortressBackup
    npm install
    ```
 
-3. **Launch the Dashboard**:
+2. **Environment Setup**:
+   Copy `.env.example` to `.env` and configure your database and API keys.
+
+3. **Running the System**:
    ```bash
+   # Start both API and Web UI (using concurrently)
    npm run dev
+   
+   # Or run separately
+   npm run dev:server    # Backend only
+   npm run dev:frontend  # Frontend only
    ```
 
 ---
 
 ## 🔒 Security Architecture
 
-Fortress is built with a "Security-First" mindset:
-
-- **Client-Side Encryption**: Private keys are encrypted using the Web Crypto API before being stored in `localStorage`.
-- **Zero-Knowledge**: The dashboard never sends your master password or decrypted SSH keys to any server.
-- **Isolated Workers**: The provided `Fortress.yaml` includes a containerized execution worker to keep backup processes separate from the UI layer.
+Fortress implements several layers of security:
+1. **At-Rest Encryption**: Sensitive credentials and SSH keys are encrypted in the database.
+2. **Path Isolation**: Backup processes are executed with minimum required privileges on remote systems.
+3. **Session Management**: Secure JWT-based authentication with automatic expiration handling.
 
 ---
 
