@@ -160,22 +160,6 @@ body {
 .gradient-text {
     background: linear-gradient(to right, #fff, #94a3b8);
     -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-
-.subtitle {
-    font-size: 1.25rem;
-    color: var(--text-muted);
-    max-width: 600px;
-    margin-bottom: 3rem;
-}
-
-.cta-group {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 4rem;
-    justify-content: center;
 }
 
 .stats {
