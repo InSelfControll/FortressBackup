@@ -160,6 +160,7 @@ body {
 .gradient-text {
     background: linear-gradient(to right, #fff, #94a3b8);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
@@ -174,6 +175,7 @@ body {
     display: flex;
     gap: 1rem;
     margin-bottom: 4rem;
+    justify-content: center;
 }
 
 .stats {
@@ -247,6 +249,28 @@ body {
 .hero-image {
     border-radius: 12px;
     overflow: hidden;
+}
+
+/* About Section */
+.section-about {
+    padding: 4rem 1rem;
+    max-width: 800px;
+    margin: 0 auto;
+    text-align: center;
+    position: relative;
+    z-index: 10;
+}
+
+.about-text {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    line-height: 1.8;
+    margin-bottom: 1.5rem;
+}
+
+.about-text strong {
+    color: var(--text-main);
+    font-weight: 600;
 }
 
 /* Features */
