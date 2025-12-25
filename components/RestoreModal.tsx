@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Clock, Server, FolderInput, CheckCircle2, AlertTriangle, Loader2, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, Clock, Server, FolderInput, CheckCircle2, AlertTriangle, Loader2, RotateCcw, Search } from 'lucide-react';
 import { BackupJob, System, Snapshot } from '../types';
 
 interface RestoreModalProps {
@@ -22,6 +22,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
     const [loadingFiles, setLoadingFiles] = useState(false);
     const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
     const [filesLoaded, setFilesLoaded] = useState(false);
+    const [fileSearchQuery, setFileSearchQuery] = useState('');
 
     const [restorePath, setRestorePath] = useState('');
     const [targetSystemId, setTargetSystemId] = useState('');
@@ -41,6 +42,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
             setFiles([]);
             setSelectedFiles([]);
             setFilesLoaded(false);
+            setFileSearchQuery('');
         }
     }, [isOpen, job.id]);
 
@@ -101,7 +103,15 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
         setFilesLoaded(false);
         setFiles([]);
         setSelectedFiles([]);
+        setFileSearchQuery('');
     };
+
+    // Filter files based on search query
+    const filteredFiles = useMemo(() => {
+        if (!fileSearchQuery.trim()) return files;
+        const query = fileSearchQuery.toLowerCase();
+        return files.filter(file => file.path.toLowerCase().includes(query));
+    }, [files, fileSearchQuery]);
 
     const toggleFileSelection = (path: string) => {
         setSelectedFiles(prev =>
@@ -322,14 +332,27 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                                     </div>
 
                                     {fileSelectionMode === 'specific' && (
-                                        <div className="bg-slate-950 border border-slate-800 rounded-lg h-48 overflow-hidden flex flex-col">
+                                        <div className="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden flex flex-col">
+                                            {/* Search Input */}
+                                            <div className="p-2 border-b border-slate-800">
+                                                <div className="relative">
+                                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                                                    <input
+                                                        type="text"
+                                                        value={fileSearchQuery}
+                                                        onChange={e => setFileSearchQuery(e.target.value)}
+                                                        placeholder="Search paths..."
+                                                        className="w-full bg-slate-900 border border-slate-700 rounded-md pl-8 pr-3 py-1.5 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-500 placeholder-slate-500"
+                                                    />
+                                                </div>
+                                            </div>
                                             {loadingFiles ? (
-                                                <div className="flex items-center justify-center h-full text-slate-500 gap-2">
+                                                <div className="flex items-center justify-center h-40 text-slate-500 gap-2">
                                                     <Loader2 className="animate-spin" size={16} /> Loading file list...
                                                 </div>
                                             ) : (
-                                                <div className="overflow-y-auto p-2 space-y-1">
-                                                    {files.map((file, idx) => (
+                                                <div className="overflow-y-auto p-2 space-y-1 h-40">
+                                                    {filteredFiles.map((file, idx) => (
                                                         <label key={idx} className="flex items-start gap-2 p-1.5 hover:bg-slate-800 rounded cursor-pointer group">
                                                             <input
                                                                 type="checkbox"
@@ -346,8 +369,11 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                                                             </div>
                                                         </label>
                                                     ))}
+                                                    {files.length > 0 && filteredFiles.length === 0 && (
+                                                        <div className="text-center py-6 text-xs text-slate-600">No files match "{fileSearchQuery}"</div>
+                                                    )}
                                                     {files.length === 0 && (
-                                                        <div className="text-center py-8 text-xs text-slate-600">No files found listing</div>
+                                                        <div className="text-center py-6 text-xs text-slate-600">No files found</div>
                                                     )}
                                                 </div>
                                             )}

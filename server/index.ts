@@ -19,6 +19,7 @@ import systemsRouter from './routes/systems.js';
 import locationsRouter from './routes/locations.js';
 import jobsRouter from './routes/jobs.js';
 import sshKeysRouter from './routes/sshKeys.js';
+import aiRouter from './routes/ai.js';
 
 // Initialize environment
 const envPath = path.join(process.cwd(), '.env');
@@ -61,7 +62,13 @@ app.get('/api/status', async (req, res) => {
 });
 
 // API Routes
+app.use('/api/auth', authRouter);
+app.use('/api/config', configRouter);
+app.use('/api/systems', systemsRouter);
+app.use('/api/locations', locationsRouter);
+app.use('/api/jobs', jobsRouter);
 app.use('/api/keys', sshKeysRouter);
+app.use('/api/ai', aiRouter);
 
 // ==================== STATIC FILES (PRODUCTION) ====================
 
@@ -71,7 +78,7 @@ if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
 
     // Handle SPA routing - send all non-API requests to index.html
-    app.get('*', (req, res, next) => {
+    app.get(/.*/, (req, res, next) => {
         if (req.path.startsWith('/api')) {
             return next();
         }

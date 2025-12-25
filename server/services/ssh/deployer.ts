@@ -8,6 +8,7 @@ import fs from 'fs';
 import os from 'os';
 import { SSHConnectionConfig, DeploymentLog, DeploymentResult, SSHExecutor, CommandResult } from './types.js';
 import { detectOS, installBorg, installRestic, installRsync } from './tools.js';
+import { maskSensitiveData } from '../../utils/maskSensitiveData.js';
 
 export class SSHDeployer extends EventEmitter implements SSHExecutor {
     private client: Client;
@@ -20,9 +21,11 @@ export class SSHDeployer extends EventEmitter implements SSHExecutor {
     }
 
     log(type: DeploymentLog['type'], message: string) {
+        // Mask any sensitive data (passwords, keys, tokens) before logging
+        const maskedMessage = maskSensitiveData(message);
         const entry: DeploymentLog = {
             type,
-            message,
+            message: maskedMessage,
             timestamp: new Date()
         };
         this.logs.push(entry);
@@ -40,27 +43,26 @@ export class SSHDeployer extends EventEmitter implements SSHExecutor {
                 readyTimeout: 30000,
             };
 
+            // Handle Private Key Authentication
             if (config.privateKey) {
                 let keyContent = config.privateKey;
 
-                // Check if it's a file path (starts with / or ~ or doesn't start with -----)
+                // Case: Key path provided instead of content
                 if (!keyContent.startsWith('-----')) {
                     // Expand ~ to home directory
-                    let keyPath = keyContent;
-                    if (keyPath.startsWith('~')) {
-                        keyPath = keyPath.replace('~', os.homedir());
-                    }
+                    let keyPath = keyContent.startsWith('~')
+                        ? keyContent.replace('~', os.homedir())
+                        : keyContent;
 
-                    // Try to read the file
+                    // Guard: File access check
                     try {
-                        if (fs.existsSync(keyPath)) {
-                            this.log('info', `Reading SSH key from: ${keyPath}`);
-                            keyContent = fs.readFileSync(keyPath, 'utf8');
-                        } else {
+                        if (!fs.existsSync(keyPath)) {
                             this.log('error', `SSH key file not found: ${keyPath}`);
                             resolve(false);
                             return;
                         }
+                        this.log('info', `Reading SSH key from: ${keyPath}`);
+                        keyContent = fs.readFileSync(keyPath, 'utf8');
                     } catch (err: any) {
                         this.log('error', `Failed to read SSH key file: ${err.message}`);
                         resolve(false);
@@ -72,7 +74,9 @@ export class SSHDeployer extends EventEmitter implements SSHExecutor {
                 if (config.passphrase) {
                     connectConfig.passphrase = config.passphrase;
                 }
-            } else if (config.password) {
+            }
+            // Handle Password Authentication
+            else if (config.password) {
                 connectConfig.password = config.password;
             }
 
@@ -117,7 +121,6 @@ export class SSHDeployer extends EventEmitter implements SSHExecutor {
                 stream.on('data', (data: Buffer) => {
                     const text = data.toString();
                     stdout += text;
-                    // Stream output line by line
                     text.split('\n').filter(Boolean).forEach(line => {
                         this.log('progress', line);
                     });
@@ -162,14 +165,8 @@ export class SSHDeployer extends EventEmitter implements SSHExecutor {
                 }
             }
 
-            if (installedTools.length > 0) {
-                this.log('success', `Deployment complete! Installed: ${installedTools.join(', ')}`);
-                return {
-                    success: true,
-                    installedTools,
-                    logs: this.logs
-                };
-            } else {
+            // Guard: No tools installed
+            if (installedTools.length === 0) {
                 this.log('error', 'No tools were installed');
                 return {
                     success: false,
@@ -178,6 +175,15 @@ export class SSHDeployer extends EventEmitter implements SSHExecutor {
                     error: 'Failed to install any backup tools'
                 };
             }
+
+            // Happy Path: Deployment Complete
+            this.log('success', `Deployment complete! Installed: ${installedTools.join(', ')}`);
+            return {
+                success: true,
+                installedTools,
+                logs: this.logs
+            };
+
         } catch (err: any) {
             this.log('error', `Deployment failed: ${err.message}`);
             return {

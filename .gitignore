@@ -26,10 +26,12 @@ dist-ssr
 .env.example
 .env.local
 .env.local.example
-data/*
+data/.*
 node_modules/*
 node_modules
 dist
 dist/*
 .gitignore
 .git
+REDDIT_POST.md
+.agent*

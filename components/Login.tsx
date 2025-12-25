@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import * as API from '../services/api/index.js';
+import * as API from '../client/api/index.js';
 import { Shield, Loader2, Github, Globe, Zap, ShieldCheck, Mail, Lock } from 'lucide-react';
 import { SSOConfig, User as UserType } from '../types';
 
@@ -16,7 +16,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
 
   const processedCode = React.useRef<string | null>(null);
 
-  // Get authMode from props or localStorage
   const [authMode, setAuthMode] = useState<'local' | 'sso' | null>(propAuthMode);
   const checkedAuthMode = React.useRef(false);
 
@@ -28,20 +27,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
     }
   }, [authMode]);
 
-  // Handle OAuth callback
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     const state = urlParams.get('state');
 
     if (code && state === 'github_oauth') {
-      // Prevent React Strict Mode from running this twice
       if (processedCode.current === code) return;
       processedCode.current = code;
-
-      // Handle GitHub OAuth callback
       handleGitHubCallback(code);
-      // Clean URL
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
@@ -54,32 +48,23 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
       setError('SSO not configured');
       return;
     }
-
     if (!ssoConfig.clientId) {
-      setError('SSO Client ID not configured. Please restart the backend server.');
-      console.error('[OAuth] Missing clientId in ssoConfig:', ssoConfig);
+      setError('SSO Client ID not configured.');
       return;
     }
-
     setIsRedirecting(true);
 
     if (ssoConfig.provider === 'github') {
-      // Redirect to GitHub OAuth
       const clientId = ssoConfig.clientId;
       const redirectUri = encodeURIComponent(window.location.origin + '/');
       const scope = encodeURIComponent('user:email read:user');
       const state = 'github_oauth';
-
-      const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
-      console.log('[OAuth] Redirecting to:', authUrl);
-      window.location.href = authUrl;
+      window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
     } else if (ssoConfig.provider === 'google') {
-      // Redirect to Google OAuth
       const clientId = ssoConfig.clientId;
       const redirectUri = encodeURIComponent(window.location.origin + '/');
       const scope = encodeURIComponent('email profile');
       const state = 'google_oauth';
-
       window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code&state=${state}`;
     } else {
       setError('SSO provider not supported');
@@ -90,14 +75,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
   const handleGitHubCallback = async (code: string) => {
     setIsLoading(true);
     setError(null);
-
     try {
-      // Exchange code for user info via backend
       const response = await API.githubAuth(code);
       const result = response.data;
-
       if (result && result.user) {
-        // Token is already set by API.githubAuth
         localStorage.setItem('fortress_user_session', JSON.stringify(result.user));
         onLogin(result.user);
       } else {
@@ -114,13 +95,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
     e.preventDefault();
     setError(null);
     setIsLoading(true);
-
     try {
       const response = await API.login(email, password);
       const result = response.data;
-
       if (result && result.user) {
-        // Token is already set by API.login
         localStorage.setItem('fortress_user_session', JSON.stringify(result.user));
         onLogin(result.user);
       } else {
@@ -135,18 +113,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
 
   if (isRedirecting || isLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-center p-6 animate-fade-in">
-        <div className="relative mb-12">
-          <div className="absolute inset-0 bg-indigo-500/20 blur-[120px] rounded-full animate-pulse"></div>
-          <div className="relative bg-slate-900 p-8 rounded-[2.5rem] border border-indigo-500/30 shadow-2xl">
-            <Loader2 className="w-16 h-16 text-indigo-500 animate-spin" />
-          </div>
+      <div className="min-h-screen flex flex-col items-center justify-center" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
+        <div className="p-6 rounded-xl mb-6" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-subtle)' }}>
+          <Loader2 className="w-10 h-10 animate-spin" style={{ color: 'var(--color-accent-primary)' }} />
         </div>
-        <h2 className="text-3xl font-black text-white tracking-tighter mb-3">
-          {isRedirecting ? 'Redirecting to Provider...' : 'Authenticating...'}
+        <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
+          {isRedirecting ? 'Redirecting...' : 'Authenticating...'}
         </h2>
-        <p className="text-slate-500 font-bold uppercase tracking-[0.4em] text-[10px] animate-pulse">
-          {isRedirecting ? 'Opening OAuth flow' : 'Validating credentials'}
+        <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          {isRedirecting ? 'Opening OAuth provider' : 'Validating credentials'}
         </p>
       </div>
     );
@@ -155,81 +130,78 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
   const providerName = ssoConfig?.provider === 'google' ? 'Google' : ssoConfig?.provider === 'github' ? 'GitHub' : 'Enterprise SSO';
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center relative overflow-hidden px-4 font-sans selection:bg-indigo-500/30">
-      <div className="absolute top-0 left-0 w-full h-full z-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-20%] left-[-10%] w-[80%] h-[80%] bg-indigo-600/10 rounded-full blur-[160px]" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[80%] h-[80%] bg-blue-600/10 rounded-full blur-[160px]" />
-      </div>
-
-      <div className="relative z-10 w-full max-w-md animate-in fade-in slide-in-from-bottom-8 duration-700">
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-widest mb-6 shadow-sm">
-            <Zap size={14} className="fill-current" /> Secure Access
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
+      <div className="w-full max-w-sm animate-fade-in">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: 'var(--color-accent-primary)' }}>
+            <ShieldCheck size={32} className="text-white" />
           </div>
-          <div className="w-24 h-24 bg-indigo-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-indigo-600/40 border-4 border-slate-900">
-            <ShieldCheck size={48} className="text-white" />
-          </div>
-          <h1 className="text-4xl font-black text-white tracking-tighter mb-2">Fortress Vault</h1>
-          <p className="text-slate-500 text-sm font-medium uppercase tracking-widest">
-            Enterprise Command Portal
-          </p>
+          <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--color-text-primary)' }}>Fortress Backup</h1>
+          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Sign in to your account</p>
         </div>
 
-        <div className="bg-slate-900/60 backdrop-blur-3xl border border-slate-800/80 p-10 rounded-[3rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)] space-y-4">
-
+        {/* Login Card */}
+        <div className="p-6 rounded-xl" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-subtle)' }}>
           {error && (
-            <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 text-rose-400 text-sm text-center mb-4">
+            <div className="p-3 rounded-lg mb-4 text-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: 'var(--color-error)' }}>
               {error}
             </div>
           )}
 
-          {/* SSO Only Mode */}
+          {/* SSO Mode */}
           {authMode === 'sso' && ssoConfig?.provider && (
             <>
               <button
                 onClick={handleSSO}
-                className={`w-full flex items-center justify-center gap-4 py-4 px-6 rounded-2xl font-bold transition-all active:scale-[0.98] shadow-lg ${ssoConfig?.provider === 'google' ? 'bg-white text-slate-900 hover:bg-slate-100' : 'bg-slate-800 text-white hover:bg-slate-700'
-                  }`}
+                className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg font-medium transition-colors"
+                style={{
+                  backgroundColor: ssoConfig?.provider === 'google' ? '#fff' : 'var(--color-bg-tertiary)',
+                  color: ssoConfig?.provider === 'google' ? '#1f2937' : 'var(--color-text-primary)',
+                  border: `1px solid ${ssoConfig?.provider === 'google' ? '#d1d5db' : 'var(--color-border-default)'}`
+                }}
               >
                 {ssoConfig?.provider === 'google' && <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google" />}
-                {ssoConfig?.provider === 'github' && <Github size={20} />}
-                {ssoConfig?.provider === 'oidc' && <Globe size={20} className="text-indigo-400" />}
+                {ssoConfig?.provider === 'github' && <Github size={18} />}
+                {ssoConfig?.provider === 'oidc' && <Globe size={18} />}
                 Continue with {providerName}
               </button>
-              <p className="text-center text-slate-600 text-xs mt-4">
+              <p className="text-center text-xs mt-4" style={{ color: 'var(--color-text-muted)' }}>
                 Your organization uses {providerName} for authentication
               </p>
             </>
           )}
 
-          {/* Local Auth Mode */}
+          {/* Local Auth */}
           {authMode === 'local' && (
             <form onSubmit={handleLocalLogin} className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Email Address</label>
+              <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>Email</label>
                 <div className="relative">
-                  <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="admin@company.com"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-12 pr-4 py-4 text-white placeholder-slate-600 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-lg text-sm outline-none focus:ring-2"
+                    style={{ backgroundColor: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border-default)', color: 'var(--color-text-primary)' }}
                     required
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Password</label>
+              <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>Password</label>
                 <div className="relative">
-                  <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
                   <input
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-12 pr-4 py-4 text-white placeholder-slate-600 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-lg text-sm outline-none focus:ring-2"
+                    style={{ backgroundColor: 'var(--color-bg-tertiary)', border: '1px solid var(--color-border-default)', color: 'var(--color-text-primary)' }}
                     required
                   />
                 </div>
@@ -238,29 +210,26 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-2xl font-bold transition-all active:scale-[0.98] shadow-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-medium transition-colors disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-accent-primary)', color: '#fff' }}
               >
-                {isLoading ? (
-                  <Loader2 size={20} className="animate-spin" />
-                ) : (
-                  <ShieldCheck size={20} />
-                )}
-                {isLoading ? 'Authenticating...' : 'Sign In'}
+                {isLoading ? <Loader2 size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
+                {isLoading ? 'Signing in...' : 'Sign In'}
               </button>
             </form>
           )}
 
-          {/* Fallback if no auth mode set */}
+          {/* Loading */}
           {!authMode && (
-            <div className="text-center py-8">
-              <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mx-auto mb-4" />
-              <p className="text-slate-500 text-sm">Loading authentication...</p>
+            <div className="text-center py-6">
+              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-3" style={{ color: 'var(--color-accent-primary)' }} />
+              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Loading...</p>
             </div>
           )}
         </div>
 
-        <p className="text-center text-slate-700 text-[10px] font-bold uppercase tracking-widest mt-8">
-          Fortress Backup Manager • Enterprise Security
+        <p className="text-center text-xs mt-6" style={{ color: 'var(--color-text-muted)' }}>
+          Fortress Backup Manager
         </p>
       </div>
     </div>

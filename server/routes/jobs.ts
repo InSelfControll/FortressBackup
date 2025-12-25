@@ -153,34 +153,7 @@ router.post('/:id/run', authenticateToken, async (req, res) => {
             broadcastJobLog(jobId, log.type as any, log.message);
         });
 
-        if (result.success) {
-            // Update job status
-            const updatedJob = {
-                ...job,
-                status: 'Success',
-                last_run: new Date().toISOString(),
-                size: result.bytesProcessed ? `${(result.bytesProcessed / 1e6).toFixed(2)} MB` : undefined
-            };
-            await db.saveJob(updatedJob);
-
-            // Save logs to database
-            const runId = crypto.randomUUID();
-            await db.saveJobLogs(job.id, runId, logs);
-
-            // Notify SSE subscribers that job completed
-            notifyJobComplete(jobId, true);
-
-            res.json({
-                success: true,
-                job: updatedJob,
-                stats: {
-                    filesProcessed: result.filesProcessed,
-                    bytesProcessed: result.bytesProcessed,
-                    duration: (result.endTime.getTime() - result.startTime.getTime()) / 1000
-                },
-                logs
-            });
-        } else {
+        if (!result.success) {
             // Update job as failed
             const updatedJob = {
                 ...job,
@@ -196,12 +169,40 @@ router.post('/:id/run', authenticateToken, async (req, res) => {
             // Notify SSE subscribers that job failed
             notifyJobComplete(jobId, false);
 
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 error: result.errors.join(', '),
                 logs
             });
         }
+
+        // Happy Path: Job Success
+        // Update job status
+        const updatedJob = {
+            ...job,
+            status: 'Success',
+            last_run: new Date().toISOString(),
+            size: result.bytesProcessed ? `${(result.bytesProcessed / 1e6).toFixed(2)} MB` : undefined
+        };
+        await db.saveJob(updatedJob);
+
+        // Save logs to database
+        const runId = crypto.randomUUID();
+        await db.saveJobLogs(job.id, runId, logs);
+
+        // Notify SSE subscribers that job completed
+        notifyJobComplete(jobId, true);
+
+        res.json({
+            success: true,
+            job: updatedJob,
+            stats: {
+                filesProcessed: result.filesProcessed,
+                bytesProcessed: result.bytesProcessed,
+                duration: (result.endTime.getTime() - result.startTime.getTime()) / 1000
+            },
+            logs
+        });
     } catch (error: any) {
         console.error('[Job] Error:', error);
         res.status(500).json({ error: error.message });
@@ -400,11 +401,12 @@ router.post('/:id/restore', authenticateToken, async (req, res) => {
         const runId = crypto.randomUUID();
         await db.saveJobLogs(jobId, runId, logs);
 
-        if (result.success) {
-            res.json({ success: true, logs });
-        } else {
-            res.status(500).json({ success: false, error: result.errors.join(', '), logs });
+        if (!result.success) {
+            return res.status(500).json({ success: false, error: result.errors.join(', '), logs });
         }
+
+        // Happy Path: Restore Success
+        res.json({ success: true, logs });
 
     } catch (error: any) {
         console.error('[Restore] Error:', error);

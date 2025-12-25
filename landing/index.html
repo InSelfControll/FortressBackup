@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fortress - Self-Hosted Backup Orchestrator</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body>
+    <div class="background-globes">
+        <div class="globe globe-1"></div>
+        <div class="globe globe-2"></div>
+    </div>
+
+    <nav class="navbar glass">
+        <div class="logo">
+            <i data-lucide="shield-check" class="logo-icon"></i>
+            <span>Fortress</span>
+        </div>
+        <div class="nav-links">
+            <a href="#features">Features</a>
+            <a href="#demo">Demo</a>
+            <a href="#docs">Documentation</a>
+            <a href="https://github.com/your-repo/fortress" class="btn btn-primary">
+                <i data-lucide="github" size="16"></i> GitHub
+            </a>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <div class="hero-content">
+            <div class="badge">v1.2.0 Release</div>
+            <h1>Your Data. <br> <span class="gradient-text">Unbreakable.</span></h1>
+            <p class="subtitle">The open-source, self-hosted backup orchestrator for modern infrastructure. Secure,
+                automated, and effortless.</p>
+
+            <div class="cta-group">
+                <button class="btn btn-large btn-primary">Get Started</button>
+                <button class="btn btn-large btn-glass">View Demo</button>
+            </div>
+
+            <div class="stats glass">
+                <div class="stat">
+                    <span class="stat-value">AES-256</span>
+                    <span class="stat-label">Encryption</span>
+                </div>
+                <div class="divider"></div>
+                <div class="stat">
+                    <span class="stat-value">Dedup</span>
+                    <span class="stat-label">Smart Storage</span>
+                </div>
+                <div class="divider"></div>
+                <div class="stat">
+                    <span class="stat-value">100%</span>
+                    <span class="stat-label">Open Source</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="hero-image glass">
+            <!-- Placeholder for App Screenshot -->
+            <div class="mockup-header">
+                <span class="dot red"></span>
+                <span class="dot yellow"></span>
+                <span class="dot green"></span>
+            </div>
+            <div class="mockup-body">
+                <div class="loader">Loading Dashboard...</div>
+            </div>
+        </div>
+    </header>
+
+    <section id="features" class="features">
+        <h2>Why Fortress?</h2>
+        <div class="feature-grid">
+            <div class="feature-card glass">
+                <div class="icon-box"><i data-lucide="server"></i></div>
+                <h3>Multi-System Support</h3>
+                <p>Manage backups for unlimited servers, databases, and containers from a single pane of glass.</p>
+            </div>
+            <div class="feature-card glass">
+                <div class="icon-box"><i data-lucide="lock"></i></div>
+                <h3>Zero-Knowledge</h3>
+                <p>Client-side encryption ensures we never see your data. You hold the keys.</p>
+            </div>
+            <div class="feature-card glass">
+                <div class="icon-box"><i data-lucide="zap"></i></div>
+                <h3>Deduplication</h3>
+                <p>Save up to 90% storage space with intelligent block-level deduplication.</p>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <p>&copy; 2024 Fortress Backup Manager. Open Source MIT License.</p>
+    </footer>
+
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+
+</html>
