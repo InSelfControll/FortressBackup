@@ -62,11 +62,6 @@ app.get('/api/status', async (req, res) => {
 });
 
 // API Routes
-app.use('/api/auth', authRouter);
-app.use('/api/config', configRouter);
-app.use('/api/systems', systemsRouter);
-app.use('/api/locations', locationsRouter);
-app.use('/api/jobs', jobsRouter);
 app.use('/api/keys', sshKeysRouter);
 app.use('/api/ai', aiRouter);
 
@@ -79,6 +74,24 @@ if (fs.existsSync(distPath)) {
 
     // Handle SPA routing - send all non-API requests to index.html
     app.get(/.*/, (req, res, next) => {
+        if (req.path.startsWith('/api')) {
+            return next();
+        }
+        res.sendFile(path.join(distPath, 'index.html'));
+    });
+} else {
+    console.warn('[Fortress] Warning: dist folder not found. Static files will not be served.');
+}
+
+// ==================== STATIC FILES (PRODUCTION) ====================
+
+const distPath = path.join(process.cwd(), 'dist');
+if (fs.existsSync(distPath)) {
+    console.log(`[Fortress] Serving static files from: ${distPath}`);
+    app.use(express.static(distPath));
+
+    // Handle SPA routing - send all non-API requests to index.html
+    app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api')) {
             return next();
         }
