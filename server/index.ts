@@ -83,24 +83,6 @@ if (fs.existsSync(distPath)) {
     console.warn('[Fortress] Warning: dist folder not found. Static files will not be served.');
 }
 
-// ==================== STATIC FILES (PRODUCTION) ====================
-
-const distPath = path.join(process.cwd(), 'dist');
-if (fs.existsSync(distPath)) {
-    console.log(`[Fortress] Serving static files from: ${distPath}`);
-    app.use(express.static(distPath));
-
-    // Handle SPA routing - send all non-API requests to index.html
-    app.get('*', (req, res, next) => {
-        if (req.path.startsWith('/api')) {
-            return next();
-        }
-        res.sendFile(path.join(distPath, 'index.html'));
-    });
-} else {
-    console.warn('[Fortress] Warning: dist folder not found. Static files will not be served.');
-}
-
 // ==================== INITIALIZE & START ====================
 
 const initialize = async () => {
