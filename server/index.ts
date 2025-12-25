@@ -19,6 +19,7 @@ import systemsRouter from './routes/systems.js';
 import locationsRouter from './routes/locations.js';
 import jobsRouter from './routes/jobs.js';
 import sshKeysRouter from './routes/sshKeys.js';
+import aiRouter from './routes/ai.js';
 
 // Initialize environment
 const envPath = path.join(process.cwd(), '.env');
@@ -62,6 +63,25 @@ app.get('/api/status', async (req, res) => {
 
 // API Routes
 app.use('/api/keys', sshKeysRouter);
+app.use('/api/ai', aiRouter);
+
+// ==================== STATIC FILES (PRODUCTION) ====================
+
+const distPath = path.join(process.cwd(), 'dist');
+if (fs.existsSync(distPath)) {
+    console.log(`[Fortress] Serving static files from: ${distPath}`);
+    app.use(express.static(distPath));
+
+    // Handle SPA routing - send all non-API requests to index.html
+    app.get(/.*/, (req, res, next) => {
+        if (req.path.startsWith('/api')) {
+            return next();
+        }
+        res.sendFile(path.join(distPath, 'index.html'));
+    });
+} else {
+    console.warn('[Fortress] Warning: dist folder not found. Static files will not be served.');
+}
 
 // ==================== STATIC FILES (PRODUCTION) ====================
 

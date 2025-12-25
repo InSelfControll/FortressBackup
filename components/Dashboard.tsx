@@ -6,27 +6,21 @@ import {
 import { BackupJob, JobStatus, System } from '../types';
 import { Activity, Server, HardDrive, AlertCircle, Play, Clock, AlertTriangle, CheckCircle2, Zap } from 'lucide-react';
 
-interface DashboardProps {
-  jobs: BackupJob[];
-  systems?: System[];
-}
+import { useJobs, useSystems } from '../client/api/queries';
 
-const StatCard = ({ title, value, subtext, icon: Icon, color, trend }: any) => (
-  <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/60 rounded-2xl p-6 hover:border-indigo-500/30 transition-all duration-300 group">
-    <div className="flex items-center justify-between mb-5">
-      <div className={`p-3.5 rounded-xl ${color} bg-opacity-10 border border-slate-800 group-hover:scale-110 transition-transform`}>
-        <Icon className={`w-5 h-5 ${color.replace('bg-', 'text-')}`} />
+interface DashboardProps { }
+
+const StatCard = ({ title, value, subtext, icon: Icon, color }: any) => (
+  <div className="card" style={{ border: '1px solid var(--color-border-subtle)' }}>
+    <div className="flex items-center justify-between mb-4">
+      <div className="p-2.5 rounded-lg" style={{ backgroundColor: `${color}20` }}>
+        <Icon className="w-5 h-5" style={{ color }} />
       </div>
-      {trend && (
-        <span className={`text-[10px] font-black px-2 py-1 rounded-md border ${trend > 0 ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' : trend < 0 ? 'text-rose-500 bg-rose-500/10 border-rose-500/20' : 'text-slate-500 bg-slate-950/80 border-slate-800'}`}>
-          {trend > 0 ? '+' : ''}{trend}%
-        </span>
-      )}
     </div>
-    <h3 className="text-slate-500 text-[11px] font-black uppercase tracking-widest">{title}</h3>
-    <div className="flex items-baseline mt-2">
-      <h2 className="text-3xl font-black text-white tracking-tight">{value}</h2>
-      <span className="ml-3 text-[10px] font-bold text-slate-600 uppercase tracking-tighter">{subtext}</span>
+    <p className="text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>{title}</p>
+    <div className="flex items-baseline gap-2">
+      <h2 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>{value}</h2>
+      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{subtext}</span>
     </div>
   </div>
 );
@@ -34,25 +28,27 @@ const StatCard = ({ title, value, subtext, icon: Icon, color, trend }: any) => (
 const QuickActionCard = ({ title, description, icon: Icon, onClick, color }: any) => (
   <button
     onClick={onClick}
-    className={`p-4 rounded-xl border ${color} transition-all hover:scale-[1.02] active:scale-[0.98] text-left flex items-start gap-4`}
+    className="p-4 rounded-lg transition-all hover:opacity-90 text-left flex items-start gap-3"
+    style={{ backgroundColor: `${color}10`, border: `1px solid ${color}30` }}
   >
-    <div className="p-2 rounded-lg bg-slate-900/50">
-      <Icon size={20} />
+    <div className="p-2 rounded-md" style={{ backgroundColor: `${color}20` }}>
+      <Icon size={18} style={{ color }} />
     </div>
     <div>
-      <h4 className="font-bold text-white text-sm">{title}</h4>
-      <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">{description}</p>
+      <h4 className="font-medium text-sm" style={{ color: 'var(--color-text-primary)' }}>{title}</h4>
+      <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{description}</p>
     </div>
   </button>
 );
 
-export const Dashboard: React.FC<DashboardProps> = ({ jobs, systems = [] }) => {
+export const Dashboard: React.FC<DashboardProps> = () => {
+  const { data: jobs = [] } = useJobs();
+  const { data: systems = [] } = useSystems();
   const activeJobs = jobs.filter(j => j.status === JobStatus.RUNNING).length;
   const failedJobs = jobs.filter(j => j.status === JobStatus.FAILED).length;
   const successfulJobs = jobs.filter(j => j.status === JobStatus.SUCCESS).length;
   const totalJobs = jobs.length;
 
-  // Calculate system health
   const avgSystemHealth = useMemo(() => {
     if (systems.length === 0) return 0;
     const total = systems.reduce((sum, s) => sum + s.health, 0);
@@ -61,7 +57,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ jobs, systems = [] }) => {
 
   const onlineSystems = systems.filter(s => s.status === 'online').length;
 
-  // Mock storage data - in production this would come from actual backup stats
   const storageData = useMemo(() => {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const baseStorage = 4000;
@@ -73,119 +68,73 @@ export const Dashboard: React.FC<DashboardProps> = ({ jobs, systems = [] }) => {
   }, []);
 
   const statusData = [
-    { name: 'Success', value: successfulJobs, color: '#10b981' },
-    { name: 'Failed', value: failedJobs, color: '#f43f5e' },
-    { name: 'Running', value: activeJobs, color: '#6366f1' },
-    { name: 'Idle', value: jobs.filter(j => j.status === JobStatus.IDLE).length, color: '#64748b' },
+    { name: 'Success', value: successfulJobs, color: 'var(--color-success)' },
+    { name: 'Failed', value: failedJobs, color: 'var(--color-error)' },
+    { name: 'Running', value: activeJobs, color: 'var(--color-accent-primary)' },
+    { name: 'Idle', value: jobs.filter(j => j.status === JobStatus.IDLE).length, color: 'var(--color-text-muted)' },
   ].filter(d => d.value > 0);
 
-  // Calculate efficiency (success rate)
   const efficiency = totalJobs > 0
     ? Math.round(((successfulJobs + jobs.filter(j => j.status === JobStatus.IDLE).length) / totalJobs) * 100)
     : 100;
 
   return (
-    <div className="space-y-8 animate-fade-in relative z-10">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          title="Total Jobs"
-          value={totalJobs.toString()}
-          subtext={`${activeJobs} running`}
-          icon={HardDrive}
-          color="bg-indigo-500 text-indigo-400"
-          trend={null}
-        />
-        <StatCard
-          title="Active Streams"
-          value={activeJobs.toString()}
-          subtext={totalJobs > 0 ? `of ${totalJobs} total` : 'No jobs'}
-          icon={Activity}
-          color="bg-blue-500 text-blue-400"
-          trend={null}
-        />
-        <StatCard
-          title="System Health"
-          value={systems.length > 0 ? `${avgSystemHealth}%` : 'N/A'}
-          subtext={`${onlineSystems}/${systems.length} online`}
-          icon={Server}
-          color="bg-emerald-500 text-emerald-400"
-          trend={avgSystemHealth > 90 ? 2.5 : avgSystemHealth > 70 ? 0 : -5}
-        />
-        <StatCard
-          title="Critical Alerts"
-          value={failedJobs.toString()}
-          subtext={failedJobs > 0 ? 'Requires attention' : 'All systems nominal'}
-          icon={AlertCircle}
-          color="bg-rose-500 text-rose-400"
-          trend={null}
-        />
+    <div className="space-y-6 animate-fade-in">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard title="Total Jobs" value={totalJobs.toString()} subtext={`${activeJobs} running`} icon={HardDrive} color="#6366f1" />
+        <StatCard title="Active Jobs" value={activeJobs.toString()} subtext={totalJobs > 0 ? `of ${totalJobs}` : 'No jobs'} icon={Activity} color="#3b82f6" />
+        <StatCard title="System Health" value={systems.length > 0 ? `${avgSystemHealth}%` : 'N/A'} subtext={`${onlineSystems}/${systems.length} online`} icon={Server} color="#22c55e" />
+        <StatCard title="Failed Jobs" value={failedJobs.toString()} subtext={failedJobs > 0 ? 'Needs attention' : 'All good'} icon={AlertCircle} color="#ef4444" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-slate-900/40 backdrop-blur-md border border-slate-800/60 rounded-[2.5rem] p-8">
-          <h3 className="text-sm font-black text-white uppercase tracking-[0.2em] mb-8">Storage Growth</h3>
-          <div className="h-80 w-full relative min-h-[320px]">
-            <div className="absolute inset-0">
-              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100} debounce={200}>
-                <AreaChart data={storageData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorStored" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="name" stroke="#475569" fontSize={10} fontWeight="900" tickLine={false} axisLine={false} tickMargin={15} />
-                  <YAxis stroke="#475569" fontSize={10} fontWeight="900" tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}TB`} />
-                  <CartesianGrid strokeDasharray="5 5" stroke="#1e293b" vertical={false} />
-                  <RechartsTooltip
-                    contentStyle={{ backgroundColor: '#0f172a', borderRadius: '16px', border: '1px solid #1e293b', padding: '12px' }}
-                    itemStyle={{ color: '#6366f1', fontSize: '12px', fontWeight: 'bold' }}
-                  />
-                  <Area type="monotone" dataKey="stored" stroke="#6366f1" strokeWidth={4} fillOpacity={1} fill="url(#colorStored)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Storage Chart */}
+        <div className="lg:col-span-2 card">
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>Storage Growth</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%" debounce={200}>
+              <AreaChart data={storageData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorStored" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--color-accent-primary)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="var(--color-accent-primary)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="name" stroke="var(--color-text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis stroke="var(--color-text-muted)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}TB`} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" vertical={false} />
+                <RechartsTooltip contentStyle={{ backgroundColor: 'var(--color-bg-secondary)', borderRadius: '8px', border: '1px solid var(--color-border-default)' }} />
+                <Area type="monotone" dataKey="stored" stroke="var(--color-accent-primary)" strokeWidth={2} fillOpacity={1} fill="url(#colorStored)" />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/60 rounded-[2.5rem] p-8 flex flex-col">
-          <h3 className="text-sm font-black text-white uppercase tracking-[0.2em] mb-8">Job Status</h3>
-          <div className="flex-1 min-h-[250px] relative">
-            <div className="absolute inset-0">
-              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100} debounce={200}>
-                <PieChart>
-                  <Pie
-                    data={statusData.length > 0 ? statusData : [{ name: 'No Jobs', value: 1, color: '#1e293b' }]}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={70}
-                    outerRadius={95}
-                    paddingAngle={statusData.length > 1 ? 10 : 0}
-                    dataKey="value"
-                    cornerRadius={12}
-                  >
-                    {(statusData.length > 0 ? statusData : [{ name: 'No Jobs', value: 1, color: '#1e293b' }]).map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip
-                    contentStyle={{ backgroundColor: '#0f172a', borderRadius: '16px', border: '1px solid #1e293b' }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Efficiency</span>
-                <span className="text-2xl font-black text-white">{efficiency}%</span>
-              </div>
+        {/* Pie Chart */}
+        <div className="card flex flex-col">
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>Job Status</h3>
+          <div className="flex-1 min-h-[200px] relative">
+            <ResponsiveContainer width="100%" height="100%" debounce={200}>
+              <PieChart>
+                <Pie data={statusData.length > 0 ? statusData : [{ name: 'No Jobs', value: 1, color: 'var(--color-border-default)' }]} cx="50%" cy="50%" innerRadius={55} outerRadius={75} paddingAngle={statusData.length > 1 ? 4 : 0} dataKey="value" cornerRadius={4}>
+                  {(statusData.length > 0 ? statusData : [{ name: 'No Jobs', value: 1, color: 'var(--color-border-default)' }]).map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Efficiency</span>
+              <span className="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>{efficiency}%</span>
             </div>
           </div>
-
-          {/* Status Legend */}
-          <div className="grid grid-cols-2 gap-2 mt-4">
+          <div className="grid grid-cols-2 gap-2 mt-3 pt-3" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
             {statusData.map(item => (
               <div key={item.name} className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
-                <span className="text-[10px] text-slate-400 font-bold uppercase">{item.name}: {item.value}</span>
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{item.name}: {item.value}</span>
               </div>
             ))}
           </div>
@@ -193,62 +142,48 @@ export const Dashboard: React.FC<DashboardProps> = ({ jobs, systems = [] }) => {
       </div>
 
       {/* Quick Actions & Alerts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Quick Actions */}
-        <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/60 rounded-[2.5rem] p-8">
-          <div className="flex items-center gap-3 mb-6">
-            <Zap className="text-amber-400" size={20} />
-            <h3 className="text-sm font-black text-white uppercase tracking-[0.2em]">Quick Actions</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="card">
+          <div className="flex items-center gap-2 mb-4">
+            <Zap size={16} style={{ color: 'var(--color-warning)' }} />
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Quick Actions</h3>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <QuickActionCard
-              title="Run All Scheduled"
-              description="Execute pending jobs"
-              icon={Play}
-              color="bg-indigo-500/5 border-indigo-500/20 hover:bg-indigo-500/10"
-              onClick={() => { }}
-            />
-            <QuickActionCard
-              title="Check System Health"
-              description="Scan all nodes"
-              icon={Server}
-              color="bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10"
-              onClick={() => { }}
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <QuickActionCard title="Run All Scheduled" description="Execute pending jobs" icon={Play} color="#6366f1" onClick={() => { }} />
+            <QuickActionCard title="Check Health" description="Scan all systems" icon={Server} color="#22c55e" onClick={() => { }} />
           </div>
         </div>
 
-        {/* Alerts */}
-        <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/60 rounded-[2.5rem] p-8">
-          <div className="flex items-center gap-3 mb-6">
-            <AlertTriangle className="text-amber-400" size={20} />
-            <h3 className="text-sm font-black text-white uppercase tracking-[0.2em]">Active Alerts</h3>
+        <div className="card">
+          <div className="flex items-center gap-2 mb-4">
+            <AlertTriangle size={16} style={{ color: 'var(--color-warning)' }} />
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Alerts</h3>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {failedJobs > 0 && (
-              <div className="flex items-center gap-4 p-4 rounded-xl bg-rose-500/5 border border-rose-500/20">
-                <AlertCircle className="text-rose-400" size={20} />
+              <div className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                <AlertCircle size={16} style={{ color: 'var(--color-error)' }} />
                 <div>
-                  <p className="text-sm font-bold text-rose-400">{failedJobs} Failed Job{failedJobs > 1 ? 's' : ''}</p>
-                  <p className="text-[10px] text-slate-500 uppercase">Requires immediate attention</p>
+                  <p className="text-sm font-medium" style={{ color: 'var(--color-error)' }}>{failedJobs} Failed Job{failedJobs > 1 ? 's' : ''}</p>
+                  <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Requires attention</p>
                 </div>
               </div>
             )}
             {systems.filter(s => s.status === 'offline').length > 0 && (
-              <div className="flex items-center gap-4 p-4 rounded-xl bg-amber-500/5 border border-amber-500/20">
-                <Server className="text-amber-400" size={20} />
+              <div className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                <Server size={16} style={{ color: 'var(--color-warning)' }} />
                 <div>
-                  <p className="text-sm font-bold text-amber-400">{systems.filter(s => s.status === 'offline').length} System{systems.filter(s => s.status === 'offline').length > 1 ? 's' : ''} Offline</p>
-                  <p className="text-[10px] text-slate-500 uppercase">Connection issues detected</p>
+                  <p className="text-sm font-medium" style={{ color: 'var(--color-warning)' }}>{systems.filter(s => s.status === 'offline').length} System{systems.filter(s => s.status === 'offline').length > 1 ? 's' : ''} Offline</p>
+                  <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Connection issues</p>
                 </div>
               </div>
             )}
             {failedJobs === 0 && systems.filter(s => s.status === 'offline').length === 0 && (
-              <div className="flex items-center gap-4 p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
-                <CheckCircle2 className="text-emerald-400" size={20} />
+              <div className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
+                <CheckCircle2 size={16} style={{ color: 'var(--color-success)' }} />
                 <div>
-                  <p className="text-sm font-bold text-emerald-400">All Systems Nominal</p>
-                  <p className="text-[10px] text-slate-500 uppercase">No issues detected</p>
+                  <p className="text-sm font-medium" style={{ color: 'var(--color-success)' }}>All Systems Nominal</p>
+                  <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>No issues detected</p>
                 </div>
               </div>
             )}
@@ -257,27 +192,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ jobs, systems = [] }) => {
       </div>
 
       {/* Recent Activity */}
-      <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/60 rounded-[2.5rem] p-8">
-        <h3 className="text-sm font-black text-white uppercase tracking-[0.2em] mb-6">Recent Activity</h3>
-        <div className="space-y-4">
+      <div className="card">
+        <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>Recent Activity</h3>
+        <div className="space-y-2">
           {jobs.length === 0 ? (
-            <p className="text-slate-600 text-[11px] font-black uppercase tracking-widest text-center py-10">Waiting for first stream ingestion...</p>
+            <p className="text-center py-8" style={{ color: 'var(--color-text-muted)' }}>No backup jobs yet. Create your first job to get started.</p>
           ) : (
             jobs.slice(0, 5).map((job) => (
-              <div key={job.id} className="flex items-center justify-between p-4 rounded-2xl hover:bg-slate-800/40 transition-all border border-transparent hover:border-slate-800">
-                <div className="flex items-center gap-4">
-                  <div className={`w-2.5 h-2.5 rounded-full shadow-[0_0_10px_currentColor] ${job.status === JobStatus.SUCCESS ? 'text-emerald-400 bg-emerald-400' :
-                    job.status === JobStatus.FAILED ? 'text-rose-400 bg-rose-400' :
-                      job.status === JobStatus.RUNNING ? 'text-blue-400 bg-blue-400 animate-pulse' : 'text-slate-600 bg-slate-600'
-                    }`} />
+              <div key={job.id} className="flex items-center justify-between p-3 rounded-lg transition-colors" style={{ backgroundColor: 'var(--color-bg-tertiary)' }}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${job.status === JobStatus.RUNNING ? 'animate-pulse' : ''}`}
+                    style={{ backgroundColor: job.status === JobStatus.SUCCESS ? 'var(--color-success)' : job.status === JobStatus.FAILED ? 'var(--color-error)' : job.status === JobStatus.RUNNING ? 'var(--color-info)' : 'var(--color-text-muted)' }} />
                   <div>
-                    <p className="text-sm font-black text-slate-100">{job.name}</p>
-                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mt-0.5">{job.tool} • {job.lastRun || 'INITIALIZING'}</p>
+                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{job.name}</p>
+                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{job.tool} • {job.lastRun || 'Never run'}</p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs font-black text-slate-300">{job.size || '0 B'}</p>
-                  <p className={`text-[9px] font-black uppercase tracking-tighter ${job.status === JobStatus.SUCCESS ? 'text-emerald-500' : job.status === JobStatus.FAILED ? 'text-rose-500' : 'text-slate-500'}`}>{job.status}</p>
+                  <p className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>{job.size || '0 B'}</p>
+                  <p className="text-xs capitalize" style={{ color: job.status === JobStatus.SUCCESS ? 'var(--color-success)' : job.status === JobStatus.FAILED ? 'var(--color-error)' : 'var(--color-text-muted)' }}>{job.status}</p>
                 </div>
               </div>
             ))

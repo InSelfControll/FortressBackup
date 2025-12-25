@@ -8,10 +8,12 @@ import fs from 'fs';
 import os from 'os';
 import { exec as execLocal } from 'child_process';
 import { SSHConfig, BackupExecutionLog } from './types.js';
+import { maskSensitiveData } from '../../utils/maskSensitiveData.js';
 
 export class BackupExecutor extends EventEmitter {
     private client: Client;
     private logs: BackupExecutionLog[] = [];
+
     private connected: boolean = false;
     private isLocal: boolean = false;
     private errors: string[] = [];
@@ -31,9 +33,11 @@ export class BackupExecutor extends EventEmitter {
     addError(msg: string) { this.errors.push(msg); }
 
     log(type: BackupExecutionLog['type'], message: string) {
+        // Mask any sensitive data (passwords, keys, tokens) before logging
+        const maskedMessage = maskSensitiveData(message);
         const entry: BackupExecutionLog = {
             type,
-            message,
+            message: maskedMessage,
             timestamp: new Date()
         };
         this.logs.push(entry);
@@ -57,31 +61,33 @@ export class BackupExecutor extends EventEmitter {
                 readyTimeout: 30000,
             };
 
+            // Handle Private Key Authentication
             if (config.privateKey) {
                 let keyContent = config.privateKey;
 
+                // Case: Key path provided instead of content
                 if (!keyContent.startsWith('-----')) {
-                    this.log('info', `Key does not start with standard header.First 10 chars: ${keyContent.substring(0, 10)}...`);
+                    // Expand ~ to home directory
+                    let keyPath = keyContent.startsWith('~')
+                        ? keyContent.replace('~', os.homedir())
+                        : keyContent;
 
-                    let keyPath = keyContent;
-                    if (keyPath.startsWith('~')) {
-                        keyPath = keyPath.replace('~', os.homedir());
-                    }
-
+                    // Guard: File access check
                     try {
-                        if (fs.existsSync(keyPath)) {
-                            keyContent = fs.readFileSync(keyPath, 'utf8');
-                        } else {
+                        if (!fs.existsSync(keyPath)) {
                             this.log('error', `SSH key invalid: Not a valid PEM / OpenSSH string and not a file on server.`);
                             resolve(false);
                             return;
                         }
+                        keyContent = fs.readFileSync(keyPath, 'utf8');
                     } catch (err: any) {
                         this.log('error', `Failed to read SSH key: ${err.message} `);
                         resolve(false);
                         return;
                     }
-                } else {
+                }
+                // Case: valid key content provided
+                else {
                     this.log('info', `Using ID_RSA / PEM key(Length: ${keyContent.length}).Header: ${keyContent.substring(0, 30)}...`);
                 }
 
@@ -89,7 +95,9 @@ export class BackupExecutor extends EventEmitter {
                 if (config.passphrase) {
                     connectConfig.passphrase = config.passphrase;
                 }
-            } else if (config.password) {
+            }
+            // Handle Password Authentication
+            else if (config.password) {
                 connectConfig.password = config.password;
             }
 

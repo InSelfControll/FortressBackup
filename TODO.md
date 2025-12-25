@@ -3,12 +3,18 @@
 Help us make Fortress the best self-hosted backup orchestrator! Here is what's currently on our radar:
 
 ## 🏗️ Frontend Architecture & Refactoring
-- [ ] **Component Modularization**: Refactor all frontend files to be under 250 lines of code.
-- [ ] **Folder-based Organization**: Split components into specialized folders:
+- [x] **Component Modularization**: Refactor all frontend files to be under 250 lines of code.
+- [x] **Folder-based Organization**: Split components into specialized folders:
   - `/components/ui`: Atomic, reusable UI elements.
   - `/components/features`: Complex domain-specific components (e.g., Jobs, Systems).
   - `/components/layout`: Page structure and navigation.
-- [ ] **Naming Rules**: Enforce clear directory-based grouping to improve maintainability for contributors.
+- [x] **Naming Rules**: Enforce clear directory-based grouping to improve maintainability for contributors.
+
+## 🍎 OS Support (NEW)
+- [ ] **MacOS Support**:
+    - [x] Update unmount logic to support `umount` on Darwin (MacOS) instead of `fusermount`.
+    - [ ] Verify `sshfs` installation and command arguments on MacOS (Needs Testing).
+    - [ ] Ensure path handling is compatible (Needs Testing on actual Mac hardware).
 
 ## 🤖 AI & Tooling
 - [ ] **AI Integration Verification**: Thoroughly test Gemini and OpenAI-compatible provider logic for generating backup schedules.

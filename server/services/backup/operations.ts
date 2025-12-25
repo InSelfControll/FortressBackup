@@ -44,7 +44,14 @@ export async function mountSshfs(executor: BackupExecutor, config: BackupJobConf
  */
 export async function unmountSshfs(executor: BackupExecutor, mountPoint: string): Promise<void> {
     executor.log('info', `Unmounting SFTP destination: ${mountPoint}`);
-    const unmountCmd = `fusermount -uz ${mountPoint} 2>/dev/null || umount -l ${mountPoint} 2>/dev/null || true; rmdir ${mountPoint} 2>/dev/null || true`;
+
+    let unmountCmd: string;
+    if (os.platform() === 'darwin') {
+        unmountCmd = `umount ${mountPoint} 2>/dev/null || diskutil unmount force ${mountPoint} 2>/dev/null || true; rmdir ${mountPoint} 2>/dev/null || true`;
+    } else {
+        unmountCmd = `fusermount -uz ${mountPoint} 2>/dev/null || umount -l ${mountPoint} 2>/dev/null || true; rmdir ${mountPoint} 2>/dev/null || true`;
+    }
+
     await executor.exec(unmountCmd);
     executor.log('info', `SFTP destination unmounted`);
 }
@@ -122,34 +129,8 @@ export async function executeBackup(
 
         const endTime = new Date();
 
-        if (code === 0) {
-            executor.log('success', `Backup completed successfully!`);
-
-            let bytesProcessed = 0;
-            let filesProcessed = 0;
-
-            const sizeMatch = stdout.match(/(\d+\.?\d*)\s*(GB|MB|KB|bytes)/i);
-            if (sizeMatch) {
-                const value = parseFloat(sizeMatch[1]);
-                const unit = sizeMatch[2].toUpperCase();
-                bytesProcessed = unit === 'GB' ? value * 1e9 :
-                    unit === 'MB' ? value * 1e6 :
-                        unit === 'KB' ? value * 1e3 : value;
-            }
-
-            const filesMatch = stdout.match(/(\d+)\s*files?/i);
-            if (filesMatch) {
-                filesProcessed = parseInt(filesMatch[1]);
-            }
-
-            executor.log('stats', `Processed ${filesProcessed} files, ${(bytesProcessed / 1e6).toFixed(2)} MB`);
-
-            if (sftpMountPoint) {
-                await unmountSshfs(executor, sftpMountPoint);
-            }
-
-            return { success: true, startTime, endTime, bytesProcessed, filesProcessed, errors: [], logs };
-        } else {
+        // Guard: Handle Failure
+        if (code !== 0) {
             executor.log('error', `Backup failed with exit code ${code}`);
             executor.addError(`Exit code: ${code}`);
             if (stderr) executor.addError(stderr);
@@ -158,6 +139,35 @@ export async function executeBackup(
 
             return { success: false, startTime, endTime, errors: executor.getErrors(), logs };
         }
+
+        // Happy Path: Success
+        executor.log('success', `Backup completed successfully!`);
+
+        let bytesProcessed = 0;
+        let filesProcessed = 0;
+
+        const sizeMatch = stdout.match(/(\d+\.?\d*)\s*(GB|MB|KB|bytes)/i);
+        if (sizeMatch) {
+            const value = parseFloat(sizeMatch[1]);
+            const unit = sizeMatch[2].toUpperCase();
+            bytesProcessed = unit === 'GB' ? value * 1e9 :
+                unit === 'MB' ? value * 1e6 :
+                    unit === 'KB' ? value * 1e3 : value;
+        }
+
+        const filesMatch = stdout.match(/(\d+)\s*files?/i);
+        if (filesMatch) {
+            filesProcessed = parseInt(filesMatch[1]);
+        }
+
+        executor.log('stats', `Processed ${filesProcessed} files, ${(bytesProcessed / 1e6).toFixed(2)} MB`);
+
+        if (sftpMountPoint) {
+            await unmountSshfs(executor, sftpMountPoint);
+        }
+
+        return { success: true, startTime, endTime, bytesProcessed, filesProcessed, errors: [], logs };
+
     } catch (err: any) {
         if (tempKeyFile && tempKeyFile.startsWith(os.tmpdir())) {
             try { fs.unlinkSync(tempKeyFile); } catch { }
@@ -169,7 +179,7 @@ export async function executeBackup(
         executor.log('error', `Backup execution error: ${err.message}`);
         executor.addError(err.message);
 
-        return { success: false, startTime, endTime: new Date(), errors: executor.getErrors(), logs };
+        return { success: false, startTime: startTime || new Date(), endTime: new Date(), errors: executor.getErrors(), logs };
     }
 }
 
@@ -292,11 +302,12 @@ export async function restore(executor: BackupExecutor, config: RestoreJobConfig
     const { code, stderr } = await executor.exec(command);
     const endTime = new Date();
 
-    if (code === 0) {
-        executor.log('success', 'Restore completed successfully');
-        return { success: true, startTime, endTime, errors: [], logs };
-    } else {
+    if (code !== 0) {
         executor.log('error', `Restore failed: ${stderr}`);
         return { success: false, startTime, endTime, errors: [stderr], logs };
     }
+
+    // Happy Path
+    executor.log('success', 'Restore completed successfully');
+    return { success: true, startTime, endTime, errors: [], logs };
 }
