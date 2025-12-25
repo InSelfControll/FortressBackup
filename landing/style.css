@@ -185,6 +185,8 @@ body {
     flex-direction: row;
     gap: 1.5rem;
     margin-bottom: 4rem;
+    width: 100%;
+    /* Ensure container takes width */
     justify-content: center;
     align-items: center;
 }
@@ -248,13 +250,73 @@ body {
 }
 
 .mockup-body {
-    height: 300px;
-    width: 800px;
+    height: 400px;
+    width: 100%;
+    /* max-width: 800px; Remove fixed max-width/height logic that constrains it too much if used generally, but keep for hero */
     display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
+    background: rgba(15, 23, 42, 0.6);
+    /* Slightly darker inner bg */
     border-radius: 0 0 12px 12px;
+    overflow: hidden;
+}
+
+.mockup-sidebar {
+    width: 200px;
+    border-right: 1px solid var(--glass-border);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.mockup-content {
+    flex: 1;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.skeleton-line {
+    height: 12px;
+    background: var(--glass-border);
+    border-radius: 6px;
+    opacity: 0.5;
+}
+
+.skeleton-header {
+    height: 40px;
+    width: 30%;
+    background: var(--glass-border);
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+}
+
+.skeleton-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.skeleton-card {
+    height: 100px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+}
+
+.skeleton-chart {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+}
+
+@media (max-width: 768px) {
+    .mockup-sidebar {
+        display: none;
+    }
 }
 
 .hero-image {
