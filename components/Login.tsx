@@ -19,11 +19,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
   const [authMode, setAuthMode] = useState<'local' | 'sso' | null>(propAuthMode);
   const checkedAuthMode = React.useRef(false);
 
+
+
   useEffect(() => {
     if (!authMode && !checkedAuthMode.current) {
       checkedAuthMode.current = true;
       const storedMode = localStorage.getItem('fortress_auth_mode') as 'local' | 'sso' | null;
       if (storedMode) setAuthMode(storedMode);
+      // If no stored mode, default to local
+      if (!storedMode) setAuthMode('local');
     }
   }, [authMode]);
 
@@ -56,13 +60,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
 
     if (ssoConfig.provider === 'github') {
       const clientId = ssoConfig.clientId;
-      const redirectUri = encodeURIComponent(window.location.origin + '/');
+      const redirectUri = encodeURIComponent(window.location.origin + '/login');
       const scope = encodeURIComponent('user:email read:user');
       const state = 'github_oauth';
       window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
     } else if (ssoConfig.provider === 'google') {
       const clientId = ssoConfig.clientId;
-      const redirectUri = encodeURIComponent(window.location.origin + '/');
+      const redirectUri = encodeURIComponent(window.location.origin + '/login');
       const scope = encodeURIComponent('email profile');
       const state = 'google_oauth';
       window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code&state=${state}`;
