@@ -19,13 +19,24 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
   const [authMode, setAuthMode] = useState<'local' | 'sso' | null>(propAuthMode);
   const checkedAuthMode = React.useRef(false);
 
+
+
   useEffect(() => {
     if (!authMode && !checkedAuthMode.current) {
       checkedAuthMode.current = true;
       const storedMode = localStorage.getItem('fortress_auth_mode') as 'local' | 'sso' | null;
       if (storedMode) setAuthMode(storedMode);
+      // If no stored mode, default to local
+      if (!storedMode) setAuthMode('local');
     }
   }, [authMode]);
+
+  // Sync with prop changes
+  useEffect(() => {
+    if (propAuthMode && propAuthMode !== authMode) {
+      setAuthMode(propAuthMode);
+    }
+  }, [propAuthMode]);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -56,13 +67,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
 
     if (ssoConfig.provider === 'github') {
       const clientId = ssoConfig.clientId;
-      const redirectUri = encodeURIComponent(window.location.origin + '/');
+      const redirectUri = encodeURIComponent(window.location.origin + '/login');
       const scope = encodeURIComponent('user:email read:user');
       const state = 'github_oauth';
       window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
     } else if (ssoConfig.provider === 'google') {
       const clientId = ssoConfig.clientId;
-      const redirectUri = encodeURIComponent(window.location.origin + '/');
+      const redirectUri = encodeURIComponent(window.location.origin + '/login');
       const scope = encodeURIComponent('email profile');
       const state = 'google_oauth';
       window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code&state=${state}`;
@@ -129,6 +140,25 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
 
   const providerName = ssoConfig?.provider === 'google' ? 'Google' : ssoConfig?.provider === 'github' ? 'GitHub' : 'Enterprise SSO';
 
+  // Determine if SSO is properly configured (has both provider AND clientId)
+  const isSsoConfigured = Boolean(ssoConfig?.provider && ssoConfig?.clientId);
+
+  // Debug log to help diagnose login issues
+  console.log('[Login] Render state:', { authMode, ssoConfig, isSsoConfigured, providerName });
+
+  // Show loading state when authMode is null
+  if (!authMode) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
+        <div className="p-6 rounded-xl" style={{ backgroundColor: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-subtle)' }}>
+          <Loader2 className="w-10 h-10 animate-spin" style={{ color: 'var(--color-accent-primary)' }} />
+          <h2 className="text-xl font-semibold mt-4" style={{ color: 'var(--color-text-primary)' }}>Loading...</h2>
+          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Setting up authentication</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
       <div className="w-full max-w-sm animate-fade-in">
@@ -149,8 +179,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
             </div>
           )}
 
-          {/* SSO Mode */}
-          {authMode === 'sso' && ssoConfig?.provider && (
+          {/* SSO Mode - properly configured */}
+          {authMode === 'sso' && isSsoConfigured && (
             <>
               <button
                 onClick={handleSSO}
@@ -169,6 +199,26 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
               <p className="text-center text-xs mt-4" style={{ color: 'var(--color-text-muted)' }}>
                 Your organization uses {providerName} for authentication
               </p>
+            </>
+          )}
+
+          {/* SSO Mode but SSO not properly configured - show error and fallback */}
+          {authMode === 'sso' && !isSsoConfigured && (
+            <>
+              <div className="p-3 rounded-lg mb-4 text-sm" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)', color: 'var(--color-warning, #f59e0b)' }}>
+                SSO is enabled but not properly configured. Please contact your administrator or use local authentication.
+              </div>
+              <button
+                onClick={() => {
+                  setAuthMode('local');
+                  localStorage.setItem('fortress_auth_mode', 'local');
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-medium transition-colors"
+                style={{ backgroundColor: 'var(--color-bg-tertiary)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-default)' }}
+              >
+                <Mail size={18} />
+                Use Local Authentication
+              </button>
             </>
           )}
 
