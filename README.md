@@ -31,23 +31,22 @@ Featuring an automatic **SSH Deployment Service**, an AI-powered job architect, 
 - **Icons**: Lucide React
 
 ### Backend
-- **Runtime**: Node.js 22
+- **Runtime**: Bun (native TypeScript execution)
 - **Framework**: Express 5
-- **Execution**: `tsx` (TypeScript Execution)
 - **SSH**: `ssh2` for remote orchestration
 - **Auth**: JWT + bcryptjs
 
 ### Database
 - **Primary**: PostgreSQL (via `pg`)
-- **Local/Cache**: Better-SQLite3
+- **Local/Embedded**: bun:sqlite (built-in, 3-6x faster than better-sqlite3)
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- **Node.js**: v22.x or higher
-- **PostgreSQL**: A running instance (or use the provided Docker setup)
+- **Bun**: v1.0 or higher ([install](https://bun.sh))
+- **PostgreSQL**: A running instance (optional - SQLite works out of the box)
 - **(Optional) Gemini API Key**: For natural language backup configuration
 
 ### Installation
@@ -56,24 +55,37 @@ Featuring an automatic **SSH Deployment Service**, an AI-powered job architect, 
    ```bash
    git clone https://github.com/InSelfControll/FortressBackup.git
    cd FortressBackup
-   npm install
+   bun install
+   ```
+
+2. **Running the System**:
+   ```bash
+   # Start both API and Web UI (using concurrently)
+   bun run dev
+
+   # Or run separately
+   bun run dev:server    # Backend only
+   bun run dev:frontend  # Frontend only
    ```
 
 3. **Initialize Setup**:
-   - Run the system and follow the on-screen setup process to configure your master password and initial settings.
+   - Open your browser to `http://localhost:3001`
+   - Follow the on-screen setup wizard to configure your database, admin user, and master password
+   - The `.env` file is automatically generated after completing setup
 
-2. **Environment Setup**:
-   Copy `.env.example` to `.env` and configure your database and API keys. - Not needed automatically generated after completing the setup proccess from the browser.
+### Docker Deployment
 
-3. **Running the System**:
-   ```bash
-   # Start both API and Web UI (using concurrently)
-   npm run dev
-   
-   # Or run separately
-   npm run dev:server    # Backend only
-   npm run dev:frontend  # Frontend only
-   ```
+```bash
+# Build the container
+docker build -t fortressbackup .
+
+# Run with SQLite (default)
+docker run -p 9001:9001 -v fortress-data:/app/data fortressbackup
+
+# Run with volume mount (ensure directory is owned by UID 1001)
+mkdir -p ./data && sudo chown 1001:1001 ./data
+docker run -p 9001:9001 -v ./data:/app/data fortressbackup
+```
 
 ---
 
@@ -83,6 +95,7 @@ Fortress implements several layers of security:
 1. **At-Rest Encryption**: Sensitive credentials and SSH keys are encrypted in the database.
 2. **Path Isolation**: Backup processes are executed with minimum required privileges on remote systems.
 3. **Session Management**: Secure JWT-based authentication with automatic expiration handling.
+4. **Non-Root Container**: Production container runs as non-root user (UID 1001) for enhanced security.
 
 ---
 
