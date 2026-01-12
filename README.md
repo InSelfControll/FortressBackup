@@ -52,15 +52,11 @@ Featuring an automatic **SSH Deployment Service**, an AI-powered job architect, 
 
 ### Installation
 
-1. **Install Prerequisites**:
-   - Ensure you have **Node.js 22** installed. You can use **npm** or **pnpm**.
-   - Install **sqlite3** on your host system (required for local database operations).
-
-2. **Clone and Install**:
+1. **Clone and Install**:
    ```bash
    git clone https://github.com/InSelfControll/FortressBackup.git
    cd FortressBackup
-   npm install # or pnpm install
+   npm install
    ```
 
 3. **Initialize Setup**:
@@ -71,24 +67,13 @@ Featuring an automatic **SSH Deployment Service**, an AI-powered job architect, 
 
 3. **Running the System**:
    ```bash
-   # Development (with hot-reload)
+   # Start both API and Web UI (using concurrently)
    npm run dev
+   
+   # Or run separately
+   npm run dev:server    # Backend only
+   npm run dev:frontend  # Frontend only
    ```
-
-### Production Deployment
-
-For a stable production environment, follow these steps:
-
-1. **Build the Frontend**:
-   ```bash
-   npm run build
-   ```
-
-2. **Start the Integrated Server**:
-   ```bash
-   npm start
-   ```
-   The server will now serve both the API and the pre-built frontend assets.
 
 ---
 

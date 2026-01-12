@@ -73,11 +73,6 @@ app.get('/api/status', async (req, res) => {
 });
 
 // API Routes
-app.use('/api/auth', authRouter);
-app.use('/api/config', configRouter);
-app.use('/api/systems', systemsRouter);
-app.use('/api/locations', locationsRouter);
-app.use('/api/jobs', jobsRouter);
 app.use('/api/keys', sshKeysRouter);
 app.use('/api/ai', aiRouter);
 
