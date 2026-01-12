@@ -42,8 +42,12 @@ function AppContent() {
   }
 
   // Public routes - always render the Outlet (login page, setup page, landing page)
-  // But if user is logged in and on /login, redirect to dashboard
+  // But redirect away from setup/login when appropriate
   if (isPublicRoute) {
+    // If setup is complete and user is on /setup, redirect to login
+    if (isSetupComplete === true && location.pathname === '/setup') {
+      return <Navigate to="/login" />
+    }
     // If user is logged in and trying to access login page, redirect to dashboard
     if (currentUser && location.pathname === '/login') {
       return <Navigate to="/dashboard" />
