@@ -1,15 +1,16 @@
 /**
  * Database Connection Management
+ * Uses Bun's built-in SQLite module for native performance
  */
 
-import Database from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import { Pool } from 'pg';
 import path from 'path';
 import fs from 'fs';
 import { DatabaseConfig } from './types.ts';
 import { createTables, createTablesPostgres } from './schema.ts';
 
-export let sqliteDb: Database.Database | null = null;
+export let sqliteDb: Database | null = null;
 export let pgPool: Pool | null = null;
 export let currentConfig: DatabaseConfig | null = null;
 
@@ -29,11 +30,11 @@ export const initDatabase = async (config: DatabaseConfig): Promise<void> => {
         }
 
         sqliteDb = new Database(dbPath);
-        sqliteDb.pragma('journal_mode = WAL');
+        sqliteDb.exec('PRAGMA journal_mode = WAL');
 
         // Schema setup needs to access sqliteDb, so we export it
         createTables();
-        console.log(`[DB] SQLite initialized at: ${dbPath}`);
+        console.log(`[DB] SQLite (bun:sqlite) initialized at: ${dbPath}`);
     } else if (config.type === 'postgres') {
         pgPool = new Pool({
             host: config.host || 'localhost',
@@ -57,4 +58,8 @@ export const closeDatabase = async (): Promise<void> => {
         await pgPool.end();
         pgPool = null;
     }
+};
+
+export const isInitialized = (): boolean => {
+    return sqliteDb !== null || pgPool !== null;
 };

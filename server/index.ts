@@ -45,16 +45,27 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// System Status
+// System Status - works even before database is initialized
 app.get('/api/status', async (req, res) => {
     try {
+        // If database not initialized yet, return setup-needed status
+        if (!db.isInitialized()) {
+            return res.json({
+                setupComplete: false,
+                hasUsers: false,
+                dbType: process.env.DB_TYPE || 'sqlite',
+                dbInitialized: false
+            });
+        }
+
         const setupComplete = await db.getConfig<boolean>('setup_complete');
         const hasExistingUsers = await db.hasUsers();
 
         res.json({
             setupComplete: setupComplete || false,
             hasUsers: hasExistingUsers,
-            dbType: process.env.DB_TYPE || 'sqlite'
+            dbType: process.env.DB_TYPE || 'sqlite',
+            dbInitialized: true
         });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -93,23 +104,30 @@ if (fs.existsSync(distPath)) {
 const initialize = async () => {
     const dbType = (process.env.DB_TYPE || 'sqlite') as 'sqlite' | 'postgres';
 
-    await db.initDatabase({
-        type: dbType,
-        filePath: process.env.SQLITE_PATH || './data/fortress.db',
-        host: process.env.PG_HOST,
-        port: parseInt(process.env.PG_PORT || '5432'),
-        database: process.env.PG_DATABASE,
-        username: process.env.PG_USER,
-        password: process.env.PG_PASSWORD
-    });
-
+    // Start server first - always available for health checks and setup page
     app.listen(PORT, () => {
         console.log(`[Fortress API] Server running on port ${PORT}`);
-        console.log(`[Fortress API] Database: ${dbType}`);
     });
+
+    // Try to initialize database (may fail if data dir not writable - that's OK)
+    try {
+        await db.initDatabase({
+            type: dbType,
+            filePath: process.env.SQLITE_PATH || './data/fortress.db',
+            host: process.env.PG_HOST,
+            port: parseInt(process.env.PG_PORT || '5432'),
+            database: process.env.PG_DATABASE,
+            username: process.env.PG_USER,
+            password: process.env.PG_PASSWORD
+        });
+        console.log(`[Fortress API] Database: ${dbType}`);
+    } catch (error: any) {
+        console.warn(`[Fortress API] Database not initialized: ${error.message}`);
+        console.warn('[Fortress API] Complete setup via browser to configure database');
+    }
 };
 
-initialize().catch(console.error);
+initialize();
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
