@@ -21,7 +21,7 @@ const validateRemotePath=(value:string):string=>{
 };
 const requireHost=(ssh:SSHConfig):void=>{
     if(!/^[A-Za-z0-9._-]{1,120}$/.test(ssh.username) ||
-       !/^[A-Za-z0-9.:[\]-]{1,253}$/.test(ssh.host) ||
+       !/^[A-Za-z0-9.-]{1,253}$/.test(ssh.host) ||
        !Number.isInteger(ssh.port)||ssh.port<1||ssh.port>65535 ||
        !ssh.hostFingerprint || !/^SHA256:[A-Za-z0-9+/]{43}=?$/.test(ssh.hostFingerprint))
         throw new Error('Rsync SSH peer must have a verified identity, host and port');
