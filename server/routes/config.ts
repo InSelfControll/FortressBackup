@@ -11,6 +11,16 @@ import { getJwtSecret, authenticateToken, requireAdmin } from '../middleware/aut
 import { generateEnvFile } from '../utils/env.js';
 
 const router = Router();
+const editableKeys=new Set(['ai_config','db_config','sso_config','auth_mode','selected_tools']);
+const hideSecrets=(value:any):any=>{
+    if(Array.isArray(value))return value.map(hideSecrets);
+    if(value && typeof value==='object'){
+        return Object.fromEntries(Object.entries(value)
+            .filter(([key])=>!/password|secret|token|apiKey|accessKey|privateKey|credential/i.test(key))
+            .map(([key,item])=>[key,hideSecrets(item)]));
+    }
+    return value;
+};
 
 // Initial setup
 router.post('/setup', async (req, res) => {
@@ -103,8 +113,9 @@ router.get('/public', async (req, res) => {
 router.get('/:key', authenticateToken, requireAdmin, async (req, res) => {
     try {
         if (req.params.key.startsWith('managed_agent_')) return res.status(403).json({error:'Managed agent records are not accessible through generic config API'});
+        if(!editableKeys.has(req.params.key))return res.status(403).json({error:'Configuration key is not public'});
         const value = await db.getConfig(req.params.key);
-        res.json({ value });
+        res.json({ value: hideSecrets(value) });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
@@ -114,6 +125,7 @@ router.get('/:key', authenticateToken, requireAdmin, async (req, res) => {
 router.put('/:key', authenticateToken, requireAdmin, async (req, res) => {
     try {
         if (req.params.key.startsWith('managed_agent_')) return res.status(403).json({error:'Managed agent records must use dedicated API'});
+        if(!editableKeys.has(req.params.key))return res.status(403).json({error:'Configuration key is read-only'});
         await db.saveConfig(req.params.key, req.body.value);
         res.json({ success: true });
     } catch (error: any) {
