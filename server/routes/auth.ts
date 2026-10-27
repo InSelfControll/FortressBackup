@@ -10,7 +10,8 @@ import { getJwtSecret, authenticateToken } from '../middleware/auth.js';
 const router = Router();
 
 // Register new user
-router.post('/register', async (req, res) => {
+router.post('/register', authenticateToken, async (req, res) => {
+    if ((req as any).user?.role !== 'admin') return res.status(403).json({ error: 'Admin required' });
     try {
         const { email, password, name, authType = 'local' } = req.body;
 
@@ -25,7 +26,7 @@ router.post('/register', async (req, res) => {
             email,
             name,
             avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
-            role: 'admin',
+            role: 'viewer',
             auth_type: authType
         }, authType === 'local' ? password : undefined);
 
@@ -135,7 +136,7 @@ router.post('/github/callback', async (req, res) => {
                 email,
                 name: githubUser.name || githubUser.login,
                 avatar: githubUser.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${githubUser.login}`,
-                role: 'admin',
+                role: 'viewer',
                 auth_type: 'sso'
             });
         }
