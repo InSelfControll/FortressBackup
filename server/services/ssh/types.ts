@@ -18,6 +18,7 @@ export interface DeploymentResult {
 export interface SSHConnectionConfig {
     host: string;
     port: number;
+    hostFingerprint: string;
     username: string;
     privateKey?: string;
     passphrase?: string;
