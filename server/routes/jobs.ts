@@ -138,7 +138,7 @@ router.post('/:id/run', authenticateToken, requireAdmin, async (req, res) => {
             destinationRegion: destination.region,
             destinationAccessKey: destination.access_key,
             destinationSecretKey: destination.secret_key,
-            repoPassword: apiJob.repoPassword ? decrypt(JSON.parse(apiJob.repoPassword), getJwtSecret()) : undefined,
+            repoPassword: job.repo_password ? decrypt(JSON.parse(job.repo_password), getJwtSecret()) : undefined,
             retention: apiJob.retention
         };
 
@@ -268,7 +268,7 @@ router.get('/:id/snapshots', authenticateToken, requireAdmin, async (req, res) =
             destinationRegion: destination.region,
             destinationAccessKey: destination.access_key,
             destinationSecretKey: destination.secret_key,
-            repoPassword: apiJob.repoPassword ? decrypt(JSON.parse(apiJob.repoPassword), getJwtSecret()) : undefined,
+            repoPassword: job.repo_password ? decrypt(JSON.parse(job.repo_password), getJwtSecret()) : undefined,
             retention: apiJob.retention
         };
 
@@ -320,7 +320,7 @@ router.get('/:id/snapshots/:snapshotId/files', authenticateToken, requireAdmin, 
             destinationRegion: destination.region,
             destinationAccessKey: destination.access_key,
             destinationSecretKey: destination.secret_key,
-            repoPassword: apiJob.repoPassword ? decrypt(JSON.parse(apiJob.repoPassword), getJwtSecret()) : undefined,
+            repoPassword: job.repo_password ? decrypt(JSON.parse(job.repo_password), getJwtSecret()) : undefined,
         };
 
         const files = await listJobFiles(sshConfig, jobConfig, snapshotId);
@@ -382,7 +382,7 @@ router.post('/:id/restore', authenticateToken, requireAdmin, async (req, res) =>
             destinationRegion: destination.region,
             destinationAccessKey: destination.access_key,
             destinationSecretKey: destination.secret_key,
-            repoPassword: apiJob.repoPassword ? decrypt(JSON.parse(apiJob.repoPassword), getJwtSecret()) : undefined,
+            repoPassword: job.repo_password ? decrypt(JSON.parse(job.repo_password), getJwtSecret()) : undefined,
             snapshotId,
             restorePath,
             paths // Pass specific paths
