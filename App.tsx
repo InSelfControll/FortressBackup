@@ -103,6 +103,7 @@ function App() {
 
   const completeSetup = async (config: {
     masterPassword: string;
+    bootstrapToken: string;
     aiConfig: AIConfig;
     dbConfig: DatabaseConfig;
     ssoConfig: SSOConfig;
@@ -110,7 +111,7 @@ function App() {
     adminUser?: { name: string; email: string; password: string };
     selectedTools: string[];
   }) => {
-    const { aiConfig: ai, dbConfig: db, ssoConfig: sso, authMode: mode, adminUser, selectedTools } = config;
+    const { aiConfig: ai, dbConfig: db, ssoConfig: sso, authMode: mode, adminUser, selectedTools, bootstrapToken } = config;
 
     setAiConfig(ai);
     setDbConfig(db);
@@ -125,7 +126,8 @@ function App() {
         ssoConfig: sso,
         authMode: mode,
         adminUser: adminUser,
-        selectedTools: selectedTools
+        selectedTools: selectedTools,
+        bootstrapToken
       } as any);
 
       if (result && result.success) {
