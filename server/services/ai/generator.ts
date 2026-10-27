@@ -62,13 +62,20 @@ export const generateBackupConfig = async (userPrompt: string, config: AIConfig)
             const text = response.text?.trim() || '{}';
             return JSON.parse(text);
         } catch (error) {
-            console.error("Gemini AI Error:", error);
+            console.error("AI provider request failed");
             throw error;
         }
     }
 
     if (config.provider === AIProvider.OPENAI) {
         const baseUrl = config.baseUrl || 'https://api.openai.com/v1';
+        const endpoint = new URL(baseUrl);
+        const approved = new Set((process.env.FORTRESS_AI_HOSTS || 'api.openai.com')
+            .split(',').map(value=>value.trim().toLowerCase()).filter(Boolean));
+        if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password ||
+            endpoint.port || !approved.has(endpoint.hostname.toLowerCase()) ||
+            endpoint.pathname.includes('..'))
+            throw new Error('AI endpoint must match an operator-approved HTTPS hostname');
         const model = config.model || 'gpt-4o';
         const apiKey = config.apiKey || process.env.OPENAI_API_KEY;
 
@@ -98,7 +105,7 @@ export const generateBackupConfig = async (userPrompt: string, config: AIConfig)
             const data = await response.json();
             return JSON.parse(data.choices[0].message.content);
         } catch (error) {
-            console.error("OpenAI AI Error:", error);
+            console.error("AI provider request failed");
             throw error;
         }
     }
