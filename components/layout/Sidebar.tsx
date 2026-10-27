@@ -31,6 +31,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, c
                     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
                     { id: 'jobs', label: 'Backup Jobs', icon: Layout },
                     { id: 'systems', label: 'Systems', icon: Server },
+                    ...(currentUser.role === 'admin' ? [{ id: 'managed-clients', label: 'Managed Clients', icon: Server }] : []),
                     { id: 'locations', label: 'Storage Locations', icon: HardDrive },
                     { id: 'settings', label: 'Settings', icon: Settings },
                 ].map((item) => {
