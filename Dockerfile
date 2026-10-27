@@ -9,7 +9,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Builder - Install dependencies and build frontend
 # -----------------------------------------------------------------------------
-FROM oven/bun:1-alpine AS builder
+FROM oven/bun:1.4.4-alpine AS builder
 
 WORKDIR /app
 
@@ -28,7 +28,7 @@ RUN bun run build
 # -----------------------------------------------------------------------------
 # Stage 2: Production - Bun runtime with bun:sqlite
 # -----------------------------------------------------------------------------
-FROM oven/bun:1-alpine AS production
+FROM oven/bun:1.4.4-alpine AS production
 
 WORKDIR /app
 
@@ -67,7 +67,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Create required directories with proper permissions
 RUN mkdir -p /app/data /app/logs && \
-    chmod 777 /app/data /app/logs
+    chmod 0700 /app/data /app/logs
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S bunjs && \
@@ -81,7 +81,9 @@ ENV PORT=9001
 # Expose the application port
 EXPOSE 9001
 
-# Note: Container starts as root, entrypoint switches to bunjs after fixing permissions
+USER bunjs
+
+# Container starts with a non-root user. Writable mounts must be owned by UID 1001.
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
