@@ -11,6 +11,8 @@ import jobs from '../server/routes/jobs.js';
 import systems from '../server/routes/systems.js';
 import locations from '../server/routes/locations.js';
 import keys from '../server/routes/sshKeys.js';
+import ai from '../server/routes/ai.js';
+import auth from '../server/routes/auth.js';
 import { getLocation } from '../server/db/locations.js';
 import { sshHostVerifier } from '../server/services/ssh/hostKey.js';
 import { buildBorgCommand, buildBorgRestoreCommand } from '../server/services/backup/borg.js';
@@ -24,6 +26,7 @@ test('privileged APIs deny viewers and never echo stored credentials', async()=>
  const app=express(); app.use(express.json());
  app.use('/api/jobs',jobs);app.use('/api/systems',systems);
  app.use('/api/locations',locations);app.use('/api/keys',keys);
+  app.use('/api/ai',ai);app.use('/api/auth',auth);
  const server=app.listen(0,'127.0.0.1');
  try{
   const a=server.address();if(!a||typeof a==='string')throw Error('bind failed');
