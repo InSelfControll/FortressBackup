@@ -14,6 +14,10 @@ const router = Router();
 // Initial setup
 router.post('/setup', async (req, res) => {
     try {
+        if (!db.isInitialized()) return res.status(503).json({ error: 'Database must be initialized before setup' });
+        if ((await db.getConfig<boolean>('setup_complete')) || await db.hasUsers()) {
+            return res.status(409).json({ error: 'Setup already completed' });
+        }
         const { aiConfig, dbConfig, ssoConfig, authMode, adminUser, selectedTools } = req.body;
 
         // Generate .env file
