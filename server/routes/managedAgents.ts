@@ -160,7 +160,14 @@ router.post('/report', agentAuth, async (req, res, next) => {
       UPDATE managed_jobs SET state=?,finished_at=?,message=?
       WHERE id=? AND client_id=? AND state='running' RETURNING id`,
       [success ? 'success' : 'failed', new Date().toISOString(), message ?? '', id, clientId]);
-    if (!row) return res.status(409).json({ error: 'Job is not running' });
+    if (!row) {
+      // Repeated delivery after a lost acknowledgement must be safe.
+      const prior = await getOne<{state: string}>(
+        'SELECT state FROM managed_jobs WHERE id=? AND client_id=?', [id, clientId]);
+      if (prior?.state === (success ? 'success' : 'failed'))
+        return res.json({ ok: true, duplicate: true });
+      return res.status(409).json({ error: 'Job is not running' });
+    }
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
