@@ -3,8 +3,8 @@
 .github
 **/.env
 **/.env.*
-**/*secret*
-**/*credential*
+**/secrets/
+**/credentials/
 **/id_rsa*
 **/id_ed25519*
 **/*.pem
