@@ -33,7 +33,8 @@ export const createTables = () => {
       last_seen TEXT,
       health INTEGER DEFAULT 100,
       installed_tools TEXT,
-      ssh_key_id TEXT
+      ssh_key_id TEXT,
+      host_fingerprint TEXT
     );
     
     CREATE TABLE IF NOT EXISTS locations (
@@ -123,6 +124,7 @@ export const createTables = () => {
   try {
     const columns = sqliteDb.prepare("PRAGMA table_info(systems)").all() as any[];
     const hasSshKeyId = columns.some(col => col.name === 'ssh_key_id');
+    if (!columns.some(col => col.name === 'host_fingerprint')) sqliteDb.prepare('ALTER TABLE systems ADD COLUMN host_fingerprint TEXT').run();
     if (!hasSshKeyId) {
       console.log('[DB] Migrating: Adding ssh_key_id to systems table');
       sqliteDb.prepare("ALTER TABLE systems ADD COLUMN ssh_key_id TEXT").run();
@@ -161,7 +163,8 @@ export const createTablesPostgres = async () => {
       last_seen TEXT,
       health INTEGER DEFAULT 100,
       installed_tools TEXT,
-      ssh_key_id TEXT
+      ssh_key_id TEXT,
+      host_fingerprint TEXT
     );
     
     CREATE TABLE IF NOT EXISTS locations (
@@ -234,4 +237,5 @@ export const createTablesPostgres = async () => {
       WHERE state IN ('pending','running');
 
   `);
+  await pgPool.query('ALTER TABLE systems ADD COLUMN IF NOT EXISTS host_fingerprint TEXT');
 };
