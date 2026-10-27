@@ -25,7 +25,7 @@ permissions:
   contents: read
 jobs:
   repair-dependencies:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/fortress-restic-hardening'
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 20 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/fortress-restic-hardening'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -36,6 +36,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: true
+          ref: fix/fortress-restic-hardening
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: 1.4.4
