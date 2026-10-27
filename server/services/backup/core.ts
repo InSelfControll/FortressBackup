@@ -53,6 +53,14 @@ export class BackupExecutor extends EventEmitter {
             return true;
         }
 
+        let keyContent=config.privateKey;
+        if (keyContent && !keyContent.startsWith('-----')) {
+            const keyPath=keyContent.startsWith('~')?keyContent.replace(/^~/,os.homedir()):keyContent;
+            const info=await fs.promises.lstat(keyPath);
+            if(!info.isFile() || (info.mode & 0o077)!==0)
+                throw new Error('SSH private key must be a regular file with owner-only permissions');
+            keyContent=await fs.promises.readFile(keyPath,'utf8');
+        }
         return new Promise((resolve) => {
             this.log('info', `Connecting to ${config.username}@${config.host}:${config.port}...`);
 
@@ -64,43 +72,12 @@ export class BackupExecutor extends EventEmitter {
                 hostVerifier: sshHostVerifier(config.hostFingerprint),
             };
 
-            // Handle Private Key Authentication
-            if (config.privateKey) {
-                let keyContent = config.privateKey;
-
-                // Case: Key path provided instead of content
-                if (!keyContent.startsWith('-----')) {
-                    // Expand ~ to home directory
-                    let keyPath = keyContent.startsWith('~')
-                        ? keyContent.replace('~', os.homedir())
-                        : keyContent;
-
-                    // Guard: File access check
-                    try {
-                        if (!fs.existsSync(keyPath)) {
-                            this.log('error', `SSH key invalid: Not a valid PEM / OpenSSH string and not a file on server.`);
-                            resolve(false);
-                            return;
-                        }
-                        keyContent = fs.readFileSync(keyPath, 'utf8');
-                    } catch (err: any) {
-                        this.log('error', `Failed to read SSH key: ${err.message} `);
-                        resolve(false);
-                        return;
-                    }
-                }
-                // Case: valid key content provided
-                else {
-                    this.log('info', 'Using SSH private key');
-                }
-
+            // Credentials are resolved asynchronously before constructing the
+            // connection. The SSH trust pin is checked by hostVerifier.
+            if (keyContent) {
                 connectConfig.privateKey = keyContent;
-                if (config.passphrase) {
-                    connectConfig.passphrase = config.passphrase;
-                }
-            }
-            // Handle Password Authentication
-            else if (config.password) {
+                if (config.passphrase) connectConfig.passphrase = config.passphrase;
+            } else if (config.password) {
                 connectConfig.password = config.password;
             }
 
