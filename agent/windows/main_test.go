@@ -32,3 +32,13 @@ func TestLoadConfigRejectsUnknownProperties(t *testing.T) {
  if err:=os.WriteFile(p,[]byte(`{"unknown":true}`),0600);err!=nil {t.Fatal(err)}
  if _,err:=loadConfig(p);err==nil {t.Fatal("unknown fields must be rejected")}
 }
+
+func TestPendingReportRoundTrip(t *testing.T) {
+ dir:=t.TempDir()
+ file:=filepath.Join(dir,"pending.json")
+ if r,err:=readPending(file);err!=nil||r!=nil{t.Fatalf("missing report: %v %v",r,err)}
+ input:=pendingReport{ID:"test-id",Success:true,Message:"completed"}
+ if err:=writePending(file,input);err!=nil{t.Fatal(err)}
+ got,err:=readPending(file);if err!=nil{t.Fatal(err)}
+ if got==nil||got.ID!=input.ID||!got.Success||got.Message!=input.Message{t.Fatalf("bad report: %+v",got)}
+}
