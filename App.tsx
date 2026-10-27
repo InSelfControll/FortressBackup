@@ -5,6 +5,7 @@ import { Setup } from './components/Setup.tsx';
 import { Dashboard } from './components/Dashboard.tsx';
 import { Jobs } from './components/Jobs.tsx';
 import { Systems } from './components/Systems.tsx';
+import { ManagedClients } from './components/ManagedClients.tsx';
 import { Locations } from './components/Locations.tsx';
 import { Settings as SettingsComponent } from './components/Settings.tsx';
 import { Sidebar } from './components/layout/Sidebar.tsx';
@@ -263,6 +264,7 @@ function App() {
             {currentView === 'dashboard' && <Dashboard />}
             {currentView === 'jobs' && <Jobs aiConfig={aiConfig} />}
             {currentView === 'systems' && <Systems />}
+            {currentView === 'managed-clients' && currentUser.role === 'admin' && <ManagedClients />}
             {currentView === 'locations' && <Locations />}
             {currentView === 'settings' && <SettingsComponent aiConfig={aiConfig} dbConfig={dbConfig} ssoConfig={ssoConfig} onUpdateAIConfig={updateAIConfig} onUpdateDBConfig={updateDBConfig} onUpdateSSOConfig={updateSSOConfig} onResetApp={handleResetApp} onExportData={handleExportData} onImportData={handleImportData} />}
           </div>
