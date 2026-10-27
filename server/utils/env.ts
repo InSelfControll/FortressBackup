@@ -78,7 +78,8 @@ export const generateEnvFile = (config: EnvConfig, port: number = 9001) => {
     const envContent = lines.join('\n');
 
     // Write to envPath
-    fs.writeFileSync(envPath, envContent, 'utf-8');
+    fs.writeFileSync(envPath, envContent, { encoding: 'utf-8', mode: 0o600 });
+    fs.chmodSync(envPath, 0o600);
     console.log(`[Fortress] Generated .env file at: ${envPath}`);
 
     return envPath;
