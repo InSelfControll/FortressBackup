@@ -5,13 +5,12 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import * as db from '../db/index.js';
-import { getJwtSecret, authenticateToken } from '../middleware/auth.js';
+import { getJwtSecret, authenticateToken, requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
 
 // Register new user
-router.post('/register', authenticateToken, async (req, res) => {
-    if ((req as any).user?.role !== 'admin') return res.status(403).json({ error: 'Admin required' });
+router.post('/register', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { email, password, name, authType = 'local' } = req.body;
 
