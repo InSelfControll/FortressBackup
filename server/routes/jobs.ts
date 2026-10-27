@@ -107,6 +107,7 @@ router.post('/:id/run', authenticateToken, requireAdmin, async (req, res) => {
 
         // Run backup with live log streaming
         const result = await runBackupJob(sshConfig, jobConfig, (log) => {
+            if(logs.length>=2000) logs.shift();
             logs.push(log);
             console.log(`[Job] [${log.type}] ${log.message}`);
             // Broadcast to SSE subscribers
@@ -248,6 +249,7 @@ router.post('/:id/restore', authenticateToken, requireAdmin, async (req, res) =>
 
         // This runs the restore
         const result = await runRestoreJob(sshConfig, restoreConfig, (log) => {
+            if(logs.length>=2000) logs.shift();
             logs.push(log);
             console.log(`[Restore] [${log.type}] ${log.message}`);
             broadcastJobLog(jobId, log.type as any, '[RESTORE] ' + log.message);
