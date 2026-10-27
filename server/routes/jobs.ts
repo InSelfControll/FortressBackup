@@ -186,10 +186,16 @@ router.get('/:jobId/logs', authenticateToken, requireAdmin, async (req, res) => 
 });
 
 // SSE endpoint for live job log streaming
-router.get('/:jobId/logs/stream', authenticateToken, requireAdmin, (req, res) => {
-    const jobId = req.params.jobId;
-    console.log(`[SSE] Client subscribed to job ${jobId} logs`);
-    subscribeToJobLogs(jobId, res);
+router.get('/:jobId/logs/stream', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const jobId=req.params.jobId;
+        if (typeof jobId!=='string' || !/^[0-9a-f-]{36}$/i.test(jobId))
+            return res.status(400).json({error:'Invalid job identifier'});
+        if(!await db.getJob(jobId))return res.sendStatus(404);
+        subscribeToJobLogs(jobId,res);
+    }catch {
+        if(!res.headersSent)res.status(500).json({error:'Cannot subscribe to backup logs'});
+    }
 });
 
 // List snapshots for a job
