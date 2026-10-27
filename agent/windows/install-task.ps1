@@ -1,8 +1,8 @@
 #requires -Version 5.1
 <#
- Registers a local Windows Scheduled Task; no credentials leave the machine.
- Run elevated. Place the EXE/config first and restrict file ACLs separately.
- Creates a task which runs only when Windows is available.
+ Register a Windows Task Scheduler entry for the Fortress Restic agent.
+ Run elevated. Agent config, password file, SSH identity, and enrollment token
+ must have restricted NTFS ACLs before running this script.
 #>
 [CmdletBinding()]
 param(
@@ -14,21 +14,25 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if ($DailyHour -lt 0 -or $DailyHour -gt 23) { throw 'DailyHour must be 0..23' }
+if ($TaskName -notmatch '^[a-zA-Z0-9_-]{1,64}$') { throw 'Invalid task name' }
 $agent = (Resolve-Path -LiteralPath $AgentPath -ErrorAction Stop).Path
 $config = (Resolve-Path -LiteralPath $ConfigPath -ErrorAction Stop).Path
-if (-not $agent.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)) { throw 'AgentPath must point to the Windows executable' }
-if (-not [IO.Path]::IsPathRooted($config)) { throw 'ConfigPath must be absolute' }
+if (-not $agent.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)) { throw 'AgentPath must point to an EXE' }
+if ($agent.Contains('"') -or $config.Contains('"')) { throw 'Double quotes are not allowed in paths' }
 $mode = if ($Managed) { 'managed' } else { 'backup' }
-$action = New-ScheduledTaskAction -Execute $agent -Argument ('-config "{0}" -operation {1}' -f $config, $mode)
-$trigger = if ($Managed) {
-    $t = New-ScheduledTaskTrigger -Daily -At (Get-Date).AddMinutes(1)
-    $t.Repetition.Interval = 'PT1M'
-    $t.Repetition.Duration = 'P1D'
-    $t
-} else { New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.AddHours($DailyHour)) }
+$arguments = '-config "{0}" -operation {1}' -f $config, $mode
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 5) -StartWhenAvailable
-# SYSTEM has VSS privileges, but its Windows OpenSSH profile must have the
-# correct pinned host key and dedicated private key for Hetzner.
-$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
-Write-Output "Task registered: $TaskName (SYSTEM). Validate SSH trust, permissions and run a restore test before depending on it."
+if ($Managed) {
+    # schtasks /SC MINUTE /MO 1 repeats indefinitely, unlike a one-shot
+    # New-ScheduledTaskTrigger whose repetition duration eventually expires.
+    $command = '"{0}" {1}' -f $agent, $arguments
+    & schtasks.exe /Create /SC MINUTE /MO 1 /TN $TaskName /TR $command /RU SYSTEM /RL HIGHEST /F | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "schtasks /Create failed ($LASTEXITCODE)" }
+    Set-ScheduledTask -TaskName $TaskName -Settings $settings | Out-Null
+} else {
+    $action = New-ScheduledTaskAction -Execute $agent -Argument $arguments
+    $trigger = New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.AddHours($DailyHour))
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+}
+Write-Output "Task registered: $TaskName (SYSTEM). Verify SSH trust, permissions and restore testing."
