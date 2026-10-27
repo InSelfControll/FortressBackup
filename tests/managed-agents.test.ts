@@ -4,7 +4,8 @@ import jwt from 'jsonwebtoken';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import managedAgentsRouter from '../server/routes/managedAgents.js';
+import managedAgentsRouter, { dispatchScheduledManagedJobs } from '../server/routes/managedAgents.js';
+import { query, run } from '../server/db/helpers.js';
 import { initDatabase, closeDatabase } from '../server/db/connection.js';
 
 test('managed agent enrollment, atomic dispatch, report and revocation', async () => {
@@ -52,6 +53,20 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     expect(listing.data[0].jobs[0].state).toBe('success');
     expect(JSON.stringify(listing.data)).not.toContain(enrollment.data.token);
     expect(JSON.stringify(listing.data)).not.toContain('token_hash');
+    // Two simultaneous scheduler replicas must not create two jobs in one slot.
+    const slot=new Date(Date.now()-60000).toISOString();
+    const schedule=await api('/admin/'+id+'/schedule',{minutes:15},adminHeaders,'PUT');
+    expect(schedule.status).toBe(200);
+    await run('UPDATE managed_clients SET next_run_at=? WHERE id=?',[slot,id]);
+    await Promise.all([dispatchScheduledManagedJobs(),dispatchScheduledManagedJobs()]);
+    const first=await query<{id:string}>('SELECT id FROM managed_jobs WHERE client_id=? AND schedule_slot=?',[id,slot]);
+    expect(first).toHaveLength(1);
+    await run("UPDATE managed_jobs SET state='success' WHERE id=?",[first[0].id]);
+    // A stale due timestamp must not create another finished backup.
+    await run('UPDATE managed_clients SET next_run_at=? WHERE id=?',[slot,id]);
+    await dispatchScheduledManagedJobs();
+    const again=await query<{id:string}>('SELECT id FROM managed_jobs WHERE client_id=? AND schedule_slot=?',[id,slot]);
+    expect(again).toHaveLength(1);
     const disabled=await api('/admin/'+id+'/disable',{});
     expect(disabled.status).toBe(200);
     const deniedAfterDisable=await api('/poll',{},auth);
