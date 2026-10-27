@@ -24,6 +24,11 @@ const activeConnections = new Map<string, Set<Response>>();
  * Subscribe a client to job logs via SSE
  */
 export function subscribeToJobLogs(jobId: string, res: Response): void {
+    const subscriptions=[...activeConnections.values()].reduce((count,set)=>count+set.size,0);
+    if ((activeConnections.get(jobId)?.size || 0)>=20 || subscriptions>=100) {
+        res.status(429).json({error:'Too many log subscribers'});
+        return;
+    }
     // Setup SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -35,13 +40,7 @@ export function subscribeToJobLogs(jobId: string, res: Response): void {
     if (!activeConnections.has(jobId)) {
         activeConnections.set(jobId, new Set());
     }
-    const clients=activeConnections.get(jobId)!;
-    if (clients.size >= 20) {
-        res.status(429);
-        res.end();
-        return;
-    }
-    clients.add(res);
+    activeConnections.get(jobId)!.add(res);
 
     // Send initial connection message
     sendSSEMessage(res, {
