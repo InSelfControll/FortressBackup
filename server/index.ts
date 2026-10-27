@@ -18,6 +18,7 @@ import configRouter from './routes/config.js';
 import systemsRouter from './routes/systems.js';
 import locationsRouter from './routes/locations.js';
 import jobsRouter from './routes/jobs.js';
+import managedAgentsRouter from './routes/managedAgents.js';
 import sshKeysRouter from './routes/sshKeys.js';
 import aiRouter from './routes/ai.js';
 
@@ -73,6 +74,7 @@ app.get('/api/status', async (req, res) => {
 });
 
 // API Routes
+app.use('/api/managed-agents', managedAgentsRouter);
 app.use('/api/keys', sshKeysRouter);
 app.use('/api/ai', aiRouter);
 
