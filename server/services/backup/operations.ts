@@ -73,6 +73,7 @@ export async function executeBackup(
     executor.log('info', `Destination: ${config.destinationPath}`);
 
     let tempKeyFile = '';
+    let tempKeyDir = '';
     let sftpMountPoint = '';
 
     try {
@@ -88,10 +89,17 @@ export async function executeBackup(
 
         if (executor.isLocalMode() && config.tool === 'rsync' && sshConfig) {
             if (sshConfig.privateKey && sshConfig.privateKey.startsWith('-----')) {
-                const keyPath = path.join(os.tmpdir(), `fortress_key_${config.jobId}`);
-                fs.writeFileSync(keyPath, sshConfig.privateKey, { mode: 0o600 });
-                tempKeyFile = keyPath;
+                tempKeyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fortress-ssh-'));
+                fs.chmodSync(tempKeyDir, 0o700);
+                const keyPath=path.join(tempKeyDir,'key');
+                fs.writeFileSync(keyPath, sshConfig.privateKey, { mode:0o600,flag:'wx' });
+                tempKeyFile=keyPath;
             } else if (sshConfig.privateKey) {
+                if(!path.isAbsolute(sshConfig.privateKey) || !/^[A-Za-z0-9_./-]+$/.test(sshConfig.privateKey))
+                    throw new Error('Local rsync SSH private key path must be a restricted absolute path');
+                const info=fs.lstatSync(sshConfig.privateKey);
+                if(!info.isFile() || (info.mode & 0o077)!==0)
+                    throw new Error('Rsync SSH key must be an owner-only regular file');
                 tempKeyFile = sshConfig.privateKey;
             }
 
@@ -124,8 +132,9 @@ export async function executeBackup(
 
         const { stdout, stderr, code } = await executor.exec(command);
 
-        if (tempKeyFile && tempKeyFile.startsWith(os.tmpdir())) {
-            try { fs.unlinkSync(tempKeyFile); } catch { }
+        if(tempKeyDir) {
+            try { fs.rmSync(tempKeyDir,{recursive:true,force:true}); } catch { }
+            tempKeyDir='';
         }
 
         const endTime = new Date();
@@ -170,8 +179,9 @@ export async function executeBackup(
         return { success: true, startTime, endTime, bytesProcessed, filesProcessed, errors: [], logs };
 
     } catch (err: any) {
-        if (tempKeyFile && tempKeyFile.startsWith(os.tmpdir())) {
-            try { fs.unlinkSync(tempKeyFile); } catch { }
+        if(tempKeyDir) {
+            try { fs.rmSync(tempKeyDir,{recursive:true,force:true}); } catch { }
+            tempKeyDir='';
         }
         if (sftpMountPoint) {
             try { await unmountSshfs(executor, sftpMountPoint); } catch { }
