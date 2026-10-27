@@ -81,6 +81,7 @@ router.post('/:id/deploy', authenticateToken, requireAdmin, async (req, res) => 
         // Prepare SSH config
         const sshConfig = {
             host: system.host,
+            hostFingerprint: system.host_fingerprint || '',
             port: system.port || 22,
             username: system.username || 'root',
             privateKey: credentials.privateKey,
