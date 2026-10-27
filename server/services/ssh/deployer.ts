@@ -80,41 +80,39 @@ export class SSHDeployer extends EventEmitter implements SSHExecutor {
     }
 
     async executeCommand(command: string): Promise<CommandResult> {
-        if (!this.connected) {
-            throw new Error('Not connected to SSH server');
-        }
-
-        return new Promise((resolve, reject) => {
-            this.log('cmd', 'Executing approved tool-deployment command');
-
-            this.client.exec(command, (err, stream) => {
-                if (err) {
-                    this.log('error', `Command execution failed: ${err.message}`);
-                    reject(err);
-                    return;
-                }
-
-                let stdout = '';
-                let stderr = '';
-
-                stream.on('close', (code: number) => {
-                    resolve({ stdout, stderr, code });
-                });
-
-                stream.on('data', (data: Buffer) => {
-                    const text = data.toString();
-                    stdout += text;
-                    text.split('\n').filter(Boolean).forEach(line => {
-                        this.log('progress', line);
-                    });
-                });
-
-                stream.stderr.on('data', (data: Buffer) => {
-                    const text = data.toString();
-                    stderr += text;
-                    text.split('\n').filter(Boolean).forEach(line => {
-                        this.log('error', line);
-                    });
+        if (!this.connected) throw new Error('Not connected to SSH server');
+        if (typeof command!=='string' || command.length===0 || command.length>128*1024)
+            throw new Error('Invalid remote command length');
+        this.log('cmd','Executing approved tool deployment operation');
+        return new Promise((resolve,reject)=>{
+            let stdout='',stderr='',bytes=0,closed=false;
+            const fail=(error:Error)=>{
+                if(closed)return;
+                closed=true;clearTimeout(timeout);reject(error);
+            };
+            const timeout=setTimeout(()=>fail(new Error('Remote installer timed out')),15*60*1000);
+            this.client.exec(command,(err,stream)=>{
+                if(err)return fail(err);
+                const capture=(data:Buffer,kind:'stdout'|'stderr')=>{
+                    if(closed)return;
+                    bytes+=data.length;
+                    if(bytes>8*1024*1024){
+                        stream.close();
+                        return fail(new Error('Remote installer output exceeded 8 MiB'));
+                    }
+                    const value=data.toString('utf8');
+                    if(kind==='stdout')stdout+=value;else stderr+=value;
+                    if(this.logs.length<2000)
+                        for(const line of value.split('\n').filter(Boolean).slice(0,24))
+                            this.log(kind==='stdout'?'progress':'error',line.slice(0,1024));
+                };
+                stream.on('data',(data:Buffer)=>capture(data,'stdout'));
+                stream.stderr.on('data',(data:Buffer)=>capture(data,'stderr'));
+                stream.on('error',fail);
+                stream.on('close',(code:number)=>{
+                    if(closed)return;
+                    closed=true;clearTimeout(timeout);
+                    resolve({stdout,stderr,code:typeof code==='number'?code:1});
                 });
             });
         });
