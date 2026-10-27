@@ -79,7 +79,17 @@ export const generateEnvFile = (config: EnvConfig, port: number = 9001) => {
     lines.push('# Frontend');
     lines.push('FRONTEND_URL=http://localhost:3001');
 
-    const envContent = lines.join('\n');
+    // Escape every supplied value and reject record injection before writing .env.
+    const envContent = lines.map(line => {
+        if (!line || line.startsWith('#')) return line;
+        const at=line.indexOf('=');
+        if (at <= 0) throw new Error('Invalid environment record');
+        const name=line.slice(0,at), value=line.slice(at+1);
+        if (/[\\r\\n\\0]/.test(value) || value.length > 4096)
+            throw new Error('Unsafe environment setting');
+        if (name==='JWT_SECRET' || name==='FORTRESS_CREDENTIAL_KEY') return line;
+        return name + '=' + JSON.stringify(value);
+    }).join('\n');
 
     // Write to envPath
     fs.writeFileSync(envPath, envContent, { encoding: 'utf-8', mode: 0o600 });
