@@ -57,6 +57,7 @@ export interface RestoreJobConfig extends BackupJobConfig {
 export interface SSHConfig {
     host: string;
     port: number;
+    hostFingerprint: string;
     username: string;
     privateKey?: string;
     passphrase?: string;
