@@ -1,50 +1,29 @@
-# FortressBackup Windows Restic Agent (early integration)
+# FortressBackup Windows Managed Restic Agent
 
-Windows-only, non-listening executable that runs Restic with VSS, using an explicit JSON configuration. Runs locally under a restricted Windows account. **This is a standalone agent, not yet paired to the Fortress controller.**
+This module is the outbound-only Windows Restic backup client managed by the
+FortressBackup controller. It supports Windows VSS, scheduled backup/check jobs,
+durable status reporting, and encrypted Restic repositories.
 
-## Requirements
+**Canonical setup guide:** [MANAGED.md](MANAGED.md). Do not use old standalone
+Task Scheduler instructions.
 
-- Windows 10/11 or supported Windows Server with VSS
-- A current, separately installed `restic.exe`
-- SFTP identity configured in Windows OpenSSH and pinned host key in known_hosts
-- Repository initialized once with `restic init -r ...`
-- Repository password file and config restricted to the backup account and Administrators
-
-Build on Windows or cross-compile from Linux:
-
-```bash
-cd agent/windows
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o fortress-agent.exe .
-```
-
-Example `C:\\ProgramData\\FortressBackup\\agent.json`:
-
-```json
-{
-  "resticPath": "C:\\Program Files\\Restic\\restic.exe",
-  "repository": "sftp:hetzner-backup:restic/laptop",
-  "passwordFile": "C:\\ProgramData\\FortressBackup\\repo-password.txt",
-  "sources": ["C:\\Users\\Example\\Documents", "C:\\Users\\Example\\Videos"],
-  "excludes": ["*.tmp"],
-  "host": "windows-laptop",
-  "timeoutMinutes": 240,
-  "useVSS": true
-}
-```
+## Build
 
 ```powershell
-.\\fortress-agent.exe -config 'C:\ProgramData\FortressBackup\agent.json' -operation backup
-.\\fortress-agent.exe -config 'C:\ProgramData\FortressBackup\agent.json' -operation check
+cd agent/windows
+go test ./...
+go vet ./...
+go build -trimpath -o fortress-agent.exe .
 ```
 
-The process exits nonzero on Restic failure. Windows Task Scheduler can run the same command under a dedicated account. Set **Do not start a new instance** and configure retries, and collect exit codes for monitoring.
+The GitHub Actions Windows workflow builds the executable and tests task
+registration. It does not substitute for a complete restore test against your
+own backup destination.
 
-Use `restic self-update` under a controlled maintenance schedule. Restic verifies the upstream release signature.
+## Critical security constraints
 
-### Known limitations
-
-- No controller enrollment, polling, heartbeat or authenticated job reporting yet.
-- No cloud replication or repo maintenance orchestration in this executable.
-- VSS needs sufficient account permissions.
-- No Windows end-to-end backup-and-restore test yet.
-- Do not share a single write-capable Storage Box account between laptop and controller when the controller can be compromised.
+- Use pinned SSH host keys and a dedicated least-privilege Hetzner account.
+- The agent and Restic executables must be installed from verified artifacts.
+- Install with `install-task.ps1` which validates digests and restricts NTFS ACLs.
+- Backup credentials and source selection remain stored locally on Windows.
+- A backup is only production-ready after testing a real VSS backup and restore.
