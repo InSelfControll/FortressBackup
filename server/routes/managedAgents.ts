@@ -62,20 +62,30 @@ router.post('/admin/enroll', authenticateToken, requireAdmin, async (req, res, n
   } catch (e) { next(e); }
 });
 
-router.get('/admin', authenticateToken, requireAdmin, async (_req, res, next) => {
+router.get('/admin', authenticateToken, requireAdmin, async (req, res, next) => {
   try {
-    const agents = await query<Agent>('SELECT * FROM managed_clients ORDER BY created_at DESC');
-    const recent = await query<AgentJob>(
-      `SELECT id,client_id,operation,state,created_at,started_at,finished_at,lease_until,message
-       FROM (SELECT *, ROW_NUMBER() OVER(PARTITION BY client_id ORDER BY created_at DESC) AS rn FROM managed_jobs) AS j
-       WHERE rn<=8 ORDER BY created_at DESC`);
-    const grouped = new Map<string, ReturnType<typeof publicJob>[]>();
-    for (const j of recent) {
-      if (!grouped.has(j.client_id)) grouped.set(j.client_id, []);
+    const limit=Number(req.query.limit??50), offset=Number(req.query.offset??0);
+    if (!Number.isSafeInteger(limit)||limit<1||limit>100||
+        !Number.isSafeInteger(offset)||offset<0||offset>1000000)
+      return res.status(400).json({error:'Invalid pagination'});
+    const agents=await query<Agent>(`
+      SELECT id,name,token_hash,created_at,last_seen,disabled,schedule_minutes,next_run_at
+      FROM managed_clients ORDER BY created_at DESC LIMIT ? OFFSET ?`,[limit,offset]);
+    const recent=await query<AgentJob>(`
+      SELECT id,client_id,operation,state,created_at,started_at,finished_at,lease_until,message
+      FROM (
+        SELECT *,ROW_NUMBER() OVER(PARTITION BY client_id ORDER BY created_at DESC) AS rn
+        FROM managed_jobs WHERE client_id IN (
+          SELECT id FROM managed_clients ORDER BY created_at DESC LIMIT ? OFFSET ?
+        )
+      ) AS j WHERE rn<=8 ORDER BY created_at DESC`,[limit,offset]);
+    const grouped=new Map<string,ReturnType<typeof publicJob>[]>();
+    for(const j of recent){
+      if(!grouped.has(j.client_id))grouped.set(j.client_id,[]);
       grouped.get(j.client_id)!.push(publicJob(j));
     }
-    res.json(agents.map(a => ({ ...publicAgent(a), jobs: grouped.get(a.id) ?? [] })));
-  } catch (e) { next(e); }
+    res.json(agents.map(a=>({...publicAgent(a),jobs:grouped.get(a.id)??[]})));
+  }catch(e){next(e);}
 });
 
 router.get('/admin/:id', authenticateToken, requireAdmin, async (req, res, next) => {
