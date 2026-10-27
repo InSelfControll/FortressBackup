@@ -14,7 +14,7 @@ const router = Router();
 const validSystem=(value:any):boolean =>
     value && typeof value.name==='string' && value.name.trim().length>0 && value.name.length<=120 &&
     typeof value.host==='string' && value.host.length<=253 &&
-    /^[a-zA-Z0-9.:[\\]-]+$/.test(value.host) &&
+    /^[a-zA-Z0-9.:-]{1,253}$/.test(value.host) &&
     (value.port===undefined || Number.isInteger(value.port) && value.port>=1 && value.port<=65535) &&
     (value.username===undefined || typeof value.username==='string' &&
       /^[A-Za-z0-9._-]{1,120}$/.test(value.username)) &&
