@@ -54,7 +54,7 @@ export const buildResticCommand = (config: BackupJobConfig): string => {
     // Repository initialization is an explicit, separately verified operation.
     // In particular, NEVER swallow failures with restic init || true.
     const source = config.sourcePaths.map(sh).join(' ');
-    return `${resticPrefix(config)} backup ${source} --json --one-file-system --exclude-caches --exclude=/proc --exclude=/sys --exclude=/dev`;
+    return `${resticPrefix(config)} backup ${source} --one-file-system --exclude-caches --exclude=/proc --exclude=/sys --exclude=/dev`;
 };
 
 export const buildResticSnapshotListCommand = (config: BackupJobConfig): string =>
