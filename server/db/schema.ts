@@ -112,6 +112,7 @@ export const createTables = () => {
       started_at TEXT,
       finished_at TEXT,
       lease_until TEXT,
+      schedule_slot TEXT,
       message TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_managed_jobs_client ON managed_jobs(client_id,created_at);
@@ -123,6 +124,10 @@ export const createTables = () => {
   // Schema Migration: Add ssh_key_id to systems if missing
   try {
     const columns = sqliteDb.prepare("PRAGMA table_info(systems)").all() as any[];
+    const managedColumns=sqliteDb.prepare('PRAGMA table_info(managed_jobs)').all() as any[];
+    if (!managedColumns.some(col=>col.name==='schedule_slot'))
+      sqliteDb.prepare('ALTER TABLE managed_jobs ADD COLUMN schedule_slot TEXT').run();
+    sqliteDb.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_schedule_slot ON managed_jobs(client_id,schedule_slot) WHERE schedule_slot IS NOT NULL').run();
     const hasSshKeyId = columns.some(col => col.name === 'ssh_key_id');
     if (!columns.some(col => col.name === 'host_fingerprint')) sqliteDb.prepare('ALTER TABLE systems ADD COLUMN host_fingerprint TEXT').run();
     if (!hasSshKeyId) {
@@ -230,6 +235,7 @@ export const createTablesPostgres = async () => {
       started_at TEXT,
       finished_at TEXT,
       lease_until TEXT,
+      schedule_slot TEXT,
       message TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_managed_jobs_client ON managed_jobs(client_id,created_at);
@@ -238,4 +244,6 @@ export const createTablesPostgres = async () => {
 
   `);
   await pgPool.query('ALTER TABLE systems ADD COLUMN IF NOT EXISTS host_fingerprint TEXT');
+  await pgPool.query('ALTER TABLE managed_jobs ADD COLUMN IF NOT EXISTS schedule_slot TEXT');
+  await pgPool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_schedule_slot ON managed_jobs(client_id,schedule_slot) WHERE schedule_slot IS NOT NULL');
 };
