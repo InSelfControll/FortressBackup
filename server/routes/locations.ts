@@ -5,12 +5,12 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import * as db from '../db/index.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
 
 // Get all locations
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const locations = await db.getAllLocations();
         res.json(locations);
@@ -20,7 +20,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Create location
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const location = { ...req.body, id: req.body.id || crypto.randomUUID() };
         await db.saveLocation(location);
@@ -31,7 +31,7 @@ router.post('/', authenticateToken, async (req, res) => {
 });
 
 // Update location
-router.put('/:id', authenticateToken, async (req, res) => {
+router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const location = { ...req.body, id: req.params.id };
         await db.saveLocation(location);
@@ -42,7 +42,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
 });
 
 // Delete location
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await db.deleteLocation(req.params.id);
         res.json({ success: true });
