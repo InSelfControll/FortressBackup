@@ -1,4 +1,4 @@
-# Managed Windows clients (preview, PR #20)
+# Managed Windows clients (PR #20, pre-production)
 
 ## Trust model
 - Windows clients initiate HTTPS connections to the Fortress controller. No inbound Windows firewall rules needed.
@@ -59,12 +59,17 @@ curl -sS -X POST "https://fortress.example.net/api/managed-agents/admin/ENROLLME
   -H "Authorization: Bearer $FORTRESS_ADMIN_JWT"
 ```
 
+## Central management
+- Open **Managed Clients** in the Fortress admin dashboard to enroll clients, queue backup/check/snapshot operations, select a recurring schedule and revoke client access.
+- Client enrollment and job state use dedicated indexed database tables with an atomic job-claim operation and a unique constraint preventing overlapping active jobs.
+- The Windows agent stores a pending completion report beside its locally protected enrollment-token file and retries that report on the next polling run. The controller accepts duplicate completion acknowledgments safely.
+- Backups are scheduled in the controller; the Windows Task Scheduler runs the agent poller every minute.
+
 ## Production blockers
-- This is an **API-managed preview**, not a complete dashboard-controlled backup system.
-- No server-side recurring scheduling or remote selection of backup paths; Task Scheduler handles polling, while the controller queues an operation.
-- Client reports only success/failure, not structured Restic progress; failed reporting after a successful backup requires operator reconciliation.
-- Config DB read-modify-write updates are not cross-process atomic; multi-replica Fortress deployments require transactional agent/job tables and lease claims.
+- Backup source folders, repository destinations and credentials remain locally configured and are not centrally editable. This reduces remote attack surface but is not full remote policy provisioning.
+- No client auto-update or rotation of existing enrollment tokens.
+- No structured Restic progress or user-visible file-level restore from the managed-client screen.
 - No automatic token rotation or transport-level client certificate authentication.
 - No end-to-end Windows VSS + Hetzner Storage Box restore test.
-- No complete authorization audit of unrelated Fortress endpoints.
+- A complete security audit of all unrelated Fortress endpoints and a real Windows VSS restore test are still required.
 - Cloud-to-cloud scripts are not yet controller-managed.
