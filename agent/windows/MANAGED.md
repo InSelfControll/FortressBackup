@@ -6,7 +6,7 @@
 - Only controller JWT users with role `admin` can enroll, queue operations or disable an agent.
 - Jobs contain **only an allow-listed operation** (`backup`, `check`, `snapshots`).
 - Repository, paths, encryption passwords, SSH key, SSH host verification and Restic executable are held in a locally protected Windows agent config, not supplied by the controller.
-- One in-flight job per client. A six-hour execution lease requires manual intervention after expiration to prevent automatic duplicate backups.
+- One in-flight job per client. A five-hour execution lease requires manual intervention after expiration to prevent automatic duplicate backups.
 
 ## Controller enrollment
 Obtain an administrator JWT through the regular Fortress login.
@@ -73,3 +73,9 @@ curl -sS -X POST "https://fortress.example.net/api/managed-agents/admin/ENROLLME
 - No end-to-end Windows VSS + Hetzner Storage Box restore test.
 - A complete security audit of all unrelated Fortress endpoints and a real Windows VSS restore test are still required.
 - Cloud-to-cloud scripts are not yet controller-managed.
+
+## Recovery safeguards
+
+The Windows agent writes `fortress-active-job.json` before running a leased job. After an interrupted process it intentionally refuses duplicate execution until the operator verifies the repository and clears that marker. A completed but unacknowledged job is saved to `fortress-pending-report.json` for replay on the next poll. Both files live in the secured enrollment directory.
+
+Restic requires an absolute trusted `resticPath`, and the installed Task Scheduler executable is protected by SYSTEM/Administrators-only NTFS permissions. The controller cannot change the Windows executable path or backup passwords remotely.
