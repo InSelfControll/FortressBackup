@@ -5,14 +5,13 @@
 export const toAPIJob = (job: any) => {
     if (!job) return null;
     return {
-        ...job,
+        ...(() => { const { repo_password, repoPassword, ...safe } = job; return safe; })(),
         sourceId: job.source_id,
         destinationId: job.destination_id,
         // Map source_path (DB column) to sourcePaths (API array)
         sourcePaths: job.source_path && typeof job.source_path === 'string'
             ? JSON.parse(job.source_path)
             : job.source_paths || ['/home'], // Fallback for legacy or plural property
-        repoPassword: job.repo_password,
         retention: job.retention && typeof job.retention === 'string' ? JSON.parse(job.retention) : job.retention,
         stats: job.stats && typeof job.stats === 'string' ? JSON.parse(job.stats) : job.stats,
     };
