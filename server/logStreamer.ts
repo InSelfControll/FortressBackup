@@ -28,14 +28,20 @@ export function subscribeToJobLogs(jobId: string, res: Response): void {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    // Same-origin authenticated API only. CORS is controlled centrally.
     res.flushHeaders();
 
     // Add connection to active set
     if (!activeConnections.has(jobId)) {
         activeConnections.set(jobId, new Set());
     }
-    activeConnections.get(jobId)!.add(res);
+    const clients=activeConnections.get(jobId)!;
+    if (clients.size >= 20) {
+        res.status(429);
+        res.end();
+        return;
+    }
+    clients.add(res);
 
     // Send initial connection message
     sendSSEMessage(res, {
@@ -65,7 +71,7 @@ function sendSSEMessage(res: Response, log: Omit<LogEntry, 'jobId'>): void {
         message: log.message,
         timestamp: log.timestamp.toISOString()
     });
-    res.write(`data: ${data}\n\n`);
+    if (!res.write(`data: ${data}\n\n`)) res.end();
 }
 
 /**
@@ -92,7 +98,7 @@ export function broadcastJobLog(jobId: string, type: LogEntry['type'], message: 
         });
         connections.forEach(res => {
             try {
-                res.write(`data: ${data}\n\n`);
+                if(!res.write(`data: ${data}\n\n`)) res.end();
             } catch (e) {
                 // Connection closed, will be cleaned up
             }
