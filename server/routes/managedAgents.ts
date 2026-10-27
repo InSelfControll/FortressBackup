@@ -7,7 +7,7 @@ import { authenticateToken } from '../middleware/auth.js';
 // Controller never transmits passwords, paths, or executable commands.
 const router=Router();
 type Job={id:string;operation:'backup'|'check'|'snapshots';state:'pending'|'running'|'success'|'failed';createdAt:string;startedAt?:string;finishedAt?:string;leaseUntil?:string;message?:string};
-type Client={id:string;name:string;tokenHash:string;createdAt:string;lastSeen?:string;disabled:boolean;jobs:Job[]};
+type Client={id:string;name:string;tokenHash:string;createdAt:string;lastSeen?:string;disabled:boolean;scheduleMinutes?:number;nextRunAt?:string;jobs:Job[]};
 const idPattern=/^[0-9a-f-]{36}$/i;
 const clientKey=(id:string)=>'managed_agent_'+id;
 const admin=(req:any,res:any,next:any)=> req.user?.role==='admin'?next():res.status(403).json({error:'Admin required'});
@@ -56,6 +56,23 @@ router.post('/admin/:id/jobs',authenticateToken,admin,async(req,res)=>{
  const job:Job={id:crypto.randomUUID(),operation:op,state:'pending',createdAt:new Date().toISOString()};
  c.jobs.push(job);await db.saveConfig(clientKey(c.id),c);res.status(201).json(job);
 });
+router.put('/admin/:id/schedule',authenticateToken,admin,async(req,res)=>{
+ const c=await getClient(req.params.id);if(!c)return res.sendStatus(404);
+ const minutes=req.body?.minutes;
+ if(!Number.isSafeInteger(minutes)||minutes!==0&&(minutes<15||minutes>10080))return res.status(400).json({error:'minutes must be 0 or 15..10080'});
+ c.scheduleMinutes=minutes;c.nextRunAt=minutes?new Date(Date.now()+minutes*60000).toISOString():undefined;
+ await db.saveConfig(clientKey(c.id),c);res.json({scheduleMinutes:c.scheduleMinutes,nextRunAt:c.nextRunAt});
+});
+export async function dispatchScheduledManagedJobs():Promise<void>{
+ const ids=await db.getConfig<string[]>('managed_agent_ids')||[];
+ for(const id of ids){
+  const c=await getClient(id);if(!c||c.disabled||!c.scheduleMinutes||!c.nextRunAt||Date.parse(c.nextRunAt)>Date.now())continue;
+  if(c.jobs.some(j=>j.state==='pending'||j.state==='running'))continue;
+  c.jobs.push({id:crypto.randomUUID(),operation:'backup',state:'pending',createdAt:new Date().toISOString()});
+  c.nextRunAt=new Date(Date.now()+c.scheduleMinutes*60000).toISOString();
+  await db.saveConfig(clientKey(c.id),c);
+ }
+}
 router.post('/admin/:id/disable',authenticateToken,admin,async(req,res)=>{
  const c=await getClient(req.params.id);if(!c)return res.sendStatus(404);
  c.disabled=true;await db.saveConfig(clientKey(c.id),c);res.json({disabled:true});
