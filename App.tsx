@@ -36,7 +36,7 @@ function App() {
     const initApp = async () => {
       try {
         // Check backend API for status
-        const response = await fetch('http://localhost:9001/api/status');
+        const response = await fetch('/api/status');
         if (!response.ok) {
           console.error('[App] Backend not available');
           setIsSetupComplete(false);
@@ -49,7 +49,7 @@ function App() {
         if (backendStatus.setupComplete) {
           // Backend has completed setup - load public config
           try {
-            const configResp = await fetch('http://localhost:9001/api/config/public');
+            const configResp = await fetch('/api/config/public');
             if (configResp.ok) {
               const { authMode: mode, ssoConfig: sso } = await configResp.json();
               if (mode) {
@@ -143,11 +143,12 @@ function App() {
         }
       } else {
         console.error('[Setup] Backend returned error:', error);
+        return;
       }
     } catch (error) {
       console.error('[Setup] Failed to call backend API:', error);
-      // Store auth mode locally for reference, but backend is required
-      localStorage.setItem('fortress_auth_mode', mode);
+      // Do not advance the wizard when the authoritative setup failed.
+      return;
     }
 
     // Create vault salt if not exists
