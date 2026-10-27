@@ -19,6 +19,7 @@ export const generateEnvFile = (config: EnvConfig, port: number = 9001) => {
     const envPath = path.join(process.cwd(), '.env');
     let jwtSecret = `${crypto.randomUUID()}-${crypto.randomUUID()}`;
 
+    let credentialKey = crypto.randomBytes(32).toString('hex');
     // Preserve existing secret if available to prevent token invalidation
     if (fs.existsSync(envPath)) {
         const existingContent = fs.readFileSync(envPath, 'utf8');
@@ -26,6 +27,8 @@ export const generateEnvFile = (config: EnvConfig, port: number = 9001) => {
         if (match && match[1]) {
             jwtSecret = match[1].trim();
         }
+        const oldKey=existingContent.match(/^FORTRESS_CREDENTIAL_KEY=([0-9a-fA-F]{64})$/m);
+        if (oldKey) credentialKey=oldKey[1];
     }
 
     const lines: string[] = [
@@ -35,6 +38,7 @@ export const generateEnvFile = (config: EnvConfig, port: number = 9001) => {
         '# Server',
         `PORT=${port}`,
         `JWT_SECRET=${jwtSecret}`,
+        `FORTRESS_CREDENTIAL_KEY=${credentialKey}`,
         '',
         '# Database',
     ];
