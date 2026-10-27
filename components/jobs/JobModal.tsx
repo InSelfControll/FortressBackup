@@ -87,7 +87,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
         setIsGenerating(true);
         setAiError(null);
         try {
-            const cfg = await generateBackupConfig(aiPrompt, aiConfig);
+            const cfg = await generateBackupConfig(aiPrompt);
             if (cfg.tool) setFormData(prev => ({ ...prev, ...cfg, name: cfg.jobName || prev.name }));
         } catch (e: any) {
             setAiError(e.message || "Failed to generate config.");
