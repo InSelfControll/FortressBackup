@@ -24,6 +24,7 @@ interface AppContextType {
   handleResetApp: () => void;
   completeSetup: (config: {
     masterPassword: string;
+    bootstrapToken: string;
     aiConfig: AIConfig;
     dbConfig: DatabaseConfig;
     ssoConfig: SSOConfig;
@@ -152,7 +153,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     adminUser?: { name: string; email: string; password: string };
     selectedTools: string[];
   }) => {
-    const { aiConfig: ai, dbConfig: db, ssoConfig: sso, authMode: mode, adminUser, selectedTools } = config;
+    const { aiConfig: ai, dbConfig: db, ssoConfig: sso, authMode: mode, adminUser, selectedTools, bootstrapToken } = config;
 
     setAiConfig(ai);
     setDbConfig(db);
@@ -167,8 +168,9 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         ssoConfig: sso,
         authMode: mode,
         adminUser: adminUser,
-        selectedTools: selectedTools
-      } as any);
+        selectedTools: selectedTools,
+        bootstrapToken
+      });
 
       if (result && result.success) {
         console.log('[Setup] Configuration saved');
