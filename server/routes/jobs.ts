@@ -84,6 +84,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
 // Run a backup job via SSH on the source system
 router.post('/:id/run', authenticateToken, requireAdmin, async (req, res) => {
+    let claimed = false;
     try {
         const jobId = req.params.id;
 
@@ -92,6 +93,12 @@ router.post('/:id/run', authenticateToken, requireAdmin, async (req, res) => {
         if (!job) {
             return res.status(404).json({ error: 'Job not found' });
         }
+
+        const leased = await db.getOne<{id:string}>(`
+            UPDATE jobs SET status='Running'
+            WHERE id=? AND COALESCE(status,'Idle')!='Running' RETURNING id`,[jobId]);
+        if (!leased) return res.status(409).json({ error: 'Backup is already running' });
+        claimed = true;
 
         const { sshConfig, jobConfig } = await buildJobExecutionContext(job, req.body);
 
@@ -157,8 +164,13 @@ router.post('/:id/run', authenticateToken, requireAdmin, async (req, res) => {
             logs
         });
     } catch (error: any) {
-        console.error('[Job] Error:', error);
-        res.status(500).json({ error: error.message });
+        if (claimed) {
+            try { await db.run("UPDATE jobs SET status='Failed',last_run=? WHERE id=?",
+                [new Date().toISOString(),req.params.id]); }
+            catch { /* Keep original failure and surface error status. */ }
+        }
+        console.error('[Job] Error:', error instanceof Error ? error.message : 'Backup error');
+        res.status(500).json({ error: 'Backup operation failed' });
     }
 });
 
