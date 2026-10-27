@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import crypto from 'node:crypto';
 import { getOne, query, run } from '../db/helpers.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 
 // No storage credentials, source paths or remote commands are accepted here.
 const router = Router();
@@ -18,8 +18,6 @@ type AgentJob = {
 };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sha256 = (v: string) => crypto.createHash('sha256').update(v).digest('hex');
-const isAdmin = (req: Request, res: Response, next: NextFunction) =>
-  (req as any).user?.role === 'admin' ? next() : res.status(403).json({ error: 'Admin required' });
 const lookup = (id: unknown) => typeof id === 'string' && uuid.test(id)
   ? getOne<Agent>('SELECT * FROM managed_clients WHERE id=?', [id]) : Promise.resolve(null);
 const publicAgent = ({ token_hash: _secret, ...safe }: Agent) => ({
@@ -51,7 +49,7 @@ async function agentAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 // Enrollment secrets are issued once and never returned by inventory endpoints.
-router.post('/admin/enroll', authenticateToken, isAdmin, async (req, res, next) => {
+router.post('/admin/enroll', authenticateToken, requireAdmin, async (req, res, next) => {
   try {
     const name = req.body?.name;
     if (typeof name !== 'string' || !name.trim() || name.length > 100)
@@ -64,7 +62,7 @@ router.post('/admin/enroll', authenticateToken, isAdmin, async (req, res, next) 
   } catch (e) { next(e); }
 });
 
-router.get('/admin', authenticateToken, isAdmin, async (_req, res, next) => {
+router.get('/admin', authenticateToken, requireAdmin, async (_req, res, next) => {
   try {
     const agents = await query<Agent>('SELECT * FROM managed_clients ORDER BY created_at DESC');
     const recent = await query<AgentJob>(
@@ -80,7 +78,7 @@ router.get('/admin', authenticateToken, isAdmin, async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.get('/admin/:id', authenticateToken, isAdmin, async (req, res, next) => {
+router.get('/admin/:id', authenticateToken, requireAdmin, async (req, res, next) => {
   try {
     const agent = await lookup(req.params.id);
     if (!agent) return res.sendStatus(404);
@@ -90,7 +88,7 @@ router.get('/admin/:id', authenticateToken, isAdmin, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.post('/admin/:id/jobs', authenticateToken, isAdmin, async (req, res, next) => {
+router.post('/admin/:id/jobs', authenticateToken, requireAdmin, async (req, res, next) => {
   try {
     const agent = await lookup(req.params.id);
     if (!agent) return res.sendStatus(404);
@@ -110,7 +108,7 @@ router.post('/admin/:id/jobs', authenticateToken, isAdmin, async (req, res, next
   } catch (e) { next(e); }
 });
 
-router.put('/admin/:id/schedule', authenticateToken, isAdmin, async (req, res, next) => {
+router.put('/admin/:id/schedule', authenticateToken, requireAdmin, async (req, res, next) => {
   try {
     const agent = await lookup(req.params.id);
     if (!agent) return res.sendStatus(404);
@@ -124,7 +122,7 @@ router.put('/admin/:id/schedule', authenticateToken, isAdmin, async (req, res, n
   } catch (e) { next(e); }
 });
 
-router.post('/admin/:id/disable', authenticateToken, isAdmin, async (req, res, next) => {
+router.post('/admin/:id/disable', authenticateToken, requireAdmin, async (req, res, next) => {
   try {
     const agent = await lookup(req.params.id);
     if (!agent) return res.sendStatus(404);
