@@ -41,3 +41,16 @@ jobs:
         run: bun run build
       - name: Type-check generated route tree
         run: bunx tsc --noEmit
+
+  container:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Build production container
+        run: docker build --pull -t fortressbackup-security-test .
+      - name: Check image least privilege
+        run: |
+          test "$(docker image inspect fortressbackup-security-test --format '{{.Config.User}}')" = bunjs
+          docker run --rm fortressbackup-security-test sh -c 'test "$(id -u)" -eq 1001 && test "$(stat -c %a /app/data)" = 700 && test -w /app/data'
