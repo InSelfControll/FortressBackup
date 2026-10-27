@@ -26,6 +26,7 @@ export const saveConfig = async (key: string, value: any) => {
 };
 
 export interface SetupData {
+    selectedTools: string[];
     bootstrapToken: string;
     aiConfig: AIConfig;
     dbConfig: DatabaseConfig;
