@@ -28,12 +28,17 @@ router.post('/setup', async (req, res) => {
         if(!supplied || !crypto.timingSafeEqual(expected,received))
             return res.status(401).json({error:'Invalid bootstrap token'});
         const { aiConfig, dbConfig, ssoConfig, authMode, adminUser, selectedTools } = req.body || {};
+        const invalidTools = selectedTools !== undefined && (
+            !Array.isArray(selectedTools) ||
+            selectedTools.some((item: unknown) => !['borg','restic','rsync'].includes(String(item)))
+        );
+        const invalidAdmin = authMode === 'local' && (
+            !adminUser || typeof adminUser.name !== 'string' ||
+            typeof adminUser.email !== 'string' ||
+            typeof adminUser.password !== 'string' || adminUser.password.length < 12
+        );
         if (!dbConfig || !['SQLite','sqlite','PostgreSQL','postgres'].includes(dbConfig.type) ||
-            !ssoConfig || !aiConfig || !['local','sso'].includes(authMode) ||
-            (authMode==='local' && (!adminUser || typeof adminUser.name!=='string' ||
-             typeof adminUser.email!=='string' || typeof adminUser.password!=='string' || adminUser.password.length<12)) ||
-            (selectedTools!==undefined && (!Array.isArray(selectedTools) ||
-             selectedTools.some((item:unknown)=>!['borg','restic','rsync'].includes(String(item)))))
+            !ssoConfig || !aiConfig || !['local','sso'].includes(authMode) || invalidAdmin || invalidTools)
             return res.status(400).json({error:'Invalid setup configuration'});
         // Claim first-run provisioning atomically to prevent concurrent setup.
         const claim=await db.getOne<{key:string}>(
