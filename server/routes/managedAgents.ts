@@ -144,7 +144,7 @@ router.post('/poll', agentAuth, async (req, res, next) => {
       WHERE id=(SELECT id FROM managed_jobs WHERE client_id=? AND state='pending' ORDER BY created_at LIMIT 1)
         AND state='pending'
       RETURNING id,operation`,
-      [now, new Date(Date.now()+6*60*60*1000).toISOString(), id]);
+      [now, new Date(Date.now()+5*60*60*1000).toISOString(), id]);
     res.json({ job: job ?? null });
   } catch (e) { next(e); }
 });
@@ -176,21 +176,31 @@ router.post('/report', agentAuth, async (req, res, next) => {
 // Partial unique index prevents duplicate scheduling across controller replicas.
 export async function dispatchScheduledManagedJobs(): Promise<void> {
   const now = new Date().toISOString();
-  const due = await query<Pick<Agent,'id'|'schedule_minutes'>>(`
-    SELECT id,schedule_minutes FROM managed_clients
+  const due = await query<Pick<Agent,'id'|'schedule_minutes'|'next_run_at'>>(`
+    SELECT id,schedule_minutes,next_run_at FROM managed_clients
     WHERE disabled=0 AND schedule_minutes>0 AND next_run_at<=?`, [now]);
   for (const client of due) {
+    const slot=client.next_run_at;
+    if (!slot) continue;
+    let inserted=false;
     try {
-      await run(`INSERT INTO managed_jobs(id,client_id,operation,state,created_at)
-        VALUES(?,?,'backup','pending',?)`, [crypto.randomUUID(), client.id, now]);
+      // Same logical due timestamp can never be inserted twice, even if the
+      // first job finished between two concurrent scheduler reads.
+      await run(`INSERT INTO managed_jobs(id,client_id,operation,state,created_at,schedule_slot)
+        VALUES(?,?,'backup','pending',?,?)`, [crypto.randomUUID(), client.id, now, slot]);
+      inserted=true;
     } catch (e) {
-      if (isConflict(e)) continue;
-      throw e;
+      if (!isConflict(e)) throw e;
+      const sameSlot = await getOne<{id:string}>(
+        'SELECT id FROM managed_jobs WHERE client_id=? AND schedule_slot=?', [client.id,slot]);
+      if (!sameSlot) continue; // Another active job: retry when it finishes.
     }
-    // A second scheduler replica may advance the same timestamp;
-    // the active-job index prevents duplicate jobs.
-    await run('UPDATE managed_clients SET next_run_at=? WHERE id=?',
-      [new Date(Date.now()+client.schedule_minutes*60000).toISOString(), client.id]);
+    // CAS prevents stale scheduler replicas from overriding a newly chosen
+    // schedule, and a durable unique slot prevents repeated dispatch.
+    if(inserted || slot) {
+      await run('UPDATE managed_clients SET next_run_at=? WHERE id=? AND next_run_at=? AND schedule_minutes=?',
+        [new Date(Date.parse(slot)+client.schedule_minutes*60000).toISOString(), client.id, slot, client.schedule_minutes]);
+    }
   }
 }
 export default router;
