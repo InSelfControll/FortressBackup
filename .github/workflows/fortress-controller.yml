@@ -48,8 +48,8 @@ jobs:
           bun add @tanstack/react-router@^1.168.48 @tanstack/router-devtools@^1.167.2
           bun audit --audit-level=high
           bun test tests/managed-agents.test.ts tests/security.test.ts
-          bunx tsc --noEmit
           bun run build
+          bunx tsc --noEmit
       - name: Commit validated dependency updates
         run: |
           git add -- package.json bun.lock
@@ -71,7 +71,7 @@ jobs:
         run: bun audit --audit-level=high
       - name: Managed-agent integration test
         run: bun test tests/managed-agents.test.ts tests/security.test.ts
-      - name: Type-check
-        run: bunx tsc --noEmit
-      - name: Build frontend
+      - name: Generate route tree and build frontend
         run: bun run build
+      - name: Type-check generated route tree
+        run: bunx tsc --noEmit
