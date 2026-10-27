@@ -28,7 +28,7 @@ export async function mountSshfs(executor: BackupExecutor, config: BackupJobConf
 
     executor.log('info', `Mounting SFTP destination: ${sshfsTarget} -> ${mountPoint}`);
 
-    const mountCmd = `mkdir -p ${mountPoint} && sshfs -o StrictHostKeyChecking=no,reconnect,ServerAliveInterval=15 ${sshfsTarget} ${mountPoint}`;
+    const mountCmd = `mkdir -p ${mountPoint} && sshfs -o StrictHostKeyChecking=yes,reconnect,ServerAliveInterval=15 ${sshfsTarget} ${mountPoint}`;
 
     const { code, stderr } = await executor.exec(mountCmd);
     if (code !== 0) {
@@ -76,7 +76,7 @@ export async function executeBackup(
 
     try {
         let effectiveDestPath = config.destinationPath;
-        if (config.destinationType === 'sftp') {
+        if (config.destinationType === 'sftp' && config.tool !== 'restic') {
             sftpMountPoint = await mountSshfs(executor, config);
             effectiveDestPath = sftpMountPoint;
             executor.log('info', `Using mounted path: ${effectiveDestPath}`);
