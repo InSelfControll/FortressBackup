@@ -213,7 +213,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                                 const dst = locations.find(l => l.id === formData.destinationId);
 
                                 if (src?.type === 'remote' && dst?.type === 'nfs') {
-                                    if (formData.tool === 'rsync') {
+                                    if (formData.tool === BackupTool.RSYNC) {
                                         return (
                                             <div className="mt-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-lg flex gap-3 items-start">
                                                 <ArrowDownCircle className="text-indigo-400 shrink-0" size={16} />
@@ -230,7 +230,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                                         <div className="mt-3 p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg flex gap-3 items-start">
                                             <XCircle className="text-rose-400 shrink-0" size={16} />
                                             <div className="text-xs text-rose-200">
-                                                <strong>Configuration Error:</strong> {formData.tool === 'borg' ? 'Borg' : 'Restic'} cannot backup directly to the Fortress server disk from a Remote Source.
+                                                <strong>Configuration Error:</strong> {formData.tool === BackupTool.BORG ? 'Borg' : 'Restic'} cannot backup directly to the Fortress server disk from a Remote Source.
                                                 <br /><br />
                                                 These tools run on the Source System <strong>({src.name})</strong> and need a network protocol to transfer data here.
                                                 <br /><br />
@@ -345,7 +345,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                             const src = systems.find(s => s.id === formData.sourceId);
                             const dst = locations.find(l => l.id === formData.destinationId);
                             if (src?.type === 'remote' && dst?.type === 'nfs') {
-                                return formData.tool !== 'rsync';
+                                return formData.tool !== BackupTool.RSYNC;
                             }
                             return false;
                         })()}
