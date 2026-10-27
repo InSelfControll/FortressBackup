@@ -7,15 +7,17 @@ type Enrollment={id:string;token:string;name:string};
 
 export const ManagedClients:React.FC=()=>{
  const [agents,setAgents]=useState<Agent[]>([]);
+ const [page,setPage]=useState(0);
+ const [hasNext,setHasNext]=useState(false);
  const [name,setName]=useState('');
  const [enrollment,setEnrollment]=useState<Enrollment|null>(null);
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
  const refresh=async()=>{
-  const r=await apiFetch<Agent[]>('/managed-agents/admin');
-  if(r.error)setError(r.error); else setAgents(r.data||[]);
+  const r=await apiFetch<Agent[]>('/managed-agents/admin?limit=50&offset='+page*50);
+  if(r.error)setError(r.error); else {setAgents(r.data||[]);setHasNext((r.data||[]).length===50)}
  };
- useEffect(()=>{void refresh();const timer=setInterval(()=>{void refresh()},30000);return ()=>clearInterval(timer)},[]);
+ useEffect(()=>{void refresh();const timer=setInterval(()=>{void refresh()},30000);return ()=>clearInterval(timer)},[page]);
  const enroll=async()=>{
   if(!name.trim())return;
   setBusy(true);setError('');
@@ -52,6 +54,11 @@ export const ManagedClients:React.FC=()=>{
    <div className="flex gap-3 items-center text-sm"><label htmlFor={'schedule-'+agent.id}>Backup schedule</label><select id={'schedule-'+agent.id} disabled={busy||agent.disabled} value={agent.scheduleMinutes||0} onChange={e=>void schedule(agent.id,Number(e.target.value))} className="bg-slate-800 p-2 rounded"><option value={0}>Manual</option><option value={60}>Hourly</option><option value={360}>Every 6 hours</option><option value={1440}>Daily</option><option value={10080}>Weekly</option></select><span className="text-slate-400">Next: {agent.nextRunAt||'Not scheduled'}</span></div>
    <div className="text-sm space-y-1">{agent.jobs.slice(-8).reverse().map(j=><p key={j.id}><span className="font-medium">{j.operation}</span> · {j.state} · {j.createdAt} {j.message&&<span className="text-slate-400">{j.message}</span>}</p>)}</div>
   </article>)}</div>
-  <button onClick={()=>void refresh()} className="text-sm underline">Refresh</button>
+  <div className="flex items-center gap-4 text-sm">
+   <button disabled={page===0} onClick={()=>setPage(p=>Math.max(0,p-1))} className="underline disabled:opacity-40">Previous</button>
+   <span>Page {page+1}</span>
+   <button disabled={!hasNext} onClick={()=>setPage(p=>p+1)} className="underline disabled:opacity-40">Next</button>
+   <button onClick={()=>void refresh()} className="underline">Refresh</button>
+  </div>
  </section>;
 };
