@@ -28,6 +28,18 @@ jobs:
       - name: Build executable
         working-directory: agent/windows
         run: go build -trimpath -o fortress-agent.exe .
+      - name: Validate managed scheduled task
+        shell: pwsh
+        run: |
+          $cfg = Join-Path $env:RUNNER_TEMP 'agent-config.json'
+          Set-Content -LiteralPath $cfg -Value '{}' -Encoding utf8
+          try {
+            & ./agent/windows/install-task.ps1 -AgentPath ./agent/windows/fortress-agent.exe -ConfigPath $cfg -TaskName FortressBackup-CITest -Managed
+            $task = Get-ScheduledTask -TaskName FortressBackup-CITest -ErrorAction Stop
+            if (-not $task) { throw 'Task not registered' }
+          } finally {
+            Unregister-ScheduledTask -TaskName FortressBackup-CITest -Confirm:$false -ErrorAction SilentlyContinue
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: fortress-agent-windows-amd64
