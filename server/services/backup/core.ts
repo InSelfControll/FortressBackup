@@ -88,7 +88,7 @@ export class BackupExecutor extends EventEmitter {
                 }
                 // Case: valid key content provided
                 else {
-                    this.log('info', `Using ID_RSA / PEM key(Length: ${keyContent.length}).Header: ${keyContent.substring(0, 30)}...`);
+                    this.log('info', 'Using SSH private key');
                 }
 
                 connectConfig.privateKey = keyContent;
@@ -121,7 +121,7 @@ export class BackupExecutor extends EventEmitter {
 
     async exec(command: string): Promise<{ stdout: string; stderr: string; code: number }> {
         return new Promise((resolve, reject) => {
-            this.log('info', `Executing: ${command.substring(0, 100)}${command.length > 100 ? '...' : ''}`);
+            this.log('info', 'Executing backup operation (command and credentials redacted)');
 
             if (this.isLocal) {
                 execLocal(command, (error, stdout, stderr) => {
