@@ -31,7 +31,6 @@ interface AppContextType {
     authMode: 'local' | 'sso';
     adminUser?: { name: string; email: string; password: string };
     selectedTools: string[];
-    bootstrapToken: string;
   }) => void;
 }
 
