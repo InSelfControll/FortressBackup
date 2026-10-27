@@ -17,6 +17,6 @@ flock -n 9 || { echo "replication already active" >&2; exit 75; }
 # using restic init --from-repo (copy chunker parameters).
 restic -r "$RESTIC_FROM_REPOSITORY" --password-file "$RESTIC_FROM_PASSWORD_FILE" snapshots >/dev/null
 restic -r "$RESTIC_TO_REPOSITORY" --password-file "$RESTIC_TO_PASSWORD_FILE" snapshots >/dev/null
-restic -r "$RESTIC_FROM_REPOSITORY" --password-file "$RESTIC_FROM_PASSWORD_FILE" copy \
-  --repo2 "$RESTIC_TO_REPOSITORY" --password-file2 "$RESTIC_TO_PASSWORD_FILE"
+restic -r "$RESTIC_TO_REPOSITORY" --password-file "$RESTIC_TO_PASSWORD_FILE" copy \
+  --from-repo "$RESTIC_FROM_REPOSITORY" --from-password-file "$RESTIC_FROM_PASSWORD_FILE"
 restic -r "$RESTIC_TO_REPOSITORY" --password-file "$RESTIC_TO_PASSWORD_FILE" check
