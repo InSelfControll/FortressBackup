@@ -45,7 +45,7 @@ func loadConfig(path string) (Config,error) {
  if c.Repository=="" || c.PasswordFile=="" || len(c.Sources)==0 {return c,errors.New("repository, passwordFile and sources required")}
  if !strings.HasPrefix(c.Repository,"sftp:") && !strings.HasPrefix(c.Repository,"rest:") && !strings.HasPrefix(c.Repository,"s3:") && !strings.HasPrefix(c.Repository,"b2:") {return c,errors.New("repository must use an explicit remote backend")}
  if c.TimeoutMinutes==0 {c.TimeoutMinutes=240}
- if c.TimeoutMinutes<1 || c.TimeoutMinutes>1440{return c,errors.New("timeoutMinutes must be 1..1440")}
+ if c.TimeoutMinutes<1 || c.TimeoutMinutes>240{return c,errors.New("timeoutMinutes must be 1..240")}
  if !filepath.IsAbs(c.PasswordFile) {return c,errors.New("passwordFile must be absolute")}
  if _,err=os.Stat(c.PasswordFile);err!=nil{return c,fmt.Errorf("password file: %w",err)}
  if c.AgentTokenFile!="" && !filepath.IsAbs(c.AgentTokenFile) {return c,errors.New("agentTokenFile must be absolute")}
@@ -88,7 +88,9 @@ func main(){
  if *configPath=="" {fmt.Fprintln(os.Stderr,"--config required");os.Exit(2)}
  c,err:=loadConfig(*configPath)
  if err!=nil {fmt.Fprintln(os.Stderr,"config:",err);os.Exit(2)}
- ctx,cancel:=context.WithTimeout(context.Background(),time.Duration(c.TimeoutMinutes)*time.Minute)
+ deadline:=c.TimeoutMinutes
+ if *operation=="managed" {deadline+=30} // Report acknowledgement grace after backup timeout.
+ ctx,cancel:=context.WithTimeout(context.Background(),time.Duration(deadline)*time.Minute)
  defer cancel()
  if *operation=="managed" {err=managedOnce(ctx,c)} else {err=execute(ctx,c,*operation)}
  if err!=nil{fmt.Fprintln(os.Stderr,"backup failed:",err);os.Exit(1)}
