@@ -6,7 +6,7 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import * as db from '../db/index.js';
-import { getJwtSecret, authenticateToken } from '../middleware/auth.js';
+import { getJwtSecret, authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { generateEnvFile } from '../utils/env.js';
 
 const router = Router();
@@ -70,7 +70,7 @@ router.get('/public', async (req, res) => {
 });
 
 // Get config by key
-router.get('/:key', authenticateToken, async (req, res) => {
+router.get('/:key', authenticateToken, requireAdmin, async (req, res) => {
     try {
         if (req.params.key.startsWith('managed_agent_')) return res.status(403).json({error:'Managed agent records are not accessible through generic config API'});
         const value = await db.getConfig(req.params.key);
@@ -81,7 +81,7 @@ router.get('/:key', authenticateToken, async (req, res) => {
 });
 
 // Save config by key
-router.put('/:key', authenticateToken, async (req, res) => {
+router.put('/:key', authenticateToken, requireAdmin, async (req, res) => {
     try {
         if (req.params.key.startsWith('managed_agent_')) return res.status(403).json({error:'Managed agent records must use dedicated API'});
         await db.saveConfig(req.params.key, req.body.value);
