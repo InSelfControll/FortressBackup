@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Managed-agent integration test
-        run: bun test tests/managed-agents.test.ts
+        run: bun test tests/managed-agents.test.ts tests/security.test.ts
       - name: Type-check
         run: bunx tsc --noEmit
       - name: Build frontend
