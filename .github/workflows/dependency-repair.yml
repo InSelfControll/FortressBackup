@@ -1,0 +1,38 @@
+name: Repair vulnerable dependency graph
+on:
+  push:
+    branches: [fix/fortress-restic-hardening]
+    paths: ['.github/workflows/dependency-repair.yml']
+permissions:
+  contents: write
+jobs:
+  dependency-repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: true
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - name: Resolve secure dependency versions
+        run: |
+          bun install --frozen-lockfile
+          bun audit fix --latest
+          bun audit --audit-level=high
+      - name: Validate application
+        run: |
+          bun test tests/managed-agents.test.ts tests/security.test.ts
+          bunx tsc --noEmit
+          bun run build
+      - name: Push verified package changes to existing review branch
+        run: |
+          git add -- package.json bun.lock
+          if git diff --cached --quiet; then
+            echo "No dependency changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(deps): upgrade vulnerable dependencies and lock resolved versions"
+          git push origin HEAD:fix/fortress-restic-hardening
