@@ -26,3 +26,8 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
         next();
     });
 };
+
+export const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
+    if ((req as any).user?.role !== 'admin') return res.status(403).json({ error: 'Admin required' });
+    next();
+};
