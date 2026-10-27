@@ -95,6 +95,12 @@ docker run -p 127.0.0.1:9001:9001 -v ./data:/app/data fortressbackup
 
 ---
 
+### Optional security environment settings
+
+- `FORTRESS_INITIAL_SSO_GITHUB_ID`: Verified numeric GitHub account ID allowed to become the **first** SSO administrator. Without it, new SSO users remain viewers. Configure this before initial GitHub SSO login.
+- `FORTRESS_AI_HOSTS`: Comma-separated allowlist of HTTPS AI provider hostnames. Defaults to `api.openai.com`. Do not include private addresses or wildcard domains.
+- `FORTRESS_CREDENTIAL_KEY`: Automatically generated 32-byte credential-encryption key, stored in the protected persistent data-volume environment file. Keep secure independent backups of that file.
+
 ## 🔒 Security Architecture
 
 - Remote SSH systems require manually verified SHA256 host-key fingerprints before connection.
