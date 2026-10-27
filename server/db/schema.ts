@@ -223,6 +223,16 @@ export const createTablesPostgres = async () => {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+    CREATE TABLE IF NOT EXISTS job_logs (
+      id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      job_id TEXT NOT NULL REFERENCES jobs(id),
+      run_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      message TEXT NOT NULL,
+      timestamp TIMESTAMPTZ NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_logs_lookup ON job_logs(job_id,timestamp);
+
 
 
   `);
