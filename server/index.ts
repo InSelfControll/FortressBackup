@@ -23,7 +23,9 @@ import sshKeysRouter from './routes/sshKeys.js';
 import aiRouter from './routes/ai.js';
 
 // Initialize environment
-const envPath = path.join(process.cwd(), '.env');
+const durableEnv = process.env.FORTRESS_ENV_PATH || path.join(process.cwd(), 'data', '.env');
+const legacyEnv = path.join(process.cwd(), '.env');
+const envPath = fs.existsSync(durableEnv) ? durableEnv : legacyEnv;
 const result = dotenv.config({ path: envPath });
 
 if (result.error) {
@@ -36,7 +38,8 @@ const app = express();
 const PORT = process.env.PORT || 9001;
 
 // Middleware
-app.use(cors());
+const allowedFrontend = process.env.FRONTEND_URL || 'http://localhost:3001';
+app.use(cors({origin:(origin, callback) => callback(null, !origin || origin === allowedFrontend)}));
 app.use(express.json());
 
 // ==================== ROUTES ====================
