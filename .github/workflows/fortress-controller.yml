@@ -44,6 +44,7 @@ jobs:
         run: |
           bun install --frozen-lockfile
           bun audit fix --latest || bun update --latest
+          bun add -d @types/react@latest @types/react-dom@latest
           bun audit --audit-level=high
           bun test tests/managed-agents.test.ts tests/security.test.ts
           bunx tsc --noEmit
