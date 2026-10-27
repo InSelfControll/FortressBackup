@@ -5,7 +5,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import * as db from '../db/index.js';
-import { authenticateToken, getJwtSecret } from '../middleware/auth.js';
+import { authenticateToken, requireAdmin, getJwtSecret } from '../middleware/auth.js';
 import { toAPIJob, toDBJob } from '../utils/mappers.js';
 import { resolveSSHCredentialsFromRequest } from '../utils/sshCredentials.js';
 import { encrypt, decrypt } from '../encryption.js';
@@ -15,7 +15,7 @@ import { subscribeToJobLogs, broadcastJobLog, notifyJobComplete } from '../logSt
 const router = Router();
 
 // Get all jobs
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const jobs = await db.getAllJobs();
         res.json(jobs.map(toAPIJob));
@@ -25,7 +25,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Create job
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const jobId = req.body.id || crypto.randomUUID();
 
@@ -51,7 +51,7 @@ router.post('/', authenticateToken, async (req, res) => {
 });
 
 // Update job
-router.put('/:id', authenticateToken, async (req, res) => {
+router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const job = { ...req.body, id: req.params.id };
         const dbJob = toDBJob(job);
@@ -70,7 +70,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
 });
 
 // Delete job
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await db.deleteJob(req.params.id);
         res.json({ success: true });
@@ -80,7 +80,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 });
 
 // Run a backup job via SSH on the source system
-router.post('/:id/run', authenticateToken, async (req, res) => {
+router.post('/:id/run', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const jobId = req.params.id;
 
@@ -210,7 +210,7 @@ router.post('/:id/run', authenticateToken, async (req, res) => {
 });
 
 // Get job logs
-router.get('/:jobId/logs', authenticateToken, async (req, res) => {
+router.get('/:jobId/logs', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const logs = await db.getJobLogs(req.params.jobId);
         res.json(logs);
@@ -220,14 +220,14 @@ router.get('/:jobId/logs', authenticateToken, async (req, res) => {
 });
 
 // SSE endpoint for live job log streaming
-router.get('/:jobId/logs/stream', authenticateToken, (req, res) => {
+router.get('/:jobId/logs/stream', authenticateToken, requireAdmin, (req, res) => {
     const jobId = req.params.jobId;
     console.log(`[SSE] Client subscribed to job ${jobId} logs`);
     subscribeToJobLogs(jobId, res);
 });
 
 // List snapshots for a job
-router.get('/:id/snapshots', authenticateToken, async (req, res) => {
+router.get('/:id/snapshots', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const jobId = req.params.id;
         console.log(`[API] Listing snapshots for job ${jobId}`);
@@ -282,7 +282,7 @@ router.get('/:id/snapshots', authenticateToken, async (req, res) => {
 });
 
 // List files in a snapshot
-router.get('/:id/snapshots/:snapshotId/files', authenticateToken, async (req, res) => {
+router.get('/:id/snapshots/:snapshotId/files', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { id, snapshotId } = req.params;
         const job = await db.getJob(id);
@@ -333,7 +333,7 @@ router.get('/:id/snapshots/:snapshotId/files', authenticateToken, async (req, re
 });
 
 // Restore a snapshot
-router.post('/:id/restore', authenticateToken, async (req, res) => {
+router.post('/:id/restore', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const jobId = req.params.id;
         const { snapshotId, restorePath, systemId, paths } = req.body; // paths optional
