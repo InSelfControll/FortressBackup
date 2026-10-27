@@ -186,11 +186,12 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         }
       } else {
         console.error('[Setup] Backend returned error:', error);
+        return;
       }
     } catch (error) {
       console.error('[Setup] Failed to call backend API:', error);
-      // Store auth mode locally for reference, but backend is required
-      localStorage.setItem('fortress_auth_mode', mode);
+      // Keep setup unfinished when API configuration fails.
+      return;
     }
 
     // Create vault salt if not exists
