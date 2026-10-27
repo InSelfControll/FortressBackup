@@ -3,51 +3,120 @@
 package main
 
 import (
- "bytes"
- "context"
- "encoding/json"
- "errors"
- "fmt"
- "io"
- "net/http"
- "net/url"
- "os"
- "strings"
- "time"
+    "bytes"
+    "context"
+    "encoding/json"
+    "errors"
+    "fmt"
+    "io"
+    "net/http"
+    "net/url"
+    "os"
+    "path/filepath"
+    "strings"
+    "time"
 )
 
-type lease struct {ID string `json:"id"`; Operation string `json:"operation"`}
-type pollResponse struct {Job *lease `json:"job"`}
-func managedOnce(ctx context.Context,c Config) error {
- u,err:=url.Parse(c.ControllerURL);if err!=nil||u.Scheme!="https"||u.Host==""||u.User!=nil||u.RawQuery!=""{return errors.New("controllerURL must be a plain HTTPS origin")}
- if c.AgentID==""||c.AgentTokenFile==""{return errors.New("agentId and agentTokenFile required")}
- b,err:=os.ReadFile(c.AgentTokenFile);if err!=nil{return err}
- token:=strings.TrimSpace(string(b))
- if len(token)<32||len(token)>256{return errors.New("invalid enrollment token")}
- client:=&http.Client{Timeout:30*time.Second}
- endpoint:=strings.TrimRight(c.ControllerURL,"/")+"/api/managed-agents"
- request:=func(method,path string,payload any)([]byte,error){
-  var body io.Reader
-  if payload!=nil {raw,err:=json.Marshal(payload);if err!=nil{return nil,err};body=bytes.NewReader(raw)}
-  req,err:=http.NewRequestWithContext(ctx,method,endpoint+path,body);if err!=nil{return nil,err}
-  req.Header.Set("Authorization","Bearer "+token)
-  req.Header.Set("X-Fortress-Agent-Id",c.AgentID)
-  if payload!=nil {req.Header.Set("Content-Type","application/json")}
-  res,err:=client.Do(req);if err!=nil{return nil,err};defer res.Body.Close()
-  out,err:=io.ReadAll(io.LimitReader(res.Body,1<<20));if err!=nil{return nil,err}
-  if res.StatusCode!=200{return nil,fmt.Errorf("controller returned HTTP %d",res.StatusCode)}
-  return out,nil
- }
- raw,err:=request("POST","/poll",map[string]string{});if err!=nil{return err}
- var p pollResponse
- if err=json.Unmarshal(raw,&p);err!=nil{return err}
- if p.Job==nil{return nil}
- if p.Job.Operation!="backup"&&p.Job.Operation!="check"&&p.Job.Operation!="snapshots" {return errors.New("controller requested unsupported operation")}
- // Local config controls all source paths, credentials, binaries and destinations.
- jobctx,cancel:=context.WithTimeout(ctx,time.Duration(c.TimeoutMinutes)*time.Minute);defer cancel()
- result:=execute(jobctx,c,p.Job.Operation)
- message:="completed";if result!=nil{message="backup operation failed"}
- _,reportErr:=request("POST","/report",map[string]any{"id":p.Job.ID,"success":result==nil,"message":message})
- if reportErr!=nil{return fmt.Errorf("job executed but report failed: %w",reportErr)}
- return result
+type lease struct {
+    ID string `json:"id"`
+    Operation string `json:"operation"`
+}
+type pollResponse struct {
+    Job *lease `json:"job"`
+}
+type pendingReport struct {
+    ID string `json:"id"`
+    Success bool `json:"success"`
+    Message string `json:"message"`
+}
+
+func writePending(path string, report pendingReport) error {
+    data, err := json.Marshal(report)
+    if err != nil { return err }
+    temp, err := os.CreateTemp(filepath.Dir(path), ".fortress-report-*")
+    if err != nil { return err }
+    defer os.Remove(temp.Name())
+    if err := temp.Chmod(0600); err != nil { temp.Close(); return err }
+    if _, err := temp.Write(data); err != nil { temp.Close(); return err }
+    if err := temp.Sync(); err != nil { temp.Close(); return err }
+    if err := temp.Close(); err != nil { return err }
+    return os.Rename(temp.Name(), path)
+}
+
+func readPending(path string) (*pendingReport, error) {
+    data, err := os.ReadFile(path)
+    if os.IsNotExist(err) { return nil, nil }
+    if err != nil { return nil, err }
+    if len(data) > 4096 { return nil, errors.New("pending report too large") }
+    var report pendingReport
+    if err := json.Unmarshal(data, &report); err != nil { return nil, err }
+    if report.ID=="" { return nil, errors.New("invalid pending report") }
+    return &report, nil
+}
+
+func managedOnce(ctx context.Context, c Config) error {
+    u, err := url.Parse(c.ControllerURL)
+    if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil ||
+        u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+        return errors.New("controllerURL must be a plain HTTPS origin")
+    }
+    if c.AgentID == "" || c.AgentTokenFile == "" { return errors.New("agentId and agentTokenFile required") }
+    tokenBytes, err := os.ReadFile(c.AgentTokenFile)
+    if err != nil { return err }
+    token := strings.TrimSpace(string(tokenBytes))
+    if len(token) < 32 || len(token) > 256 { return errors.New("invalid enrollment token") }
+    client := &http.Client{
+        Timeout: 30*time.Second,
+        CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
+    }
+    endpoint := strings.TrimRight(c.ControllerURL, "/") + "/api/managed-agents"
+    var poll pollResponse
+    request := func(route string, payload any) error {
+        data, err := json.Marshal(payload)
+        if err != nil { return err }
+        req, err := http.NewRequestWithContext(ctx, "POST", endpoint+route, bytes.NewReader(data))
+        if err != nil { return err }
+        req.Header.Set("Authorization", "Bearer "+token)
+        req.Header.Set("X-Fortress-Agent-Id", c.AgentID)
+        req.Header.Set("Content-Type", "application/json")
+        res, err := client.Do(req)
+        if err != nil { return err }
+        defer res.Body.Close()
+        response, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+        if err != nil { return err }
+        if res.StatusCode != http.StatusOK { return fmt.Errorf("controller returned HTTP %d", res.StatusCode) }
+        if route == "/poll" {
+            return json.Unmarshal(response, &poll)
+        }
+        return nil
+    }
+    // Report files contain no encryption keys or remote commands. Restrict the
+    // directory ACL to the task identity and Administrators.
+    pendingPath := filepath.Join(filepath.Dir(c.AgentTokenFile), "fortress-pending-report.json")
+    pending, err := readPending(pendingPath)
+    if err != nil { return err }
+
+    if pending != nil {
+        if err := request("/report", pending); err != nil { return fmt.Errorf("previous job report pending: %w", err) }
+        if err := os.Remove(pendingPath); err != nil { return err }
+    }
+    if err := request("/poll", map[string]string{}); err != nil { return err }
+    if poll.Job == nil { return nil }
+    if poll.Job.Operation!="backup" && poll.Job.Operation!="check" && poll.Job.Operation!="snapshots" {
+        return errors.New("controller requested unsupported operation")
+    }
+    jobctx, cancel := context.WithTimeout(ctx, time.Duration(c.TimeoutMinutes)*time.Minute)
+    defer cancel()
+    result := execute(jobctx, c, poll.Job.Operation)
+    message := "completed"
+    if result != nil { message = "backup operation failed" }
+    report := pendingReport{ID: poll.Job.ID, Success: result == nil, Message: message}
+    if err := writePending(pendingPath, report); err != nil {
+        return fmt.Errorf("could not persist completion report: %w", err)
+    }
+    if err := request("/report", report); err != nil {
+        return fmt.Errorf("job executed; report saved for retry: %w", err)
+    }
+    if err := os.Remove(pendingPath); err != nil { return err }
+    return result
 }
