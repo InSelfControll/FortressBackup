@@ -32,13 +32,11 @@ export const runBackupJob = async (
         };
     }
 
-    const result = await executeBackup(executor, jobConfig, sshConfig);
-
-    if (!isPullMode) {
-        executor.disconnect();
+    try {
+        return await executeBackup(executor, jobConfig, sshConfig);
+    } finally {
+        if (!isPullMode) executor.disconnect();
     }
-
-    return result;
 };
 
 /**
@@ -58,9 +56,11 @@ export const runRestoreJob = async (
         return { success: false, startTime: new Date(), endTime: new Date(), errors: ['SSH Connection Failed'], logs: [] };
     }
 
-    const result = await restore(executor, restoreConfig);
-    executor.disconnect();
-    return result;
+    try {
+        return await restore(executor, restoreConfig);
+    } finally {
+        executor.disconnect();
+    }
 };
 
 /**
