@@ -22,9 +22,18 @@ router.get('/', authenticateToken, requireAdmin, async (req, res) => {
 // Create location
 router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const location = { ...req.body, id: req.body.id || crypto.randomUUID() };
+        const location = { ...req.body, id: crypto.randomUUID() };
+        if (typeof location.name !== 'string' || !location.name.trim() || location.name.length > 120 ||
+            typeof location.path !== 'string' || !location.path.trim() || location.path.length > 1024 ||
+            !['s3','sftp','nfs','b2','gcs','azure','gdrive','onedrive'].includes(location.type) ||
+            (location.access_key !== undefined && (typeof location.access_key !== 'string' || location.access_key.length > 4096)) ||
+            (location.secret_key !== undefined && (typeof location.secret_key !== 'string' || location.secret_key.length > 4096))) {
+            return res.status(400).json({error:'Invalid location configuration'});
+        }
         await db.saveLocation(location);
-        res.json(location);
+        res.json({id:location.id,name:location.name,type:location.type,path:location.path,
+            endpoint:location.endpoint,region:location.region,
+            hasAccessKey:!!location.access_key,hasSecretKey:!!location.secret_key});
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
@@ -34,8 +43,17 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
 router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const location = { ...req.body, id: req.params.id };
+        if (typeof location.name !== 'string' || !location.name.trim() || location.name.length > 120 ||
+            typeof location.path !== 'string' || !location.path.trim() || location.path.length > 1024 ||
+            !['s3','sftp','nfs','b2','gcs','azure','gdrive','onedrive'].includes(location.type) ||
+            (location.access_key !== undefined && (typeof location.access_key !== 'string' || location.access_key.length > 4096)) ||
+            (location.secret_key !== undefined && (typeof location.secret_key !== 'string' || location.secret_key.length > 4096))) {
+            return res.status(400).json({error:'Invalid location configuration'});
+        }
         await db.saveLocation(location);
-        res.json(location);
+        res.json({id:location.id,name:location.name,type:location.type,path:location.path,
+            endpoint:location.endpoint,region:location.region,
+            hasAccessKey:!!location.access_key,hasSecretKey:!!location.secret_key});
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
