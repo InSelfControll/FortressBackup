@@ -31,6 +31,7 @@ interface AppContextType {
     authMode: 'local' | 'sso';
     adminUser?: { name: string; email: string; password: string };
     selectedTools: string[];
+    bootstrapToken: string;
   }) => void;
 }
 
@@ -152,6 +153,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     authMode: 'local' | 'sso';
     adminUser?: { name: string; email: string; password: string };
     selectedTools: string[];
+    bootstrapToken: string;
   }) => {
     const { aiConfig: ai, dbConfig: db, ssoConfig: sso, authMode: mode, adminUser, selectedTools, bootstrapToken } = config;
 
