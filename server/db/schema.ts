@@ -4,6 +4,35 @@
 
 import { sqliteDb, pgPool } from './connection.js';
 
+// Shared SQLite/PostgreSQL managed-client schema (single source of truth).
+const managedTablesDDL = `
+    CREATE TABLE IF NOT EXISTS managed_clients (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_seen TEXT,
+      disabled INTEGER NOT NULL DEFAULT 0,
+      schedule_minutes INTEGER NOT NULL DEFAULT 0,
+      next_run_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS managed_jobs (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL REFERENCES managed_clients(id),
+      operation TEXT NOT NULL CHECK (operation IN ('backup','check','snapshots')),
+      state TEXT NOT NULL CHECK (state IN ('pending','running','success','failed')),
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      finished_at TEXT,
+      lease_until TEXT,
+      schedule_slot TEXT,
+      message TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_managed_jobs_client ON managed_jobs(client_id,created_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_active ON managed_jobs(client_id)
+      WHERE state IN ('pending','running');
+`;
+
 /**
  * Create tables for SQLite
  */
@@ -93,33 +122,11 @@ export const createTables = () => {
       key TEXT PRIMARY KEY,
       value TEXT
     );
-    CREATE TABLE IF NOT EXISTS managed_clients (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      token_hash TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      last_seen TEXT,
-      disabled INTEGER NOT NULL DEFAULT 0,
-      schedule_minutes INTEGER NOT NULL DEFAULT 0,
-      next_run_at TEXT
-    );
-    CREATE TABLE IF NOT EXISTS managed_jobs (
-      id TEXT PRIMARY KEY,
-      client_id TEXT NOT NULL REFERENCES managed_clients(id),
-      operation TEXT NOT NULL CHECK (operation IN ('backup','check','snapshots')),
-      state TEXT NOT NULL CHECK (state IN ('pending','running','success','failed')),
-      created_at TEXT NOT NULL,
-      started_at TEXT,
-      finished_at TEXT,
-      lease_until TEXT,
-      schedule_slot TEXT,
-      message TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_managed_jobs_client ON managed_jobs(client_id,created_at);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_active ON managed_jobs(client_id)
-      WHERE state IN ('pending','running');
+
 
   `);
+
+  sqliteDb.exec(managedTablesDDL);
 
   // Schema Migration: Add ssh_key_id to systems if missing
   try {
@@ -216,33 +223,10 @@ export const createTablesPostgres = async () => {
       key TEXT PRIMARY KEY,
       value TEXT
     );
-    CREATE TABLE IF NOT EXISTS managed_clients (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      token_hash TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      last_seen TEXT,
-      disabled INTEGER NOT NULL DEFAULT 0,
-      schedule_minutes INTEGER NOT NULL DEFAULT 0,
-      next_run_at TEXT
-    );
-    CREATE TABLE IF NOT EXISTS managed_jobs (
-      id TEXT PRIMARY KEY,
-      client_id TEXT NOT NULL REFERENCES managed_clients(id),
-      operation TEXT NOT NULL CHECK (operation IN ('backup','check','snapshots')),
-      state TEXT NOT NULL CHECK (state IN ('pending','running','success','failed')),
-      created_at TEXT NOT NULL,
-      started_at TEXT,
-      finished_at TEXT,
-      lease_until TEXT,
-      schedule_slot TEXT,
-      message TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_managed_jobs_client ON managed_jobs(client_id,created_at);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_active ON managed_jobs(client_id)
-      WHERE state IN ('pending','running');
+
 
   `);
+  await pgPool.query(managedTablesDDL);
   await pgPool.query('ALTER TABLE systems ADD COLUMN IF NOT EXISTS host_fingerprint TEXT');
   await pgPool.query('ALTER TABLE managed_jobs ADD COLUMN IF NOT EXISTS schedule_slot TEXT');
   await pgPool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_schedule_slot ON managed_jobs(client_id,schedule_slot) WHERE schedule_slot IS NOT NULL');
