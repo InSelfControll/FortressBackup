@@ -111,6 +111,7 @@ router.post('/:id/deploy', authenticateToken, requireAdmin, async (req, res) => 
 
         // Deploy with selected tools
         const result = await deployToSystem(sshConfig, selectedTools, (log) => {
+            if(logs.length>=2000) logs.shift();
             logs.push(log);
             console.log(`[Deploy] [${log.type}] ${log.message}`);
         });
