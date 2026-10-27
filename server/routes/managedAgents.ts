@@ -32,7 +32,14 @@ router.post('/admin/enroll',authenticateToken,admin,async(req,res)=>{
  const id=crypto.randomUUID(), token=crypto.randomBytes(32).toString('base64url');
  const client:Client={id,name,tokenHash:hash(token),createdAt:new Date().toISOString(),disabled:false,jobs:[]};
  await db.saveConfig(clientKey(id),client);
+ const ids=await db.getConfig<string[]>('managed_agent_ids') || [];
+ await db.saveConfig('managed_agent_ids',[...ids,id]);
  res.status(201).json({id,token,name,warning:'Token is shown once. Store it in an ACL-restricted file on the Windows client.'});
+});
+router.get('/admin',authenticateToken,admin,async(_req,res)=>{
+ const ids=await db.getConfig<string[]>('managed_agent_ids')||[];
+ const clients=await Promise.all(ids.map(getClient));
+ res.json(clients.filter((x):x is Client=>x!==null).map(({tokenHash,...safe})=>safe));
 });
 router.get('/admin/:id',authenticateToken,admin,async(req,res)=>{
  const c=await getClient(req.params.id);
