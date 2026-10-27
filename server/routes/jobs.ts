@@ -210,7 +210,7 @@ router.post('/:id/run', authenticateToken, async (req, res) => {
 });
 
 // Get job logs
-router.get('/:jobId/logs', async (req, res) => {
+router.get('/:jobId/logs', authenticateToken, async (req, res) => {
     try {
         const logs = await db.getJobLogs(req.params.jobId);
         res.json(logs);
@@ -220,7 +220,7 @@ router.get('/:jobId/logs', async (req, res) => {
 });
 
 // SSE endpoint for live job log streaming
-router.get('/:jobId/logs/stream', (req, res) => {
+router.get('/:jobId/logs/stream', authenticateToken, (req, res) => {
     const jobId = req.params.jobId;
     console.log(`[SSE] Client subscribed to job ${jobId} logs`);
     subscribeToJobLogs(jobId, res);
