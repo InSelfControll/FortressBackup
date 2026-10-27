@@ -1,0 +1,35 @@
+name: Windows backup agent
+on:
+  push:
+    paths:
+      - 'agent/windows/**'
+      - '.github/workflows/windows-agent.yml'
+  pull_request:
+    paths:
+      - 'agent/windows/**'
+      - '.github/workflows/windows-agent.yml'
+permissions:
+  contents: read
+jobs:
+  test-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/windows/go.mod
+          cache: false
+      - name: Go tests
+        working-directory: agent/windows
+        run: go test -v ./...
+      - name: Go vet
+        working-directory: agent/windows
+        run: go vet ./...
+      - name: Build executable
+        working-directory: agent/windows
+        run: go build -trimpath -o fortress-agent.exe .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fortress-agent-windows-amd64
+          path: agent/windows/fortress-agent.exe
+          if-no-files-found: error
