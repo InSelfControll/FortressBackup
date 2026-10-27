@@ -24,40 +24,6 @@ on:
 permissions:
   contents: read
 jobs:
-  repair-dependencies:
-    if: github.event_name == 'pull_request' && github.event.pull_request.number == 20 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/fortress-restic-hardening'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    concurrency:
-      group: fortress-dependency-repair
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: true
-          ref: fix/fortress-restic-hardening
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
-        with:
-          bun-version: 1.4.4
-      - name: Update vulnerable locked dependencies
-        run: |
-          bun install --frozen-lockfile
-          bun audit fix --latest || true
-          bun add -d @types/react@^19 @types/react-dom@^19 concurrently@^10.0.6 @tanstack/router-plugin@^1.168.48
-          bun add @tanstack/react-router@^1.168.48 @tanstack/router-devtools@^1.167.2
-          bun audit --audit-level=high
-          bun test tests/managed-agents.test.ts tests/security.test.ts
-          bun run build
-          bunx tsc --noEmit
-      - name: Commit validated dependency updates
-        run: |
-          git add -- package.json bun.lock src/routeTree.gen.ts
-          if git diff --cached --quiet; then exit 0; fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "fix(deps): resolve critical and high advisories"
-          git push origin HEAD:fix/fortress-restic-hardening
   build:
     runs-on: ubuntu-24.04
     steps:
