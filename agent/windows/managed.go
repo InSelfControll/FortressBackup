@@ -93,17 +93,31 @@ func managedOnce(ctx context.Context, c Config) error {
     // Report files contain no encryption keys or remote commands. Restrict the
     // directory ACL to the task identity and Administrators.
     pendingPath := filepath.Join(filepath.Dir(c.AgentTokenFile), "fortress-pending-report.json")
+    activePath := filepath.Join(filepath.Dir(c.AgentTokenFile), "fortress-active-job.json")
     pending, err := readPending(pendingPath)
     if err != nil { return err }
 
     if pending != nil {
         if err := request("/report", pending); err != nil { return fmt.Errorf("previous job report pending: %w", err) }
         if err := os.Remove(pendingPath); err != nil { return err }
+        // A completed job may have been interrupted between report persistence
+        // and cleanup of the locally durable active-job marker.
+        if err := os.Remove(activePath); err != nil && !os.IsNotExist(err) { return err }
     }
     if err := request("/poll", map[string]string{}); err != nil { return err }
+    active,err:=readPending(activePath)
+    if err!=nil{return err}
+    if active!=nil {
+        // Never repeat an interrupted Restic invocation without operator
+        // reconciliation, even if the controller redelivered its lease.
+        return fmt.Errorf("job %s was interrupted; verify its repository and clear the local active marker manually",active.ID)
+    }
     if poll.Job == nil { return nil }
     if poll.Job.Operation!="backup" && poll.Job.Operation!="check" && poll.Job.Operation!="snapshots" {
         return errors.New("controller requested unsupported operation")
+    }
+    if err:=writePending(activePath,pendingReport{ID:poll.Job.ID,Message:"running"});err!=nil{
+        return fmt.Errorf("cannot persist active-job marker: %w",err)
     }
     jobctx, cancel := context.WithTimeout(ctx, time.Duration(c.TimeoutMinutes)*time.Minute)
     defer cancel()
@@ -114,6 +128,7 @@ func managedOnce(ctx context.Context, c Config) error {
     if err := writePending(pendingPath, report); err != nil {
         return fmt.Errorf("could not persist completion report: %w", err)
     }
+    if err:=os.Remove(activePath);err!=nil && !os.IsNotExist(err){return err}
     if err := request("/report", report); err != nil {
         return fmt.Errorf("job executed; report saved for retry: %w", err)
     }
