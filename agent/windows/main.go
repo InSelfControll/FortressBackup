@@ -39,12 +39,16 @@ func loadConfig(path string) (Config,error) {
  file,err:=os.Open(path); if err!=nil{return c,err}; defer file.Close()
  decoder:=json.NewDecoder(io.LimitReader(file,1<<20)); decoder.DisallowUnknownFields()
  if err=decoder.Decode(&c);err!=nil{return c,err}
- if c.ResticPath=="" {c.ResticPath="restic.exe"}
+ if !filepath.IsAbs(c.ResticPath) { return c,errors.New("resticPath must be an absolute, trusted executable path") }
+ if filepath.Ext(c.ResticPath)!=".exe" { return c,errors.New("resticPath must point to an exe") }
+ if file,err:=os.Lstat(c.ResticPath);err!=nil||file.Mode()&os.ModeSymlink!=0 {return c,errors.New("restic executable missing or a symbolic link")}
  if c.Repository=="" || c.PasswordFile=="" || len(c.Sources)==0 {return c,errors.New("repository, passwordFile and sources required")}
  if !strings.HasPrefix(c.Repository,"sftp:") && !strings.HasPrefix(c.Repository,"rest:") && !strings.HasPrefix(c.Repository,"s3:") && !strings.HasPrefix(c.Repository,"b2:") {return c,errors.New("repository must use an explicit remote backend")}
  if c.TimeoutMinutes==0 {c.TimeoutMinutes=240}
  if c.TimeoutMinutes<1 || c.TimeoutMinutes>1440{return c,errors.New("timeoutMinutes must be 1..1440")}
+ if !filepath.IsAbs(c.PasswordFile) {return c,errors.New("passwordFile must be absolute")}
  if _,err=os.Stat(c.PasswordFile);err!=nil{return c,fmt.Errorf("password file: %w",err)}
+ if c.AgentTokenFile!="" && !filepath.IsAbs(c.AgentTokenFile) {return c,errors.New("agentTokenFile must be absolute")}
  for _,source:=range c.Sources {if !filepath.IsAbs(source) {return c,fmt.Errorf("source must be absolute: %q",source)}; if _,err=os.Stat(source);err!=nil{return c,fmt.Errorf("source %q: %w",source,err)}}
  for _,exclude:=range c.Excludes {if strings.TrimSpace(exclude)=="" {return c,errors.New("empty exclude")}}
  return c,nil
