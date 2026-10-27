@@ -1,102 +1,191 @@
-import { Router } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import crypto from 'node:crypto';
-import * as db from '../db/index.js';
+import { getOne, query, run } from '../db/helpers.js';
 import { authenticateToken } from '../middleware/auth.js';
 
-// All enrolled clients are configured locally with immutable backup credentials.
-// Controller never transmits passwords, paths, or executable commands.
-const router=Router();
-type Job={id:string;operation:'backup'|'check'|'snapshots';state:'pending'|'running'|'success'|'failed';createdAt:string;startedAt?:string;finishedAt?:string;leaseUntil?:string;message?:string};
-type Client={id:string;name:string;tokenHash:string;createdAt:string;lastSeen?:string;disabled:boolean;scheduleMinutes?:number;nextRunAt?:string;jobs:Job[]};
-const idPattern=/^[0-9a-f-]{36}$/i;
-const clientKey=(id:string)=>'managed_agent_'+id;
-const admin=(req:any,res:any,next:any)=> req.user?.role==='admin'?next():res.status(403).json({error:'Admin required'});
-const getClient=async(id:string):Promise<Client|null>=>idPattern.test(id)?db.getConfig<Client>(clientKey(id)):null;
-const hash=(token:string)=>crypto.createHash('sha256').update(token).digest('hex');
-const verify=(token:string,stored:string)=>{
- const a=Buffer.from(hash(token),'hex'), b=Buffer.from(stored,'hex');
- return a.length===b.length&&crypto.timingSafeEqual(a,b);
+// No storage credentials, source paths or remote commands are accepted here.
+const router = Router();
+type Operation = 'backup' | 'check' | 'snapshots';
+type Agent = {
+  id: string; name: string; token_hash: string; created_at: string;
+  last_seen: string | null; disabled: number; schedule_minutes: number; next_run_at: string | null;
 };
-async function authenticate(req:any,res:any,next:any){
- const id=req.header('x-fortress-agent-id');
- const token=/^Bearer (\\S+)$/.exec(req.header('authorization')||'')?.[1];
- if(!id||!token||token.length>256)return res.status(401).json({error:'Agent authentication required'});
- const client=await getClient(id);
- if(!client||client.disabled||!verify(token,client.tokenHash))return res.status(401).json({error:'Invalid agent credentials'});
- req.agent=client;
- next();
+type AgentJob = {
+  id: string; client_id: string; operation: Operation;
+  state: 'pending' | 'running' | 'success' | 'failed'; created_at: string;
+  started_at: string | null; finished_at: string | null; lease_until: string | null;
+  message: string | null;
+};
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const sha256 = (v: string) => crypto.createHash('sha256').update(v).digest('hex');
+const isAdmin = (req: Request, res: Response, next: NextFunction) =>
+  (req as any).user?.role === 'admin' ? next() : res.status(403).json({ error: 'Admin required' });
+const lookup = (id: unknown) => typeof id === 'string' && uuid.test(id)
+  ? getOne<Agent>('SELECT * FROM managed_clients WHERE id=?', [id]) : Promise.resolve(null);
+const publicAgent = ({ token_hash: _secret, ...safe }: Agent) => ({
+  id: safe.id, name: safe.name, createdAt: safe.created_at,
+  lastSeen: safe.last_seen, disabled: !!safe.disabled,
+  scheduleMinutes: safe.schedule_minutes, nextRunAt: safe.next_run_at
+});
+const publicJob = (j: AgentJob) => ({
+  id: j.id, operation: j.operation, state: j.state,
+  createdAt: j.created_at, startedAt: j.started_at,
+  finishedAt: j.finished_at, message: j.message
+});
+const isConflict = (e: unknown) =>
+  /unique|constraint|duplicate key/i.test(e instanceof Error ? e.message : String(e));
+async function agentAuth(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = req.get('x-fortress-agent-id');
+    const bearer = /^Bearer ([A-Za-z0-9_-]{32,256})$/.exec(req.get('authorization') ?? '')?.[1];
+    if (!id || !bearer) return res.status(401).json({ error: 'Agent authentication required' });
+    const agent = await lookup(id);
+    if (!agent || agent.disabled) return res.status(401).json({ error: 'Invalid agent identity' });
+    const a = Buffer.from(sha256(bearer), 'hex');
+    const b = Buffer.from(agent.token_hash, 'hex');
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b))
+      return res.status(401).json({ error: 'Invalid agent credentials' });
+    (req as any).managedAgent = agent.id;
+    next();
+  } catch (e) { next(e); }
 }
-router.post('/admin/enroll',authenticateToken,admin,async(req,res)=>{
- const name=req.body?.name;
- if(typeof name!=='string'||name.length<1||name.length>100)return res.status(400).json({error:'Invalid client name'});
- const id=crypto.randomUUID(), token=crypto.randomBytes(32).toString('base64url');
- const client:Client={id,name,tokenHash:hash(token),createdAt:new Date().toISOString(),disabled:false,jobs:[]};
- await db.saveConfig(clientKey(id),client);
- const ids=await db.getConfig<string[]>('managed_agent_ids') || [];
- await db.saveConfig('managed_agent_ids',[...ids,id]);
- res.status(201).json({id,token,name,warning:'Token is shown once. Store it in an ACL-restricted file on the Windows client.'});
+
+// Enrollment secrets are issued once and never returned by inventory endpoints.
+router.post('/admin/enroll', authenticateToken, isAdmin, async (req, res, next) => {
+  try {
+    const name = req.body?.name;
+    if (typeof name !== 'string' || !name.trim() || name.length > 100)
+      return res.status(400).json({ error: 'Invalid name' });
+    const id = crypto.randomUUID();
+    const token = crypto.randomBytes(32).toString('base64url');
+    await run('INSERT INTO managed_clients(id,name,token_hash,created_at) VALUES(?,?,?,?)',
+      [id, name.trim(), sha256(token), new Date().toISOString()]);
+    res.status(201).json({ id, name: name.trim(), token });
+  } catch (e) { next(e); }
 });
-router.get('/admin',authenticateToken,admin,async(_req,res)=>{
- const ids=await db.getConfig<string[]>('managed_agent_ids')||[];
- const clients=await Promise.all(ids.map(getClient));
- res.json(clients.filter((x):x is Client=>x!==null).map(({tokenHash,...safe})=>safe));
+
+router.get('/admin', authenticateToken, isAdmin, async (_req, res, next) => {
+  try {
+    const agents = await query<Agent>('SELECT * FROM managed_clients ORDER BY created_at DESC');
+    const recent = await query<AgentJob>(
+      `SELECT id,client_id,operation,state,created_at,started_at,finished_at,lease_until,message
+       FROM (SELECT *, ROW_NUMBER() OVER(PARTITION BY client_id ORDER BY created_at DESC) AS rn FROM managed_jobs) AS j
+       WHERE rn<=8 ORDER BY created_at DESC`);
+    const grouped = new Map<string, ReturnType<typeof publicJob>[]>();
+    for (const j of recent) {
+      if (!grouped.has(j.client_id)) grouped.set(j.client_id, []);
+      grouped.get(j.client_id)!.push(publicJob(j));
+    }
+    res.json(agents.map(a => ({ ...publicAgent(a), jobs: grouped.get(a.id) ?? [] })));
+  } catch (e) { next(e); }
 });
-router.get('/admin/:id',authenticateToken,admin,async(req,res)=>{
- const c=await getClient(req.params.id);
- if(!c)return res.sendStatus(404);
- const {tokenHash,...safe}=c;res.json(safe);
+
+router.get('/admin/:id', authenticateToken, isAdmin, async (req, res, next) => {
+  try {
+    const agent = await lookup(req.params.id);
+    if (!agent) return res.sendStatus(404);
+    const jobs = await query<AgentJob>(
+      'SELECT * FROM managed_jobs WHERE client_id=? ORDER BY created_at DESC LIMIT 50', [agent.id]);
+    res.json({ ...publicAgent(agent), jobs: jobs.map(publicJob) });
+  } catch (e) { next(e); }
 });
-router.post('/admin/:id/jobs',authenticateToken,admin,async(req,res)=>{
- const c=await getClient(req.params.id);
- if(!c)return res.sendStatus(404);
- if(c.disabled)return res.status(409).json({error:'Client disabled'});
- const op=req.body?.operation;
- if(op!=='backup'&&op!=='check'&&op!=='snapshots')return res.status(400).json({error:'Unsupported operation'});
- if(c.jobs.some(j=>j.state==='pending'||j.state==='running'))return res.status(409).json({error:'Another job is active'});
- const job:Job={id:crypto.randomUUID(),operation:op,state:'pending',createdAt:new Date().toISOString()};
- c.jobs.push(job);await db.saveConfig(clientKey(c.id),c);res.status(201).json(job);
+
+router.post('/admin/:id/jobs', authenticateToken, isAdmin, async (req, res, next) => {
+  try {
+    const agent = await lookup(req.params.id);
+    if (!agent) return res.sendStatus(404);
+    if (agent.disabled) return res.status(409).json({ error: 'Client disabled' });
+    const operation = req.body?.operation;
+    if (!['backup', 'check', 'snapshots'].includes(operation))
+      return res.status(400).json({ error: 'Unsupported operation' });
+    const job = { id: crypto.randomUUID(), operation, createdAt: new Date().toISOString() };
+    try {
+      await run(`INSERT INTO managed_jobs(id,client_id,operation,state,created_at)
+        VALUES(?,?,?,'pending',?)`, [job.id, agent.id, operation, job.createdAt]);
+    } catch (e) {
+      if (isConflict(e)) return res.status(409).json({ error: 'Client already has an active job' });
+      throw e;
+    }
+    res.status(201).json({ ...job, state: 'pending' });
+  } catch (e) { next(e); }
 });
-router.put('/admin/:id/schedule',authenticateToken,admin,async(req,res)=>{
- const c=await getClient(req.params.id);if(!c)return res.sendStatus(404);
- const minutes=req.body?.minutes;
- if(!Number.isSafeInteger(minutes)||minutes!==0&&(minutes<15||minutes>10080))return res.status(400).json({error:'minutes must be 0 or 15..10080'});
- c.scheduleMinutes=minutes;c.nextRunAt=minutes?new Date(Date.now()+minutes*60000).toISOString():undefined;
- await db.saveConfig(clientKey(c.id),c);res.json({scheduleMinutes:c.scheduleMinutes,nextRunAt:c.nextRunAt});
+
+router.put('/admin/:id/schedule', authenticateToken, isAdmin, async (req, res, next) => {
+  try {
+    const agent = await lookup(req.params.id);
+    if (!agent) return res.sendStatus(404);
+    const minutes = req.body?.minutes;
+    if (!Number.isSafeInteger(minutes) || (minutes !== 0 && (minutes < 15 || minutes > 10080)))
+      return res.status(400).json({ error: 'minutes must be 0 or 15..10080' });
+    const nextRunAt = minutes ? new Date(Date.now() + minutes * 60000).toISOString() : null;
+    await run('UPDATE managed_clients SET schedule_minutes=?,next_run_at=? WHERE id=?',
+      [minutes, nextRunAt, agent.id]);
+    res.json({ scheduleMinutes: minutes, nextRunAt });
+  } catch (e) { next(e); }
 });
-export async function dispatchScheduledManagedJobs():Promise<void>{
- const ids=await db.getConfig<string[]>('managed_agent_ids')||[];
- for(const id of ids){
-  const c=await getClient(id);if(!c||c.disabled||!c.scheduleMinutes||!c.nextRunAt||Date.parse(c.nextRunAt)>Date.now())continue;
-  if(c.jobs.some(j=>j.state==='pending'||j.state==='running'))continue;
-  c.jobs.push({id:crypto.randomUUID(),operation:'backup',state:'pending',createdAt:new Date().toISOString()});
-  c.nextRunAt=new Date(Date.now()+c.scheduleMinutes*60000).toISOString();
-  await db.saveConfig(clientKey(c.id),c);
- }
+
+router.post('/admin/:id/disable', authenticateToken, isAdmin, async (req, res, next) => {
+  try {
+    const agent = await lookup(req.params.id);
+    if (!agent) return res.sendStatus(404);
+    await run('UPDATE managed_clients SET disabled=1 WHERE id=?', [agent.id]);
+    res.json({ disabled: true });
+  } catch (e) { next(e); }
+});
+
+router.post('/poll', agentAuth, async (req, res, next) => {
+  try {
+    const id = (req as any).managedAgent as string;
+    const now = new Date().toISOString();
+    await run('UPDATE managed_clients SET last_seen=? WHERE id=?', [now, id]);
+    await run(`UPDATE managed_jobs SET state='failed',finished_at=?,message='Execution lease expired; verify remote state'
+      WHERE client_id=? AND state='running' AND lease_until<?`, [now, id, now]);
+    // Atomic compare-and-claim; unique partial index enforces one active job.
+    const job = await getOne<{ id: string; operation: Operation }>(`
+      UPDATE managed_jobs SET state='running', started_at=?, lease_until=?
+      WHERE id=(SELECT id FROM managed_jobs WHERE client_id=? AND state='pending' ORDER BY created_at LIMIT 1)
+        AND state='pending'
+      RETURNING id,operation`,
+      [now, new Date(Date.now()+6*60*60*1000).toISOString(), id]);
+    res.json({ job: job ?? null });
+  } catch (e) { next(e); }
+});
+
+router.post('/report', agentAuth, async (req, res, next) => {
+  try {
+    const clientId = (req as any).managedAgent as string;
+    const { id, success, message } = req.body ?? {};
+    if (!uuid.test(id ?? '') || typeof success !== 'boolean' ||
+        (message !== undefined && (typeof message !== 'string' || message.length > 1024)))
+      return res.status(400).json({ error: 'Invalid report' });
+    const row = await getOne<{ id: string }>(`
+      UPDATE managed_jobs SET state=?,finished_at=?,message=?
+      WHERE id=? AND client_id=? AND state='running' RETURNING id`,
+      [success ? 'success' : 'failed', new Date().toISOString(), message ?? '', id, clientId]);
+    if (!row) return res.status(409).json({ error: 'Job is not running' });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// Runs once per minute after the database is initialized.
+// Partial unique index prevents duplicate scheduling across controller replicas.
+export async function dispatchScheduledManagedJobs(): Promise<void> {
+  const now = new Date().toISOString();
+  const due = await query<Pick<Agent,'id'|'schedule_minutes'>>(`
+    SELECT id,schedule_minutes FROM managed_clients
+    WHERE disabled=0 AND schedule_minutes>0 AND next_run_at<=?`, [now]);
+  for (const client of due) {
+    try {
+      await run(`INSERT INTO managed_jobs(id,client_id,operation,state,created_at)
+        VALUES(?,?,'backup','pending',?)`, [crypto.randomUUID(), client.id, now]);
+    } catch (e) {
+      if (isConflict(e)) continue;
+      throw e;
+    }
+    // A second scheduler replica may advance the same timestamp;
+    // the active-job index prevents duplicate jobs.
+    await run('UPDATE managed_clients SET next_run_at=? WHERE id=?',
+      [new Date(Date.now()+client.schedule_minutes*60000).toISOString(), client.id]);
+  }
 }
-router.post('/admin/:id/disable',authenticateToken,admin,async(req,res)=>{
- const c=await getClient(req.params.id);if(!c)return res.sendStatus(404);
- c.disabled=true;await db.saveConfig(clientKey(c.id),c);res.json({disabled:true});
-});
-router.post('/poll',authenticate,async(req:any,res)=>{
- const c=req.agent as Client, now=Date.now();
- c.lastSeen=new Date().toISOString();
- const running=c.jobs.find(j=>j.state==='running');
- if(running){ // A timed-out job requires human intervention, not blind re-execution.
-   if(Date.parse(running.leaseUntil||'')<now){running.state='failed';running.message='Execution lease expired; verify remote state before retrying';}
-   else {await db.saveConfig(clientKey(c.id),c);return res.json({job:null});}
- }
- const job=c.jobs.find(j=>j.state==='pending');
- if(job){job.state='running';job.startedAt=new Date().toISOString();job.leaseUntil=new Date(now+6*60*60*1000).toISOString();}
- await db.saveConfig(clientKey(c.id),c);
- res.json({job:job?{id:job.id,operation:job.operation}:null});
-});
-router.post('/report',authenticate,async(req:any,res)=>{
- const c=req.agent as Client;
- const {id,success,message}=req.body||{};
- if(typeof id!=='string'||typeof success!=='boolean'||(message!==undefined&&(typeof message!=='string'||message.length>1024)))return res.status(400).json({error:'Invalid job report'});
- const job=c.jobs.find(j=>j.id===id&&j.state==='running');
- if(!job)return res.status(409).json({error:'No matching leased job'});
- job.state=success?'success':'failed';job.finishedAt=new Date().toISOString();job.message=message||'';
- await db.saveConfig(clientKey(c.id),c);res.json({ok:true});
-});
 export default router;
