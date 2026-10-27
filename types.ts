@@ -144,4 +144,4 @@ export interface User {
   setupComplete?: boolean;
 }
 
-export type View = 'dashboard' | 'jobs' | 'systems' | 'locations' | 'settings' | 'setup';
+export type View = 'dashboard' | 'jobs' | 'systems' | 'managed-clients' | 'locations' | 'settings' | 'setup';
