@@ -30,7 +30,13 @@ export const getAllJobs = async (): Promise<Job[]> => {
 export const saveJob = async (job: Job): Promise<void> => {
     if (currentConfig?.type === 'sqlite') {
         await run(
-            `INSERT OR REPLACE INTO jobs (id, name, tool, source_id, destination_id, source_path, repo_password, schedule, retention, priority, status, next_run, last_run, size, stats) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO jobs (id, name, tool, source_id, destination_id, source_path, repo_password, schedule, retention, priority, status, next_run, last_run, size, stats) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+             name=excluded.name,tool=excluded.tool,source_id=excluded.source_id,
+             destination_id=excluded.destination_id,source_path=excluded.source_path,
+             repo_password=excluded.repo_password,schedule=excluded.schedule,
+             retention=excluded.retention,priority=excluded.priority,status=excluded.status,
+             next_run=excluded.next_run,last_run=excluded.last_run,size=excluded.size,stats=excluded.stats`,
             [job.id, job.name, job.tool, job.source_id, job.destination_id, job.source_path, job.repo_password, job.schedule, job.retention, job.priority, job.status, job.next_run, job.last_run, job.size, job.stats]
         );
     } else {
