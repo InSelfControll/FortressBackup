@@ -131,11 +131,16 @@ router.post('/github/callback', async (req, res) => {
         let user = await db.getUserByEmail(email);
 
         if (!user) {
+            // Never let an arbitrary first OAuth login seize administrator rights.
+            // An operator can explicitly pin the sole bootstrap GitHub user ID.
+            const initialId=process.env.FORTRESS_INITIAL_SSO_GITHUB_ID;
+            const owner = !!initialId && /^[0-9]+$/.test(initialId) &&
+                String(githubUser.id)===initialId && !(await db.hasUsers());
             user = await db.createUser({
                 email,
                 name: githubUser.name || githubUser.login,
                 avatar: githubUser.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${githubUser.login}`,
-                role: 'viewer',
+                role: owner ? 'admin' : 'viewer',
                 auth_type: 'sso'
             });
         }
