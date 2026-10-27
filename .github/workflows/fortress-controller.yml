@@ -43,8 +43,9 @@ jobs:
       - name: Update vulnerable locked dependencies
         run: |
           bun install --frozen-lockfile
-          bun audit fix --latest || bun update --latest
-          bun add -d @types/react@latest @types/react-dom@latest
+          bun audit fix --latest || true
+          bun add -d @types/react@^19 @types/react-dom@^19 concurrently@^10.0.6 @tanstack/router-plugin@^1.168.48
+          bun add @tanstack/react-router@^1.168.48 @tanstack/router-devtools@^1.168.48
           bun audit --audit-level=high
           bun test tests/managed-agents.test.ts tests/security.test.ts
           bunx tsc --noEmit
