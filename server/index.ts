@@ -18,7 +18,7 @@ import configRouter from './routes/config.js';
 import systemsRouter from './routes/systems.js';
 import locationsRouter from './routes/locations.js';
 import jobsRouter from './routes/jobs.js';
-import managedAgentsRouter from './routes/managedAgents.js';
+import managedAgentsRouter, { dispatchScheduledManagedJobs } from './routes/managedAgents.js';
 import sshKeysRouter from './routes/sshKeys.js';
 import aiRouter from './routes/ai.js';
 
@@ -118,6 +118,7 @@ const initialize = async () => {
             password: process.env.PG_PASSWORD
         });
         console.log(`[Fortress API] Database: ${dbType}`);
+        setInterval(() => void dispatchScheduledManagedJobs().catch(error => console.error('[Managed Agents] Scheduler failed:', error)), 60_000);
     } catch (error: any) {
         console.warn(`[Fortress API] Database not initialized: ${error.message}`);
         console.warn('[Fortress API] Complete setup via browser to configure database');
