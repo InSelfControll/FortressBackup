@@ -9,49 +9,20 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SystemsRouteImport } from './routes/systems'
-import { Route as SetupRouteImport } from './routes/setup'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as LocationsRouteImport } from './routes/locations'
-import { Route as LandingRouteImport } from './routes/landing'
-import { Route as JobsRouteImport } from './routes/jobs'
-import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as JobsRouteImport } from './routes/jobs'
+import { Route as LandingRouteImport } from './routes/landing'
+import { Route as LocationsRouteImport } from './routes/locations'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as ManagedClientsRouteImport } from './routes/managed-clients'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SetupRouteImport } from './routes/setup'
+import { Route as SystemsRouteImport } from './routes/systems'
 
-const SystemsRoute = SystemsRouteImport.update({
-  id: '/systems',
-  path: '/systems',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SetupRoute = SetupRouteImport.update({
-  id: '/setup',
-  path: '/setup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LocationsRoute = LocationsRouteImport.update({
-  id: '/locations',
-  path: '/locations',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LandingRoute = LandingRouteImport.update({
-  id: '/landing',
-  path: '/landing',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const JobsRoute = JobsRouteImport.update({
-  id: '/jobs',
-  path: '/jobs',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -59,9 +30,44 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const JobsRoute = JobsRouteImport.update({
+  id: '/jobs',
+  path: '/jobs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LandingRoute = LandingRouteImport.update({
+  id: '/landing',
+  path: '/landing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LocationsRoute = LocationsRouteImport.update({
+  id: '/locations',
+  path: '/locations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ManagedClientsRoute = ManagedClientsRouteImport.update({
+  id: '/managed-clients',
+  path: '/managed-clients',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SystemsRoute = SystemsRouteImport.update({
+  id: '/systems',
+  path: '/systems',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -72,6 +78,7 @@ export interface FileRoutesByFullPath {
   '/landing': typeof LandingRoute
   '/locations': typeof LocationsRoute
   '/login': typeof LoginRoute
+  '/managed-clients': typeof ManagedClientsRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/systems': typeof SystemsRoute
@@ -83,6 +90,7 @@ export interface FileRoutesByTo {
   '/landing': typeof LandingRoute
   '/locations': typeof LocationsRoute
   '/login': typeof LoginRoute
+  '/managed-clients': typeof ManagedClientsRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/systems': typeof SystemsRoute
@@ -95,6 +103,7 @@ export interface FileRoutesById {
   '/landing': typeof LandingRoute
   '/locations': typeof LocationsRoute
   '/login': typeof LoginRoute
+  '/managed-clients': typeof ManagedClientsRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/systems': typeof SystemsRoute
@@ -108,6 +117,7 @@ export interface FileRouteTypes {
     | '/landing'
     | '/locations'
     | '/login'
+    | '/managed-clients'
     | '/settings'
     | '/setup'
     | '/systems'
@@ -119,6 +129,7 @@ export interface FileRouteTypes {
     | '/landing'
     | '/locations'
     | '/login'
+    | '/managed-clients'
     | '/settings'
     | '/setup'
     | '/systems'
@@ -130,6 +141,7 @@ export interface FileRouteTypes {
     | '/landing'
     | '/locations'
     | '/login'
+    | '/managed-clients'
     | '/settings'
     | '/setup'
     | '/systems'
@@ -142,6 +154,7 @@ export interface RootRouteChildren {
   LandingRoute: typeof LandingRoute
   LocationsRoute: typeof LocationsRoute
   LoginRoute: typeof LoginRoute
+  ManagedClientsRoute: typeof ManagedClientsRoute
   SettingsRoute: typeof SettingsRoute
   SetupRoute: typeof SetupRoute
   SystemsRoute: typeof SystemsRoute
@@ -149,53 +162,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/systems': {
-      id: '/systems'
-      path: '/systems'
-      fullPath: '/systems'
-      preLoaderRoute: typeof SystemsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/setup': {
-      id: '/setup'
-      path: '/setup'
-      fullPath: '/setup'
-      preLoaderRoute: typeof SetupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/locations': {
-      id: '/locations'
-      path: '/locations'
-      fullPath: '/locations'
-      preLoaderRoute: typeof LocationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/landing': {
-      id: '/landing'
-      path: '/landing'
-      fullPath: '/landing'
-      preLoaderRoute: typeof LandingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/jobs': {
-      id: '/jobs'
-      path: '/jobs'
-      fullPath: '/jobs'
-      preLoaderRoute: typeof JobsRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -205,11 +176,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/jobs': {
+      id: '/jobs'
+      path: '/jobs'
+      fullPath: '/jobs'
+      preLoaderRoute: typeof JobsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/landing': {
+      id: '/landing'
+      path: '/landing'
+      fullPath: '/landing'
+      preLoaderRoute: typeof LandingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/locations': {
+      id: '/locations'
+      path: '/locations'
+      fullPath: '/locations'
+      preLoaderRoute: typeof LocationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/managed-clients': {
+      id: '/managed-clients'
+      path: '/managed-clients'
+      fullPath: '/managed-clients'
+      preLoaderRoute: typeof ManagedClientsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/systems': {
+      id: '/systems'
+      path: '/systems'
+      fullPath: '/systems'
+      preLoaderRoute: typeof SystemsRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -222,6 +242,7 @@ const rootRouteChildren: RootRouteChildren = {
   LandingRoute: LandingRoute,
   LocationsRoute: LocationsRoute,
   LoginRoute: LoginRoute,
+  ManagedClientsRoute: ManagedClientsRoute,
   SettingsRoute: SettingsRoute,
   SetupRoute: SetupRoute,
   SystemsRoute: SystemsRoute,
