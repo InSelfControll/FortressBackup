@@ -1,4 +1,6 @@
-import { createRootRoute, Outlet, Navigate, useLocation } from '@tanstack/react-router'
+import { useState } from 'react'
+import type { View } from '../../types'
+import { createRootRoute, Outlet, Navigate, useLocation, useNavigate } from '@tanstack/react-router'
 import { AppProvider, useApp } from '../contexts/AppContext'
 import { Toaster } from 'react-hot-toast'
 import { Loader2 } from 'lucide-react'
@@ -21,8 +23,13 @@ function RootComponent() {
 const PUBLIC_ROUTES = ['/login', '/setup', '/landing']
 
 function AppContent() {
-  const { isSetupComplete, currentUser } = useApp()
+  const { isSetupComplete, currentUser, handleLogout } = useApp()
   const location = useLocation()
+  const navigate = useNavigate()
+  const [searchQuery, setSearchQuery] = useState('')
+  const page = location.pathname.replace(/^\//, '')
+  const currentView: View = (['dashboard','jobs','systems','managed-clients','locations','settings'].includes(page) ? page : 'dashboard') as View
+  const setCurrentView = (view: View) => { void navigate({ to: `/${view}` as '/dashboard' }) }
 
   const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname)
 
@@ -69,9 +76,9 @@ function AppContent() {
   if (isSetupComplete === true && currentUser) {
     return (
       <div className="flex min-h-screen" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
-        <Sidebar />
+        <Sidebar currentView={currentView} setCurrentView={setCurrentView} currentUser={currentUser} onLogout={handleLogout} />
         <main className="flex-1 flex flex-col overflow-hidden">
-          <Header />
+          <Header currentView={currentView} setCurrentView={setCurrentView} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
           <div className="flex-1 overflow-auto p-6" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
             <div className="max-w-7xl mx-auto">
               <Outlet />
