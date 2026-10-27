@@ -28,13 +28,20 @@ jobs:
       - name: Build executable
         working-directory: agent/windows
         run: go build -trimpath -o fortress-agent.exe .
-      - name: Validate managed scheduled task
+      - name: Validate protected managed scheduled task
         shell: pwsh
         run: |
+          $exe = (Resolve-Path ./agent/windows/fortress-agent.exe).Path
           $cfg = Join-Path $env:RUNNER_TEMP 'agent-config.json'
-          Set-Content -LiteralPath $cfg -Value '{}' -Encoding utf8
+          $pw = Join-Path $env:RUNNER_TEMP 'repo-password.txt'
+          $token = Join-Path $env:RUNNER_TEMP 'agent-token.txt'
+          Set-Content -LiteralPath $pw -Value 'test-only' -Encoding ascii
+          Set-Content -LiteralPath $token -Value 'test-only' -Encoding ascii
+          @{resticPath=$exe;passwordFile=$pw;agentTokenFile=$token;repository='sftp:example:repo';sources=@('C:\\Windows')} |
+            ConvertTo-Json | Set-Content -LiteralPath $cfg -Encoding utf8
+          $digest = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
           try {
-            & ./agent/windows/install-task.ps1 -AgentPath ./agent/windows/fortress-agent.exe -ConfigPath $cfg -TaskName FortressBackup-CITest -Managed
+            & ./agent/windows/install-task.ps1 -AgentPath $exe -ConfigPath $cfg -AgentSha256 $digest -ResticSha256 $digest -TaskName FortressBackup-CITest -Managed
             $task = Get-ScheduledTask -TaskName FortressBackup-CITest -ErrorAction Stop
             if (-not $task) { throw 'Task not registered' }
           } finally {
