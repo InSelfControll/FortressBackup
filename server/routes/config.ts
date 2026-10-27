@@ -4,6 +4,7 @@
 
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'node:crypto';
 import dotenv from 'dotenv';
 import * as db from '../db/index.js';
 import { getJwtSecret, authenticateToken, requireAdmin } from '../middleware/auth.js';
@@ -18,7 +19,27 @@ router.post('/setup', async (req, res) => {
         if ((await db.getConfig<boolean>('setup_complete')) || await db.hasUsers()) {
             return res.status(409).json({ error: 'Setup already completed' });
         }
-        const { aiConfig, dbConfig, ssoConfig, authMode, adminUser, selectedTools } = req.body;
+        const expectedToken=process.env.FORTRESS_BOOTSTRAP_TOKEN;
+        const supplied=req.get('x-fortress-bootstrap-token') || '';
+        if (!expectedToken || expectedToken.length < 32)
+            return res.status(503).json({error:'Configure FORTRESS_BOOTSTRAP_TOKEN to complete first-run setup'});
+        const expected=crypto.createHash('sha256').update(expectedToken).digest();
+        const received=crypto.createHash('sha256').update(supplied).digest();
+        if(!supplied || !crypto.timingSafeEqual(expected,received))
+            return res.status(401).json({error:'Invalid bootstrap token'});
+        const { aiConfig, dbConfig, ssoConfig, authMode, adminUser, selectedTools } = req.body || {};
+        if (!dbConfig || !['SQLite','sqlite','PostgreSQL','postgres'].includes(dbConfig.type) ||
+            !ssoConfig || !aiConfig || !['local','sso'].includes(authMode) ||
+            (authMode==='local' && (!adminUser || typeof adminUser.name!=='string' ||
+             typeof adminUser.email!=='string' || typeof adminUser.password!=='string' || adminUser.password.length<12)) ||
+            (selectedTools!==undefined && (!Array.isArray(selectedTools) ||
+             selectedTools.some((item:unknown)=>!['borg','restic','rsync'].includes(String(item)))))
+            return res.status(400).json({error:'Invalid setup configuration'});
+        // Claim first-run provisioning atomically to prevent concurrent setup.
+        const claim=await db.getOne<{key:string}>(
+            "INSERT INTO config(key,value) VALUES('bootstrap_claim',?) ON CONFLICT(key) DO NOTHING RETURNING key",
+            [JSON.stringify(new Date().toISOString())]);
+        if(!claim)return res.status(409).json({error:'Initial setup already claimed'});
 
         // Generate .env file
         const envPath = generateEnvFile({ dbConfig, aiConfig, ssoConfig, authMode });
