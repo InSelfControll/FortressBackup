@@ -7,7 +7,7 @@ import { sshHostVerifier } from '../ssh/hostKey.js';
 import { EventEmitter } from 'events';
 import fs from 'fs';
 import os from 'os';
-import { exec as execLocal } from 'child_process';
+import { spawn } from 'node:child_process';
 import { SSHConfig, BackupExecutionLog } from './types.js';
 import { maskSensitiveData } from '../../utils/maskSensitiveData.js';
 
@@ -41,6 +41,7 @@ export class BackupExecutor extends EventEmitter {
             message: maskedMessage,
             timestamp: new Date()
         };
+        if (this.logs.length >= 2000) this.logs.shift();
         this.logs.push(entry);
         this.emit('log', entry);
     }
@@ -121,61 +122,56 @@ export class BackupExecutor extends EventEmitter {
         });
     }
 
-    async exec(command: string): Promise<{ stdout: string; stderr: string; code: number }> {
-        return new Promise((resolve, reject) => {
-            this.log('info', 'Executing backup operation (command and credentials redacted)');
-
-            if (this.isLocal) {
-                execLocal(command, (error, stdout, stderr) => {
-                    if (stdout) {
-                        stdout.split('\n').filter(Boolean).forEach(line => {
-                            if (line.includes('%') || line.includes('MB') || line.includes('files')) {
-                                this.log('progress', line.trim());
-                            }
-                        });
-                    }
-                    if (stderr) {
-                        stderr.split('\n').filter(Boolean).forEach(line => {
-                            this.log('error', line.trim());
-                        });
-                    }
-                    resolve({
-                        stdout,
-                        stderr,
-                        code: error ? (error.code || 1) : 0
-                    });
-                });
-            } else {
-                this.client.exec(command, (err, stream) => {
-                    if (err) {
-                        reject(err);
-                        return;
-                    }
-
-                    let stdout = '';
-                    let stderr = '';
-
-                    stream.on('close', (code: number) => {
-                        resolve({ stdout, stderr, code });
-                    });
-
-                    stream.on('data', (data: Buffer) => {
-                        const text = data.toString();
-                        stdout += text;
-                        text.split('\n').filter(Boolean).forEach(line => {
-                            if (line.includes('%') || line.includes('MB') || line.includes('files')) {
-                                this.log('progress', line.trim());
-                            }
-                        });
-                    });
-
-                    stream.stderr.on('data', (data: Buffer) => {
-                        const text = data.toString();
-                        stderr += text;
-                        text.split('\n').filter(Boolean).forEach(line => {
-                            this.log('error', line.trim());
-                        });
-                    });
+    /**
+     * Run a controlled shell script over stdin. Command bytes (including
+     * credentials) are never part of argv, SSH exec requests, or log messages.
+     * This is a compatibility bridge until fixed remote runners are deployed.
+     */
+    async exec(command: string): Promise<{stdout:string;stderr:string;code:number}> {
+        if (!this.connected || command.length > 128 * 1024)
+            throw new Error('Executor disconnected or script exceeds maximum size');
+        this.log('info', 'Executing constrained backup operation');
+        return new Promise((resolve,reject) => {
+            let stdout='', stderr='', total=0, finished=false;
+            let terminate:()=>void=()=>{};
+            const timeout=setTimeout(()=>fail(new Error('Backup command timed out')), 6*60*60*1000);
+            const fail=(error:Error)=>{
+                if(finished)return;
+                finished=true; clearTimeout(timeout); terminate(); reject(error);
+            };
+            const append=(kind:'stdout'|'stderr',chunk:Buffer)=>{
+                if(finished)return;
+                total+=chunk.length;
+                if(total>8*1024*1024)return fail(new Error('Backup output exceeded 8MiB'));
+                const value=chunk.toString('utf8');
+                if(kind==='stdout')stdout+=value;else stderr+=value;
+                // Limit log fan-out even when a remote job is verbose.
+                if(this.logs.length<2000 && (value.includes('files') || value.includes('MB') || kind==='stderr'))
+                    this.log(kind==='stderr'?'error':'progress',value.slice(0,2048));
+            };
+            const done=(code:number|null)=>{
+                if(finished)return;
+                finished=true;clearTimeout(timeout);
+                resolve({stdout,stderr,code:typeof code==='number'?code:1});
+            };
+            if(this.isLocal){
+                const child=spawn('/bin/sh',['-s'],{stdio:['pipe','pipe','pipe']});
+                terminate=()=>child.kill('SIGKILL');
+                child.on('error',fail);
+                child.stdout.on('data',(chunk:Buffer)=>append('stdout',chunk));
+                child.stderr.on('data',(chunk:Buffer)=>append('stderr',chunk));
+                child.on('close',done);
+                child.stdin.on('error',()=>{});
+                child.stdin.end(command);
+            }else{
+                this.client.exec('sh -s',(error,stream)=>{
+                    if(error)return fail(error);
+                    terminate=()=>stream.close();
+                    stream.on('data',(chunk:Buffer)=>append('stdout',chunk));
+                    stream.stderr.on('data',(chunk:Buffer)=>append('stderr',chunk));
+                    stream.on('close',done);
+                    stream.on('error',fail);
+                    stream.end(command);
                 });
             }
         });
