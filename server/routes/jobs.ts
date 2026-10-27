@@ -54,10 +54,13 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
 router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const job = { ...req.body, id: req.params.id };
+        const existing = await db.getJob(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Job not found' });
         const dbJob = toDBJob(job);
+        if (!dbJob.repo_password) dbJob.repo_password = existing.repo_password;
 
         // Encrypt repo password if present and not already encrypted
-        if (dbJob.repo_password && !JSON.stringify(dbJob.repo_password).includes('ciphertext')) {
+        if (req.body.repoPassword && dbJob.repo_password) {
             const encrypted = encrypt(dbJob.repo_password, getJwtSecret());
             dbJob.repo_password = JSON.stringify(encrypted);
         }
@@ -145,7 +148,7 @@ router.post('/:id/run', authenticateToken, requireAdmin, async (req, res) => {
 
         res.json({
             success: true,
-            job: updatedJob,
+            job: toAPIJob(updatedJob),
             stats: {
                 filesProcessed: result.filesProcessed,
                 bytesProcessed: result.bytesProcessed,
