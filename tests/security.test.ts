@@ -17,6 +17,7 @@ import { getLocation } from '../server/db/locations.js';
 import { sshHostVerifier } from '../server/services/ssh/hostKey.js';
 import { buildBorgCommand, buildBorgRestoreCommand } from '../server/services/backup/borg.js';
 import { buildResticCommand } from '../server/services/backup/restic.js';
+import { buildRsyncCommand } from '../server/services/backup/rsync.js';
 
 test('privileged APIs deny viewers and never echo stored credentials', async()=>{
  process.env.JWT_SECRET='security-tests-signed-jwt-'+crypto.randomBytes(24).toString('hex');
@@ -86,6 +87,15 @@ test('pinned host-key identity and command builders reject unsafe input',()=>{
  expect(borg).not.toContain('rm -rf');
  expect(borg).not.toContain('borg init');
  expect(borg).not.toContain('borg prune');
+ const rsync={...config,tool:'rsync',destinationPath:'/tmp/restic-safe',sourcePaths:['/home/docs']};
+ const ssh:any={username:'backup',host:'backup.example.net',port:22,hostFingerprint:fp};
+ const rsyncCommand=buildRsyncCommand(rsync,ssh,true);
+ expect(rsyncCommand).toContain('StrictHostKeyChecking=yes');
+ expect(rsyncCommand).toContain('UserKnownHostsFile=/etc/fortress/known_hosts');
+ expect(rsyncCommand).not.toContain('StrictHostKeyChecking=no');
+ expect(()=>buildRsyncCommand({...rsync,sourcePaths:['/tmp/;touch /tmp/owned']},ssh,true)).toThrow();
+ expect(()=>buildRsyncCommand(rsync,{...ssh,host:'example.net; echo injected'},true)).toThrow();
+ expect(()=>buildRsyncCommand(rsync,{...ssh,hostFingerprint:''},true)).toThrow();
  const restore=buildBorgRestoreCommand({...config,tool:'borg',destinationType:'nfs',destinationPath:'/safe/repo'},'backup-2026','/tmp/restore');
  expect(restore).not.toContain('exit 0');
 });
