@@ -10,11 +10,13 @@ import { BackupJobConfig, SSHConfig, BackupResult, Snapshot, RestoreJobConfig } 
 import { buildBorgCommand, buildBorgSnapshotListCommand, buildBorgRestoreCommand, buildBorgFileListCommand } from './borg.js';
 import { buildResticCommand, buildResticSnapshotListCommand, buildResticRestoreCommand, buildResticFileListCommand } from './restic.js';
 import { buildRsyncCommand } from './rsync.js';
+import { quote } from './commandSafety.js';
 
 /**
  * Mount an SFTP destination via SSHFS on the remote node
  */
 export async function mountSshfs(executor: BackupExecutor, config: BackupJobConfig): Promise<string> {
+    if (!/^[a-f0-9-]{36}$/i.test(config.jobId)) throw new Error('Invalid job identifier for SSHFS mount');
     const mountPoint = `/tmp/fortress_mnt_${config.jobId}`;
 
     let sshfsTarget: string;
@@ -26,9 +28,11 @@ export async function mountSshfs(executor: BackupExecutor, config: BackupJobConf
         throw new Error('SFTP destination requires either user@host:/path format or a configured endpoint');
     }
 
-    executor.log('info', `Mounting SFTP destination: ${sshfsTarget} -> ${mountPoint}`);
+    if (!/^[A-Za-z0-9._-]+@[A-Za-z0-9.:-]+:[A-Za-z0-9._/:-]+$/.test(sshfsTarget))
+        throw new Error('SFTP target must be a user@host:/path remote target');
+    executor.log('info', `Mounting verified SFTP destination at ${mountPoint}`);
 
-    const mountCmd = `mkdir -p ${mountPoint} && sshfs -o StrictHostKeyChecking=yes,reconnect,ServerAliveInterval=15 ${sshfsTarget} ${mountPoint}`;
+    const mountCmd = `mkdir -p -- ${quote(mountPoint)} && sshfs -o StrictHostKeyChecking=yes,reconnect,ServerAliveInterval=15 ${quote(sshfsTarget)} ${quote(mountPoint)}`;
 
     const { code, stderr } = await executor.exec(mountCmd);
     if (code !== 0) {
@@ -45,14 +49,11 @@ export async function mountSshfs(executor: BackupExecutor, config: BackupJobConf
 export async function unmountSshfs(executor: BackupExecutor, mountPoint: string): Promise<void> {
     executor.log('info', `Unmounting SFTP destination: ${mountPoint}`);
 
-    let unmountCmd: string;
-    if (os.platform() === 'darwin') {
-        unmountCmd = `umount ${mountPoint} 2>/dev/null || diskutil unmount force ${mountPoint} 2>/dev/null || true; rmdir ${mountPoint} 2>/dev/null || true`;
-    } else {
-        unmountCmd = `fusermount -uz ${mountPoint} 2>/dev/null || umount -l ${mountPoint} 2>/dev/null || true; rmdir ${mountPoint} 2>/dev/null || true`;
-    }
-
-    await executor.exec(unmountCmd);
+    if (!/^\/tmp\/fortress_mnt_[a-f0-9-]{36}$/i.test(mountPoint))
+        throw new Error('Refusing to unmount unexpected path');
+    const target=quote(mountPoint);
+    const {code,stderr}=await executor.exec(`(fusermount -u ${target} || umount ${target}) && rmdir -- ${target}`);
+    if(code!==0)throw new Error(`Unable to unmount SFTP destination: ${stderr.slice(0,2048)}`);
     executor.log('info', `SFTP destination unmounted`);
 }
 
