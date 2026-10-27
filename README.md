@@ -75,21 +75,33 @@ Featuring an automatic **SSH Deployment Service**, an AI-powered job architect, 
 
 ### Docker Deployment
 
+**Protect the first-run bootstrap and encryption keys.** Set a unique `FORTRESS_BOOTSTRAP_TOKEN` (at least 32 random characters) in the container's protected runtime environment before starting. The setup wizard requires it. Do not expose port 9001 to the public network; use a TLS reverse proxy or private access path.
+
+Fortress stores JWT and credential-encryption keys in `/app/data/.env`, which **must** be persisted alongside the database. Back up the protected env file separately. Losing its key prevents decryption of stored credentials.
+
+
+
 ```bash
 # Build the container
 docker build -t fortressbackup .
 
 # Run with SQLite (default)
-docker run -p 9001:9001 -v fortress-data:/app/data fortressbackup
+docker run -p 127.0.0.1:9001:9001 -v fortress-data:/app/data fortressbackup
 
 # Run with volume mount (ensure directory is owned by UID 1001)
-mkdir -p ./data && sudo chown 1001:1001 ./data
-docker run -p 9001:9001 -v ./data:/app/data fortressbackup
+mkdir -p ./data && sudo chown 1001:1001 ./data && chmod 700 ./data
+docker run -p 127.0.0.1:9001:9001 -v ./data:/app/data fortressbackup
 ```
 
 ---
 
 ## 🔒 Security Architecture
+
+- Remote SSH systems require manually verified SHA256 host-key fingerprints before connection.
+- Never grant writable permissions to other users on the `/app/data` volume.
+- Keep the Windows agent, Restic executable, and credential files protected with installer-enforced NTFS ACLs.
+- Validate backup and restore against a disposable repository before production use.
+
 
 Fortress implements several layers of security:
 1. **At-Rest Encryption**: Sensitive credentials and SSH keys are encrypted in the database.
