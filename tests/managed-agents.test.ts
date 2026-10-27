@@ -44,6 +44,9 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     expect(idlePoll.data.job).toBeNull();
     const report=await api('/report',{id:queue.data.id,success:true,message:'ok'},auth);
     expect(report.status).toBe(200);
+    const repeated=await api('/report',{id:queue.data.id,success:true,message:'ok'},auth);
+    expect(repeated.status).toBe(200);
+    expect(repeated.data.duplicate).toBe(true);
     const listing=await api('/admin',undefined,adminHeaders,'GET');
     expect(listing.status).toBe(200);
     expect(listing.data[0].jobs[0].state).toBe('success');
