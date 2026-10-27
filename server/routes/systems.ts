@@ -11,6 +11,16 @@ import { resolveSSHCredentialsFromRequest } from '../utils/sshCredentials.js';
 import { deployToSystem, DeploymentLog } from '../services/ssh/index.js';
 
 const router = Router();
+const validSystem=(value:any):boolean =>
+    value && typeof value.name==='string' && value.name.trim().length>0 && value.name.length<=120 &&
+    typeof value.host==='string' && value.host.length<=253 &&
+    /^[a-zA-Z0-9.:[\\]-]+$/.test(value.host) &&
+    (value.port===undefined || Number.isInteger(value.port) && value.port>=1 && value.port<=65535) &&
+    (value.username===undefined || typeof value.username==='string' &&
+      /^[A-Za-z0-9._-]{1,120}$/.test(value.username)) &&
+    (value.hostFingerprint===undefined || typeof value.hostFingerprint==='string' &&
+      /^SHA256:[A-Za-z0-9+/]{43}=?$/.test(value.hostFingerprint));
+
 
 // Get all systems
 router.get('/', authenticateToken, requireAdmin, async (req, res) => {
@@ -25,7 +35,9 @@ router.get('/', authenticateToken, requireAdmin, async (req, res) => {
 // Create system
 router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const systemId = req.body.id || crypto.randomUUID();
+        if (!validSystem(req.body))
+            return res.status(400).json({error:'Invalid system host, user or fingerprint'});
+        const systemId = crypto.randomUUID();
         const system = { ...req.body, id: systemId };
         const dbSystem = toDBSystem(system);
         await db.saveSystem(dbSystem);
@@ -38,6 +50,8 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
 // Update system
 router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
+        if (!validSystem(req.body))
+            return res.status(400).json({error:'Invalid system host, user or fingerprint'});
         const system = { ...req.body, id: req.params.id };
         const dbSystem = toDBSystem(system);
         await db.saveSystem(dbSystem);
@@ -73,6 +87,9 @@ router.post('/:id/deploy', authenticateToken, requireAdmin, async (req, res) => 
 
         // Get tools from request or fall back to config
         const { tools } = req.body;
+        if(tools !== undefined && (!Array.isArray(tools) || tools.length>3 ||
+            tools.some((item:unknown)=>!['restic','rsync','borg'].includes(String(item)))))
+            return res.status(400).json({error:'Unsupported deployment tool'});
         const selectedTools = tools && Array.isArray(tools) && tools.length > 0
             ? tools
             : await db.getConfig<string[]>('selected_tools') || ['borg', 'restic'];
