@@ -6,16 +6,11 @@
  * never appear inside the SSH command line.
  */
 import { BackupJobConfig } from './types.js';
-
-const sh = (value: string): string => {
-    if (typeof value !== 'string' || value.length === 0 || value.includes('\0')) {
-        throw new Error('Invalid shell argument');
-    }
-    return "'" + value.replace(/'/g, "'\\''") + "'";
-};
+import { quote as sh, absoluteSources, absoluteRestorePath } from './commandSafety.js';
 
 const getRepository = (config: BackupJobConfig): string => {
     const path = config.destinationPath;
+    if (typeof path !== 'string' || !path || /[\u0000-\u001f\u007f]/.test(path)) throw new Error('Invalid repository path');
     switch (config.destinationType) {
         case 'sftp': return path.startsWith('sftp:') ? path : `sftp:${path}`;
         case 's3':
@@ -48,13 +43,11 @@ const validSnapshot = (id: string): string => {
 };
 
 export const buildResticCommand = (config: BackupJobConfig): string => {
-    if (!Array.isArray(config.sourcePaths) || config.sourcePaths.length === 0) {
-        throw new Error('At least one source path is required');
-    }
+    absoluteSources(config.sourcePaths);
     // Repository initialization is an explicit, separately verified operation.
     // In particular, NEVER swallow failures with restic init || true.
     const source = config.sourcePaths.map(sh).join(' ');
-    return `${resticPrefix(config)} backup ${source} --one-file-system --exclude-caches --exclude=/proc --exclude=/sys --exclude=/dev`;
+    return `${resticPrefix(config)} backup --one-file-system --exclude-caches --exclude=/proc --exclude=/sys --exclude=/dev -- ${source}`;
 };
 
 export const buildResticSnapshotListCommand = (config: BackupJobConfig): string =>
@@ -66,7 +59,7 @@ export const buildResticFileListCommand = (config: BackupJobConfig, snapshotId: 
 export const buildResticRestoreCommand = (
     config: BackupJobConfig, snapshotId: string, restorePath: string, paths?: string[]
 ): string => {
-    if (!restorePath || restorePath.includes('\0')) throw new Error('Invalid restore path');
+    absoluteRestorePath(restorePath);
     const includes = paths?.map(path => ` --include ${sh(path)}`).join('') || '';
     return `${resticPrefix(config)} restore ${sh(validSnapshot(snapshotId))} --target ${sh(restorePath)}${includes}`;
 };
