@@ -29,6 +29,9 @@ type Config struct {
  UseVSS bool `json:"useVSS"`
  // Optional path to SSH configuration with pinned known_hosts and an SSH key.
  SSHCommand string `json:"sshCommand"`
+ ControllerURL string `json:"controllerUrl"`
+ AgentID string `json:"agentId"`
+ AgentTokenFile string `json:"agentTokenFile"`
 }
 
 func loadConfig(path string) (Config,error) {
@@ -76,12 +79,13 @@ func execute(ctx context.Context,c Config,operation string) error {
 
 func main(){
  configPath:=flag.String("config", "", "absolute path to restricted agent JSON config")
- operation:=flag.String("operation","backup","backup, check or snapshots")
+ operation:=flag.String("operation","backup","backup, check, snapshots or managed")
  flag.Parse()
  if *configPath=="" {fmt.Fprintln(os.Stderr,"--config required");os.Exit(2)}
  c,err:=loadConfig(*configPath)
  if err!=nil {fmt.Fprintln(os.Stderr,"config:",err);os.Exit(2)}
  ctx,cancel:=context.WithTimeout(context.Background(),time.Duration(c.TimeoutMinutes)*time.Minute)
  defer cancel()
- if err=execute(ctx,c,*operation);err!=nil{fmt.Fprintln(os.Stderr,"backup failed:",err);os.Exit(1)}
+ if *operation=="managed" {err=managedOnce(ctx,c)} else {err=execute(ctx,c,*operation)}
+ if err!=nil{fmt.Fprintln(os.Stderr,"backup failed:",err);os.Exit(1)}
 }
