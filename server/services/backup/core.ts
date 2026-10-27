@@ -3,6 +3,7 @@
  */
 
 import { Client, ConnectConfig } from 'ssh2';
+import { sshHostVerifier } from '../ssh/hostKey.js';
 import { EventEmitter } from 'events';
 import fs from 'fs';
 import os from 'os';
@@ -59,6 +60,7 @@ export class BackupExecutor extends EventEmitter {
                 port: config.port,
                 username: config.username,
                 readyTimeout: 30000,
+                hostVerifier: sshHostVerifier(config.hostFingerprint),
             };
 
             // Handle Private Key Authentication
