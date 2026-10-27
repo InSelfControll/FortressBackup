@@ -113,6 +113,7 @@ router.post('/:id/run', authenticateToken, requireAdmin, async (req, res) => {
         // Prepare SSH config
         const sshConfig = {
             host: sourceSystem.host,
+            hostFingerprint: sourceSystem.host_fingerprint || '',
             port: sourceSystem.port || 22,
             username: sourceSystem.username || 'root',
             privateKey: credentials.privateKey,
@@ -244,6 +245,7 @@ router.get('/:id/snapshots', authenticateToken, requireAdmin, async (req, res) =
 
         const sshConfig = {
             host: sourceSystem.host,
+            hostFingerprint: sourceSystem.host_fingerprint || '',
             port: sourceSystem.port || 22,
             username: sourceSystem.username || 'root',
             privateKey: credentials.privateKey,
@@ -298,6 +300,7 @@ router.get('/:id/snapshots/:snapshotId/files', authenticateToken, requireAdmin, 
 
         const sshConfig = {
             host: sourceSystem.host,
+            hostFingerprint: sourceSystem.host_fingerprint || '',
             port: sourceSystem.port || 22,
             username: sourceSystem.username || 'root',
             privateKey: credentials.privateKey,
@@ -358,6 +361,7 @@ router.post('/:id/restore', authenticateToken, requireAdmin, async (req, res) =>
 
         const sshConfig = {
             host: targetSystem.host,
+            hostFingerprint: targetSystem.host_fingerprint || '',
             port: targetSystem.port || 22,
             username: targetSystem.username || 'root',
             privateKey: credentials.privateKey,
