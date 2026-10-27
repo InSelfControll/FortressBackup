@@ -22,19 +22,15 @@ export const buildBorgCommand = (config: BackupJobConfig): string => {
     cmd += `export BORG_PASSPHRASE="${config.repoPassword}" && `;
     cmd += `export BORG_NEW_PASSPHRASE="${config.repoPassword}" && `;
 
-    // Create parent directory, then remove and reinitialize repo
-    cmd += `mkdir -p $(dirname ${repoPath}) && `;
-    cmd += `echo "Removing old repo at ${repoPath}..." && `;
-    cmd += `rm -rf ${repoPath} 2>&1 && `;
-    cmd += `echo "Initializing new Borg repo..." && `;
-    cmd += `borg init --encryption=repokey-blake2 ${repoPath} 2>&1 && `;
-    cmd += `echo "Creating backup..." && `;
+    // Existing repositories are never erased or reinitialized during a backup.
+    // Provision repositories explicitly and fail on missing repository.
+
 
     // Create backup
     cmd += `borg create --stats --progress --one-file-system --exclude-caches --exclude '${repoPath}' --exclude '/mnt' --exclude '/media' --exclude '/run/media' --exclude '/run' --exclude '/proc' --exclude '/sys' --exclude '/dev' ${repoPath}::${archiveName} ${config.sourcePaths.join(' ')}`;
 
-    // Add pruning if retention is set
-    if (config.retention) {
+    // Maintenance must run separately. Never prune during normal backups.
+    if (false && config.retention) {
         cmd += ` && borg prune --stats ${repoPath}`;
         cmd += ` --keep-hourly ${config.retention.keepHourly}`;
         cmd += ` --keep-daily ${config.retention.keepDaily}`;
@@ -90,7 +86,7 @@ export const buildBorgRestoreCommand = (config: BackupJobConfig, snapshotId: str
 
     // Borg returns exit code 1 for warnings (like existing files) but files are still extracted
     // We consider this a success for restore purposes
-    cmd += ' 2>&1; exit 0';
+    cmd += ' 2>&1';
 
     return cmd;
 };
