@@ -148,6 +148,11 @@ router.post('/poll', agentAuth, async (req, res, next) => {
     await run('UPDATE managed_clients SET last_seen=? WHERE id=?', [now, id]);
     await run(`UPDATE managed_jobs SET state='failed',finished_at=?,message='Execution lease expired; verify remote state'
       WHERE client_id=? AND state='running' AND lease_until<?`, [now, id, now]);
+    // A lost poll response must not strand a leased job. The Windows client
+    // persists an active-run marker and refuses to execute it twice after a crash.
+    const running=await getOne<{id:string;operation:Operation}>(
+      "SELECT id,operation FROM managed_jobs WHERE client_id=? AND state='running' LIMIT 1",[id]);
+    if(running)return res.json({job:running,resumed:true});
     // Atomic compare-and-claim; unique partial index enforces one active job.
     const job = await getOne<{ id: string; operation: Operation }>(`
       UPDATE managed_jobs SET state='running', started_at=?, lease_until=?
