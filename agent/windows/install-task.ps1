@@ -21,7 +21,7 @@ if (-not [IO.Path]::IsPathRooted($config)) { throw 'ConfigPath must be absolute'
 $mode = if ($Managed) { 'managed' } else { 'backup' }
 $action = New-ScheduledTaskAction -Execute $agent -Argument ('-config "{0}" -operation {1}' -f $config, $mode)
 $trigger = if ($Managed) {
-    $t = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
+    $t = New-ScheduledTaskTrigger -Daily -At (Get-Date).AddMinutes(1)
     $t.Repetition.Interval = 'PT1M'
     $t.Repetition.Duration = 'P1D'
     $t
