@@ -5,7 +5,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import * as db from '../db/index.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { toAPISystem, toDBSystem } from '../utils/mappers.js';
 import { resolveSSHCredentialsFromRequest } from '../utils/sshCredentials.js';
 import { deployToSystem, DeploymentLog } from '../services/ssh/index.js';
@@ -13,7 +13,7 @@ import { deployToSystem, DeploymentLog } from '../services/ssh/index.js';
 const router = Router();
 
 // Get all systems
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const systems = await db.getAllSystems();
         res.json(systems.map(toAPISystem));
@@ -23,7 +23,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Create system
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const systemId = req.body.id || crypto.randomUUID();
         const system = { ...req.body, id: systemId };
@@ -36,7 +36,7 @@ router.post('/', authenticateToken, async (req, res) => {
 });
 
 // Update system
-router.put('/:id', authenticateToken, async (req, res) => {
+router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const system = { ...req.body, id: req.params.id };
         const dbSystem = toDBSystem(system);
@@ -48,7 +48,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
 });
 
 // Delete system
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await db.deleteSystem(req.params.id);
         res.json({ success: true });
@@ -58,7 +58,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 });
 
 // Deploy backup tools to a system via SSH
-router.post('/:id/deploy', authenticateToken, async (req, res) => {
+router.post('/:id/deploy', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const systemId = req.params.id;
 
