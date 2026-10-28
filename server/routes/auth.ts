@@ -6,6 +6,7 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import * as db from '../db/index.js';
 import { getJwtSecret, authenticateToken, requireAdmin } from '../middleware/auth.js';
+import { selectVerifiedGitHubEmail } from '../security/githubIdentity.js';
 
 const router = Router();
 const validEmail=(value:unknown):value is string =>
@@ -135,13 +136,8 @@ router.post('/github/callback', async (req, res) => {
         });
         if (!emailsResponse.ok) return res.status(403).json({error:'Verified GitHub email access is required'});
         const emailRecords: unknown = await emailsResponse.json();
-        if (!Array.isArray(emailRecords)) return res.status(403).json({error:'Verified GitHub email required'});
-        const verified = emailRecords.filter((entry: any) =>
-            entry && entry.verified === true && typeof entry.email === 'string' &&
-            entry.email.length <= 254 && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(entry.email));
-        const selected = verified.find((entry:any) => entry.primary === true) || verified[0];
-        if (!selected) return res.status(403).json({error:'Verified GitHub email required'});
-        const email: string = selected.email.trim().toLowerCase();
+        const email=selectVerifiedGitHubEmail(emailRecords);
+        if (!email) return res.status(403).json({error:'Verified GitHub email required'});
 
         // Check if user exists, otherwise create
         let user = await db.getUserByEmail(email);
