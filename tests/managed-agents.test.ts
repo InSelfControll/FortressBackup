@@ -1,4 +1,5 @@
 import { test, expect } from 'bun:test';
+import crypto from 'node:crypto';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import os from 'node:os';
@@ -9,7 +10,9 @@ import { query, run } from '../server/db/helpers.js';
 import { initDatabase, closeDatabase } from '../server/db/connection.js';
 
 test('managed agent enrollment, atomic dispatch, report and revocation', async () => {
-  process.env.JWT_SECRET = 'fortress-integration-test-only-not-for-production-12345';
+  const previousJwtSecret = process.env.JWT_SECRET;
+  const ephemeralJwtSecret = crypto.randomBytes(48).toString('hex');
+  process.env.JWT_SECRET = ephemeralJwtSecret;
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'fortress-test-'));
   const app=express();
   app.use(express.json());
@@ -21,7 +24,7 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     const address=server.address();
     if (!address || typeof address==='string') throw new Error('Unable to bind test server');
     const base='http://127.0.0.1:'+address.port+'/api/managed-agents';
-    const adminToken=jwt.sign({id:'admin',role:'admin'},process.env.JWT_SECRET);
+    const adminToken=jwt.sign({id:'admin',role:'admin'},ephemeralJwtSecret);
     const adminHeaders={Authorization:'Bearer '+adminToken,'Content-Type':'application/json'};
     const api=async(path:string,body:any,headers:Record<string,string>=adminHeaders,method='POST')=>{
       const response=await fetch(base+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
@@ -77,5 +80,7 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     await new Promise<void>(resolve=>server.close(()=>resolve()));
     await closeDatabase();
     fs.rmSync(dir,{recursive:true,force:true});
+    if (previousJwtSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = previousJwtSecret;
   }
 },30000);
