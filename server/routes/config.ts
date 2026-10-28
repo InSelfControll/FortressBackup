@@ -124,9 +124,34 @@ router.get('/:key', authenticateToken, requireAdmin, async (req, res) => {
 router.put('/:key', authenticateToken, requireAdmin, async (req, res) => {
     try {
         if (req.params.key.startsWith('managed_agent_')) return res.status(403).json({error:'Managed agent records must use dedicated API'});
-        if(!editableKeys.has(req.params.key))return res.status(403).json({error:'Configuration key is read-only'});
-        await db.saveConfig(req.params.key, req.body.value);
-        res.json({ success: true });
+        const key=req.params.key;
+        if(!editableKeys.has(key))return res.status(403).json({error:'Configuration key is read-only'});
+        const incoming=req.body?.value;
+        const isObject=(value:unknown):value is Record<string,unknown> =>
+            !!value && typeof value==='object' && !Array.isArray(value);
+        if(['ai_config','db_config','sso_config'].includes(key) && !isObject(incoming))
+            return res.status(400).json({error:'Expected configuration object'});
+        if(key==='auth_mode' && !['local','sso'].includes(incoming))
+            return res.status(400).json({error:'Invalid authentication mode'});
+        if(key==='selected_tools' && (!Array.isArray(incoming) ||
+            incoming.length>8 || incoming.some(item=>!['borg','restic','rsync'].includes(item))))
+            return res.status(400).json({error:'Invalid backup tools'});
+        if(incoming===undefined || JSON.stringify(incoming).length>32768)
+            return res.status(400).json({error:'Invalid configuration payload'});
+        let value=incoming;
+        if(isObject(incoming)){
+            const previous=await db.getConfig<Record<string,unknown>>(key);
+            value={...(isObject(previous)?previous:{}),...incoming};
+            // Redacted GET responses omit sensitive fields. A metadata edit
+            // must never erase previously stored credentials.
+            for(const [field,prior] of Object.entries(isObject(previous)?previous:{})){
+                if(/password|secret|token|apiKey|accessKey|privateKey|credential/i.test(field) &&
+                   (incoming[field]===undefined || incoming[field]===''))
+                    (value as Record<string,unknown>)[field]=prior;
+            }
+        }
+        await db.saveConfig(key,value);
+        res.json({success:true});
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
