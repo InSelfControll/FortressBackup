@@ -7,8 +7,6 @@ set -eu
 : "${RESTIC_FROM_PASSWORD_FILE:?missing source password file}"
 : "${RESTIC_TO_REPOSITORY:?missing destination repository}"
 : "${RESTIC_TO_PASSWORD_FILE:?missing destination password file}"
-[ "$from_repo" != "$to_repo" ] || { echo "source and destination must differ" >&2; exit 2; }
-[ -f "$from_password" ] && [ -f "$to_password" ] || { echo "password file missing" >&2; exit 2; }
 # Restic treats RESTIC_FROM_* as first-class source options. Do not combine
 # those exported variables with --from-* flags, which can reject the command.
 from_repo=$RESTIC_FROM_REPOSITORY
@@ -16,6 +14,8 @@ from_password=$RESTIC_FROM_PASSWORD_FILE
 to_repo=$RESTIC_TO_REPOSITORY
 to_password=$RESTIC_TO_PASSWORD_FILE
 unset RESTIC_FROM_REPOSITORY RESTIC_FROM_PASSWORD_FILE
+[ "$from_repo" != "$to_repo" ] || { echo "source and destination must differ" >&2; exit 2; }
+[ -f "$from_password" ] && [ -f "$to_password" ] || { echo "password file missing" >&2; exit 2; }
 command -v flock >/dev/null 2>&1 || { echo "flock required" >&2; exit 2; }
 lockfile="${FORTRESS_REPLICATION_LOCK:-/tmp/fortress-replication.lock}"
 exec 9>"$lockfile"
