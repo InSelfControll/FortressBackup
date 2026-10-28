@@ -21,6 +21,7 @@ import { buildBorgCommand, buildBorgRestoreCommand } from '../server/services/ba
 import { buildResticCommand } from '../server/services/backup/restic.js';
 import { buildRsyncCommand } from '../server/services/backup/rsync.js';
 import { selectVerifiedGitHubEmail } from '../server/security/githubIdentity.js';
+import { appendBoundedJobLog, MAX_JOB_LOGS } from '../server/utils/boundedLog.js';
 
 test('privileged APIs deny viewers and never echo stored credentials', async()=>{
  process.env.JWT_SECRET=crypto.randomBytes(48).toString('hex');
@@ -145,4 +146,12 @@ test('GitHub identities require provider-verified email ownership',()=>{
     {email:'unverified@example.invalid',primary:true,verified:false},
     {email:'Verified@Example.invalid',primary:false,verified:true}
   ])).toBe('verified@example.invalid');
+});
+
+test('backup log buffer stays bounded without quadratic per-message shifting',()=>{
+  const logs:number[]=[];
+  for(let i=0;i<10000;i++)appendBoundedJobLog(logs,i);
+  expect(logs.length).toBeLessThanOrEqual(MAX_JOB_LOGS);
+  expect(logs.at(-1)).toBe(9999);
+  expect(logs[0]).toBeGreaterThan(7000);
 });
