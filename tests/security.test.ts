@@ -14,6 +14,7 @@ import keys from '../server/routes/sshKeys.js';
 import ai from '../server/routes/ai.js';
 import auth from '../server/routes/auth.js';
 import { getLocation } from '../server/db/locations.js';
+import { saveConfig, getConfig } from '../server/db/config.js';
 import { sshHostVerifier } from '../server/services/ssh/hostKey.js';
 import { buildBorgCommand, buildBorgRestoreCommand } from '../server/services/backup/borg.js';
 import { buildResticCommand } from '../server/services/backup/restic.js';
@@ -63,6 +64,25 @@ test('privileged APIs deny viewers and never echo stored credentials', async()=>
   expect(row?.access_key.startsWith('enc:v1:')).toBe(true);
   expect(row?.secret_key.startsWith('enc:v1:')).toBe(true);
   expect((await getLocation(response.id))?.secret_key).toBe(secret);
+  const aiSecret='test-ai-'+crypto.randomBytes(24).toString('hex');
+  await saveConfig('ai_config',{provider:'Gemini',apiKey:aiSecret});
+  const sealed=await getOne<{value:string}>('SELECT value FROM config WHERE key=?',['ai_config']);
+  expect(sealed?.value).not.toContain(aiSecret);
+  expect(sealed?.value).toContain('fortressEncryptedVersion');
+  expect((await getConfig<{apiKey:string}>('ai_config'))?.apiKey).toBe(aiSecret);
+  await run('INSERT INTO config(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+    ['sso_config',JSON.stringify({provider:'github',clientSecret:aiSecret})]);
+  expect((await getConfig<{clientSecret:string}>('sso_config'))?.clientSecret).toBe(aiSecret);
+  const migrated=await getOne<{value:string}>('SELECT value FROM config WHERE key=?',['sso_config']);
+  expect(migrated?.value).not.toContain(aiSecret);
+  const currentKey=process.env.FORTRESS_CREDENTIAL_KEY;
+  process.env.FORTRESS_CREDENTIAL_KEY=crypto.randomBytes(32).toString('hex');
+  try{
+    await expect(getConfig('ai_config')).rejects.toThrow();
+  }finally{
+    process.env.FORTRESS_CREDENTIAL_KEY=currentKey;
+  }
+
  }finally{
   await new Promise<void>(resolve=>server.close(()=>resolve()));
   await closeDatabase();fs.rmSync(dir,{recursive:true,force:true});
