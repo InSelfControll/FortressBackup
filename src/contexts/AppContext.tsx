@@ -24,6 +24,7 @@ interface AppContextType {
   handleResetApp: () => void;
   completeSetup: (config: {
     masterPassword: string;
+    bootstrapToken: string;
     aiConfig: AIConfig;
     dbConfig: DatabaseConfig;
     ssoConfig: SSOConfig;
@@ -151,8 +152,9 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     authMode: 'local' | 'sso';
     adminUser?: { name: string; email: string; password: string };
     selectedTools: string[];
+    bootstrapToken: string;
   }) => {
-    const { aiConfig: ai, dbConfig: db, ssoConfig: sso, authMode: mode, adminUser, selectedTools } = config;
+    const { aiConfig: ai, dbConfig: db, ssoConfig: sso, authMode: mode, adminUser, selectedTools, bootstrapToken } = config;
 
     setAiConfig(ai);
     setDbConfig(db);
@@ -167,8 +169,9 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         ssoConfig: sso,
         authMode: mode,
         adminUser: adminUser,
-        selectedTools: selectedTools
-      } as any);
+        selectedTools: selectedTools,
+        bootstrapToken
+      });
 
       if (result && result.success) {
         console.log('[Setup] Configuration saved');
@@ -183,11 +186,12 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         }
       } else {
         console.error('[Setup] Backend returned error:', error);
+        return;
       }
     } catch (error) {
       console.error('[Setup] Failed to call backend API:', error);
-      // Store auth mode locally for reference, but backend is required
-      localStorage.setItem('fortress_auth_mode', mode);
+      // Keep setup unfinished when API configuration fails.
+      return;
     }
 
     // Create vault salt if not exists

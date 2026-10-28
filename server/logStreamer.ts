@@ -24,11 +24,16 @@ const activeConnections = new Map<string, Set<Response>>();
  * Subscribe a client to job logs via SSE
  */
 export function subscribeToJobLogs(jobId: string, res: Response): void {
+    const subscriptions=[...activeConnections.values()].reduce((count,set)=>count+set.size,0);
+    if ((activeConnections.get(jobId)?.size || 0)>=20 || subscriptions>=100) {
+        res.status(429).json({error:'Too many log subscribers'});
+        return;
+    }
     // Setup SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    // Same-origin authenticated API only. CORS is controlled centrally.
     res.flushHeaders();
 
     // Add connection to active set
@@ -65,7 +70,7 @@ function sendSSEMessage(res: Response, log: Omit<LogEntry, 'jobId'>): void {
         message: log.message,
         timestamp: log.timestamp.toISOString()
     });
-    res.write(`data: ${data}\n\n`);
+    if (!res.write(`data: ${data}\n\n`)) res.end();
 }
 
 /**
@@ -75,7 +80,7 @@ export function broadcastJobLog(jobId: string, type: LogEntry['type'], message: 
     const log: LogEntry = {
         jobId,
         type,
-        message,
+        message: message.slice(0,2048),
         timestamp: new Date()
     };
 
@@ -92,7 +97,7 @@ export function broadcastJobLog(jobId: string, type: LogEntry['type'], message: 
         });
         connections.forEach(res => {
             try {
-                res.write(`data: ${data}\n\n`);
+                if(!res.write(`data: ${data}\n\n`)) res.end();
             } catch (e) {
                 // Connection closed, will be cleaned up
             }

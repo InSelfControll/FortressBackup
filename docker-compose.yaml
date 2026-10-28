@@ -12,7 +12,9 @@ services:
       - NODE_ENV=production
       - DB_TYPE=sqlite
       - SQLITE_PATH=/app/data/fortress.db
-      - JWT_SECRET=${JWT_SECRET:-fortress-change-me-in-production}
+      - JWT_SECRET=${JWT_SECRET:?Set a random JWT_SECRET of at least 32 characters}
+      - FORTRESS_BOOTSTRAP_TOKEN=${FORTRESS_BOOTSTRAP_TOKEN:?Set a random one-time bootstrap token}
+      - FORTRESS_CREDENTIAL_KEY=${FORTRESS_CREDENTIAL_KEY:?Set a random 32-byte hex encryption key}
       - PORT=9001
     volumes:
       - fortress-data:/app/data
@@ -32,7 +34,7 @@ services:
   #   environment:
   #     POSTGRES_DB: fortress
   #     POSTGRES_USER: fortress
-  #     POSTGRES_PASSWORD: ${PG_PASSWORD:-fortress-secure-password}
+  #     POSTGRES_PASSWORD: ${PG_PASSWORD:?Set a strong PostgreSQL password}
   #   volumes:
   #     - postgres-data:/var/lib/postgresql/data
   #   networks:

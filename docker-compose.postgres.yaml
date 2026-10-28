@@ -17,8 +17,10 @@ services:
       - PG_PORT=5432
       - PG_DATABASE=fortress
       - PG_USER=fortress
-      - PG_PASSWORD=${PG_PASSWORD:-fortress-secure-password}
-      - JWT_SECRET=${JWT_SECRET:-fortress-change-me-in-production}
+      - PG_PASSWORD=${PG_PASSWORD:?Set a strong PostgreSQL password}
+      - JWT_SECRET=${JWT_SECRET:?Set a random JWT_SECRET of at least 32 characters}
+      - FORTRESS_BOOTSTRAP_TOKEN=${FORTRESS_BOOTSTRAP_TOKEN:?Set a random one-time bootstrap token}
+      - FORTRESS_CREDENTIAL_KEY=${FORTRESS_CREDENTIAL_KEY:?Set a random 32-byte hex encryption key}
       - PORT=9001
     depends_on:
       postgres:
@@ -33,7 +35,7 @@ services:
     environment:
       POSTGRES_DB: fortress
       POSTGRES_USER: fortress
-      POSTGRES_PASSWORD: ${PG_PASSWORD:-fortress-secure-password}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?Set a strong PostgreSQL password}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:

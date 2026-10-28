@@ -3,12 +3,14 @@
  */
 
 import { Client, ConnectConfig } from 'ssh2';
+import { sshHostVerifier } from './hostKey.js';
 import { EventEmitter } from 'events';
 import fs from 'fs';
 import os from 'os';
 import { SSHConnectionConfig, DeploymentLog, DeploymentResult, SSHExecutor, CommandResult } from './types.js';
 import { detectOS, installBorg, installRestic, installRsync } from './tools.js';
 import { maskSensitiveData } from '../../utils/maskSensitiveData.js';
+import { appendBoundedJobLog } from '../../utils/boundedLog.js';
 
 export class SSHDeployer extends EventEmitter implements SSHExecutor {
     private client: Client;
@@ -28,11 +30,19 @@ export class SSHDeployer extends EventEmitter implements SSHExecutor {
             message: maskedMessage,
             timestamp: new Date()
         };
-        this.logs.push(entry);
+        appendBoundedJobLog(this.logs,entry);
         this.emit('log', entry);
     }
 
     async connect(config: SSHConnectionConfig): Promise<boolean> {
+        let keyContent=config.privateKey;
+        if (keyContent && !keyContent.startsWith('-----')) {
+            const keyPath=keyContent.startsWith('~')?keyContent.replace(/^~/,os.homedir()):keyContent;
+            const info=await fs.promises.lstat(keyPath);
+            if(!info.isFile() || (info.mode & 0o077)!==0)
+                throw new Error('SSH private key must be a regular file with owner-only permissions');
+            keyContent=await fs.promises.readFile(keyPath,'utf8');
+        }
         return new Promise((resolve) => {
             this.log('ssh', `Attempting connection to ${config.username}@${config.host}:${config.port}...`);
 
@@ -41,42 +51,15 @@ export class SSHDeployer extends EventEmitter implements SSHExecutor {
                 port: config.port,
                 username: config.username,
                 readyTimeout: 30000,
+                hostVerifier: sshHostVerifier(config.hostFingerprint),
             };
 
-            // Handle Private Key Authentication
-            if (config.privateKey) {
-                let keyContent = config.privateKey;
-
-                // Case: Key path provided instead of content
-                if (!keyContent.startsWith('-----')) {
-                    // Expand ~ to home directory
-                    let keyPath = keyContent.startsWith('~')
-                        ? keyContent.replace('~', os.homedir())
-                        : keyContent;
-
-                    // Guard: File access check
-                    try {
-                        if (!fs.existsSync(keyPath)) {
-                            this.log('error', `SSH key file not found: ${keyPath}`);
-                            resolve(false);
-                            return;
-                        }
-                        this.log('info', `Reading SSH key from: ${keyPath}`);
-                        keyContent = fs.readFileSync(keyPath, 'utf8');
-                    } catch (err: any) {
-                        this.log('error', `Failed to read SSH key file: ${err.message}`);
-                        resolve(false);
-                        return;
-                    }
-                }
-
+            // Credentials are resolved asynchronously before constructing the
+            // connection. The SSH trust pin is checked by hostVerifier.
+            if (keyContent) {
                 connectConfig.privateKey = keyContent;
-                if (config.passphrase) {
-                    connectConfig.passphrase = config.passphrase;
-                }
-            }
-            // Handle Password Authentication
-            else if (config.password) {
+                if (config.passphrase) connectConfig.passphrase = config.passphrase;
+            } else if (config.password) {
                 connectConfig.password = config.password;
             }
 
@@ -97,41 +80,39 @@ export class SSHDeployer extends EventEmitter implements SSHExecutor {
     }
 
     async executeCommand(command: string): Promise<CommandResult> {
-        if (!this.connected) {
-            throw new Error('Not connected to SSH server');
-        }
-
-        return new Promise((resolve, reject) => {
-            this.log('cmd', `Executing: ${command}`);
-
-            this.client.exec(command, (err, stream) => {
-                if (err) {
-                    this.log('error', `Command execution failed: ${err.message}`);
-                    reject(err);
-                    return;
-                }
-
-                let stdout = '';
-                let stderr = '';
-
-                stream.on('close', (code: number) => {
-                    resolve({ stdout, stderr, code });
-                });
-
-                stream.on('data', (data: Buffer) => {
-                    const text = data.toString();
-                    stdout += text;
-                    text.split('\n').filter(Boolean).forEach(line => {
-                        this.log('progress', line);
-                    });
-                });
-
-                stream.stderr.on('data', (data: Buffer) => {
-                    const text = data.toString();
-                    stderr += text;
-                    text.split('\n').filter(Boolean).forEach(line => {
-                        this.log('error', line);
-                    });
+        if (!this.connected) throw new Error('Not connected to SSH server');
+        if (typeof command!=='string' || command.length===0 || command.length>128*1024)
+            throw new Error('Invalid remote command length');
+        this.log('cmd','Executing approved tool deployment operation');
+        return new Promise((resolve,reject)=>{
+            let stdout='',stderr='',bytes=0,closed=false;
+            const fail=(error:Error)=>{
+                if(closed)return;
+                closed=true;clearTimeout(timeout);reject(error);
+            };
+            const timeout=setTimeout(()=>fail(new Error('Remote installer timed out')),15*60*1000);
+            this.client.exec(command,(err,stream)=>{
+                if(err)return fail(err);
+                const capture=(data:Buffer,kind:'stdout'|'stderr')=>{
+                    if(closed)return;
+                    bytes+=data.length;
+                    if(bytes>8*1024*1024){
+                        stream.close();
+                        return fail(new Error('Remote installer output exceeded 8 MiB'));
+                    }
+                    const value=data.toString('utf8');
+                    if(kind==='stdout')stdout+=value;else stderr+=value;
+                    if(this.logs.length<2000)
+                        for(const line of value.split('\n').filter(Boolean).slice(0,24))
+                            this.log(kind==='stdout'?'progress':'error',line.slice(0,1024));
+                };
+                stream.on('data',(data:Buffer)=>capture(data,'stdout'));
+                stream.stderr.on('data',(data:Buffer)=>capture(data,'stderr'));
+                stream.on('error',fail);
+                stream.on('close',(code:number)=>{
+                    if(closed)return;
+                    closed=true;clearTimeout(timeout);
+                    resolve({stdout,stderr,code:typeof code==='number'?code:1});
                 });
             });
         });

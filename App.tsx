@@ -5,6 +5,7 @@ import { Setup } from './components/Setup.tsx';
 import { Dashboard } from './components/Dashboard.tsx';
 import { Jobs } from './components/Jobs.tsx';
 import { Systems } from './components/Systems.tsx';
+import { ManagedClients } from './components/ManagedClients.tsx';
 import { Locations } from './components/Locations.tsx';
 import { Settings as SettingsComponent } from './components/Settings.tsx';
 import { Sidebar } from './components/layout/Sidebar.tsx';
@@ -35,7 +36,7 @@ function App() {
     const initApp = async () => {
       try {
         // Check backend API for status
-        const response = await fetch('http://localhost:9001/api/status');
+        const response = await fetch('/api/status');
         if (!response.ok) {
           console.error('[App] Backend not available');
           setIsSetupComplete(false);
@@ -48,7 +49,7 @@ function App() {
         if (backendStatus.setupComplete) {
           // Backend has completed setup - load public config
           try {
-            const configResp = await fetch('http://localhost:9001/api/config/public');
+            const configResp = await fetch('/api/config/public');
             if (configResp.ok) {
               const { authMode: mode, ssoConfig: sso } = await configResp.json();
               if (mode) {
@@ -102,6 +103,7 @@ function App() {
 
   const completeSetup = async (config: {
     masterPassword: string;
+    bootstrapToken: string;
     aiConfig: AIConfig;
     dbConfig: DatabaseConfig;
     ssoConfig: SSOConfig;
@@ -109,7 +111,7 @@ function App() {
     adminUser?: { name: string; email: string; password: string };
     selectedTools: string[];
   }) => {
-    const { aiConfig: ai, dbConfig: db, ssoConfig: sso, authMode: mode, adminUser, selectedTools } = config;
+    const { aiConfig: ai, dbConfig: db, ssoConfig: sso, authMode: mode, adminUser, selectedTools, bootstrapToken } = config;
 
     setAiConfig(ai);
     setDbConfig(db);
@@ -124,7 +126,8 @@ function App() {
         ssoConfig: sso,
         authMode: mode,
         adminUser: adminUser,
-        selectedTools: selectedTools
+        selectedTools: selectedTools,
+        bootstrapToken
       } as any);
 
       if (result && result.success) {
@@ -140,11 +143,12 @@ function App() {
         }
       } else {
         console.error('[Setup] Backend returned error:', error);
+        return;
       }
     } catch (error) {
       console.error('[Setup] Failed to call backend API:', error);
-      // Store auth mode locally for reference, but backend is required
-      localStorage.setItem('fortress_auth_mode', mode);
+      // Do not advance the wizard when the authoritative setup failed.
+      return;
     }
 
     // Create vault salt if not exists
@@ -263,6 +267,7 @@ function App() {
             {currentView === 'dashboard' && <Dashboard />}
             {currentView === 'jobs' && <Jobs aiConfig={aiConfig} />}
             {currentView === 'systems' && <Systems />}
+            {currentView === 'managed-clients' && currentUser.role === 'admin' && <ManagedClients />}
             {currentView === 'locations' && <Locations />}
             {currentView === 'settings' && <SettingsComponent aiConfig={aiConfig} dbConfig={dbConfig} ssoConfig={ssoConfig} onUpdateAIConfig={updateAIConfig} onUpdateDBConfig={updateDBConfig} onUpdateSSOConfig={updateSSOConfig} onResetApp={handleResetApp} onExportData={handleExportData} onImportData={handleImportData} />}
           </div>

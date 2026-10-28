@@ -26,6 +26,8 @@ export const saveConfig = async (key: string, value: any) => {
 };
 
 export interface SetupData {
+    selectedTools: string[];
+    bootstrapToken: string;
     aiConfig: AIConfig;
     dbConfig: DatabaseConfig;
     ssoConfig: SSOConfig;
@@ -40,7 +42,8 @@ export interface SetupData {
 export const completeSetup = async (data: SetupData) => {
     const response = await apiFetch<{ success: boolean; user?: AuthUser; token?: string }>('/config/setup', {
         method: 'POST',
-        body: JSON.stringify(data)
+        headers: {'X-Fortress-Bootstrap-Token': data.bootstrapToken},
+        body: JSON.stringify({...data,bootstrapToken:undefined})
     });
 
     if (response.data?.token) {

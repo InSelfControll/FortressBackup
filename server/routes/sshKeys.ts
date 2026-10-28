@@ -5,13 +5,13 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import * as db from '../db/index.js';
-import { authenticateToken, getJwtSecret } from '../middleware/auth.js';
+import { authenticateToken, requireAdmin, getJwtSecret } from '../middleware/auth.js';
 import { encrypt } from '../encryption.js';
 
 const router = Router();
 
 // Get all SSH keys (without sensitive data)
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const keys = await db.getAllSSHKeys();
         // Return keys without sensitive data
@@ -28,7 +28,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Create SSH key
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { name, privateKey, passphrase } = req.body;
 
@@ -58,7 +58,7 @@ router.post('/', authenticateToken, async (req, res) => {
 });
 
 // Delete SSH key
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await db.deleteSSHKey(req.params.id);
         res.json({ success: true });

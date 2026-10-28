@@ -1,0 +1,70 @@
+name: Fortress controller
+on:
+  push:
+    paths:
+      - 'server/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'components/**'
+      - 'App.tsx'
+      - 'types.ts'
+      - 'client/**'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/fortress-controller.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'components/**'
+      - 'App.tsx'
+      - 'types.ts'
+      - 'client/**'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/fortress-controller.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Audit dependency vulnerabilities
+        run: bun audit --audit-level=high
+      - name: Managed-agent integration test
+        run: bun test tests/managed-agents.test.ts tests/security.test.ts
+      - name: Generate route tree and build frontend
+        run: bun run build
+      - name: Type-check generated route tree
+        run: bunx tsc --noEmit
+
+  container:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Build production container
+        run: docker build --pull -t fortressbackup-security-test .
+      - name: Check image least privilege
+        run: |
+          test "$(docker image inspect fortressbackup-security-test --format '{{.Config.User}}')" = bunjs
+          docker run --rm fortressbackup-security-test sh -c 'test "$(id -u)" -eq 1001 && test "$(stat -c %a /app/data)" = 700 && test -w /app/data'
+
+  restic-integration:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install trusted distribution Restic
+        run: sudo apt-get update -qq && sudo apt-get install -y restic openssh-server
+      - name: Verify backup, integrity, restore, and replica
+        run: bash scripts/restic-smoke.sh
+      - name: Verify pinned SSH/SFTP repository and restore
+        run: bash scripts/restic-sftp-smoke.sh

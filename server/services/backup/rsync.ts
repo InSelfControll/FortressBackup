@@ -1,17 +1,55 @@
 /**
- * Rsync Backup Command Builder
+ * Strict rsync command builder. Source hosts and paths are constrained before
+ * constructing legacy SSH stdin scripts. The known_hosts file is provisioned
+ * out of band with a verified pinned fingerprint.
  */
+import type { BackupJobConfig, SSHConfig } from './types.js';
+import {absoluteSources,absoluteRestorePath,quote} from './commandSafety.js';
 
-import { BackupJobConfig, SSHConfig } from './types.js';
+const flags=[
+    '-a','--stats','--one-file-system','--exclude=/mnt','--exclude=/media',
+    '--exclude=/run/media','--exclude=/run','--exclude=/proc',
+    '--exclude=/sys','--exclude=/dev',
+].join(' ');
 
-export const buildRsyncCommand = (config: BackupJobConfig, sshConfig?: SSHConfig, isLocal: boolean = false): string => {
-    // If Local (Pull Mode), we need to construct rsync command specific for SSH pull
-    if (isLocal && sshConfig) {
-        return `rsync -avz --stats --progress --one-file-system --exclude='/mnt' --exclude='/media' --exclude='/run/media' --exclude='/run' --exclude='/proc' --exclude='/sys' --exclude='/dev' -e "ssh -o StrictHostKeyChecking=no -p ${sshConfig.port} -i %%KEYFILE%%" ${config.sourcePaths.map(p => `${sshConfig.username}@${sshConfig.host}:${p}`).join(' ')} ${config.destinationPath}`;
+const validateRemotePath=(value:string):string=>{
+    if (typeof value!=='string' ||
+        !/^\/[A-Za-z0-9._\/-]{0,2047}$/.test(value) ||
+        value.split('/').includes('..') || value.includes('//'))
+        throw new Error('Rsync source must be a restricted absolute remote path');
+    return value;
+};
+const requireHost=(ssh:SSHConfig):void=>{
+    if(!/^[A-Za-z0-9._-]{1,120}$/.test(ssh.username) ||
+       !/^[A-Za-z0-9.-]{1,253}$/.test(ssh.host) ||
+       !Number.isInteger(ssh.port)||ssh.port<1||ssh.port>65535 ||
+       !ssh.hostFingerprint || !/^SHA256:[A-Za-z0-9+/]{43}=?$/.test(ssh.hostFingerprint))
+        throw new Error('Rsync SSH peer must have a verified identity, host and port');
+};
+
+export const buildRsyncCommand=(
+    config:BackupJobConfig,sshConfig?:SSHConfig,isLocal=false,
+):string=>{
+    absoluteRestorePath(config.destinationPath);
+    const destination=quote(config.destinationPath);
+    if(isLocal){
+        if(!sshConfig)throw new Error('Local Rsync pull requires authenticated SSH configuration');
+        requireHost(sshConfig);
+        // The rsync remote path is also interpreted by the remote shell;
+        // this deliberately restricts it to a conservative pathname alphabet.
+        const sources=absoluteSources(config.sourcePaths).map(source=>{
+            validateRemotePath(source);
+            return quote(sshConfig.username+'@'+sshConfig.host+':'+source);
+        });
+        if(!sources.length)throw new Error('No sources configured');
+        const known='/etc/fortress/known_hosts';
+        const sshCommand=[
+            'ssh','-o BatchMode=yes','-o StrictHostKeyChecking=yes',
+            '-o IdentitiesOnly=yes','-o UserKnownHostsFile='+known,
+            '-p '+sshConfig.port,'-i %%KEYFILE%%'
+        ].join(' ');
+        return `rsync ${flags} -e ${quote(sshCommand)} -- ${sources.join(' ')} ${destination}`;
     }
-
-    // Basic rsync backup
-    // Basic rsync backup with --one-file-system to prevent recursion
-    let cmd = `rsync -avz --stats --progress --one-file-system --exclude='/mnt' --exclude='/media' --exclude='/run/media' --exclude='/run' --exclude='/proc' --exclude='/sys' --exclude='/dev' ${config.sourcePaths.join(' ')} ${config.destinationPath}`;
-    return cmd;
+    const sources=absoluteSources(config.sourcePaths).map(quote);
+    return `rsync ${flags} -- ${sources.join(' ')} ${destination}`;
 };

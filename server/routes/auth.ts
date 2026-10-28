@@ -5,14 +5,25 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import * as db from '../db/index.js';
-import { getJwtSecret, authenticateToken } from '../middleware/auth.js';
+import { getJwtSecret, authenticateToken, requireAdmin } from '../middleware/auth.js';
+import { selectVerifiedGitHubEmail } from '../security/githubIdentity.js';
 
 const router = Router();
+const validEmail=(value:unknown):value is string =>
+    typeof value==='string' && value.length>=3 && value.length<=254 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+const validName=(value:unknown):value is string =>
+    typeof value==='string' && value.trim().length>=1 && value.length<=120 &&
+    !/[\u0000-\u001f\u007f]/.test(value);
+
 
 // Register new user
-router.post('/register', async (req, res) => {
+router.post('/register', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const { email, password, name, authType = 'local' } = req.body;
+        const { email, password, name, authType = 'local' } = req.body || {};
+        if(!validEmail(email)||!validName(name)||!['local','sso'].includes(authType)||
+           (authType==='local' && (typeof password!=='string'||password.length<12||password.length>256)))
+            return res.status(400).json({error:'Invalid registration data'});
 
         // Check if user already exists
         const existing = await db.getUserByEmail(email);
@@ -25,7 +36,7 @@ router.post('/register', async (req, res) => {
             email,
             name,
             avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
-            role: 'admin',
+            role: 'viewer',
             auth_type: authType
         }, authType === 'local' ? password : undefined);
 
@@ -44,7 +55,9 @@ router.post('/register', async (req, res) => {
 // Login
 router.post('/login', async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password } = req.body || {};
+        if(!validEmail(email)||typeof password!=='string'||password.length<1||password.length>256)
+            return res.status(400).json({error:'Invalid login credentials'});
 
         const user = await db.validateUser(email, password);
         if (!user) {
@@ -67,7 +80,7 @@ router.post('/github/callback', async (req, res) => {
     try {
         const { code } = req.body;
 
-        if (!code) {
+        if (typeof code !== 'string' || code.length < 1 || code.length > 2048) {
             return res.status(400).json({ error: 'Authorization code required' });
         }
 
@@ -112,30 +125,34 @@ router.post('/github/callback', async (req, res) => {
             return res.status(400).json({ error: 'Failed to get GitHub user info' });
         }
 
-        // Get user email (might be private)
-        let email = githubUser.email;
-        if (!email) {
-            const emailsResponse = await fetch('https://api.github.com/user/emails', {
-                headers: {
-                    'Authorization': `Bearer ${tokenData.access_token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'User-Agent': 'Fortress-Backup-Manager'
-                }
-            });
-            const emails = await emailsResponse.json();
-            const primaryEmail = emails.find((e: any) => e.primary) || emails[0];
-            email = primaryEmail?.email || `${githubUser.login}@github.local`;
-        }
+        // Never associate an OAuth identity with an unverified or synthetic
+        // email address: an email match may grant privileges to an existing user.
+        const emailsResponse = await fetch('https://api.github.com/user/emails', {
+            headers: {
+                'Authorization': `Bearer ${tokenData.access_token}`,
+                'Accept': 'application/vnd.github+json',
+                'User-Agent': 'Fortress-Backup-Manager'
+            }
+        });
+        if (!emailsResponse.ok) return res.status(403).json({error:'Verified GitHub email access is required'});
+        const emailRecords: unknown = await emailsResponse.json();
+        const email=selectVerifiedGitHubEmail(emailRecords);
+        if (!email) return res.status(403).json({error:'Verified GitHub email required'});
 
         // Check if user exists, otherwise create
         let user = await db.getUserByEmail(email);
 
         if (!user) {
+            // Never let an arbitrary first OAuth login seize administrator rights.
+            // An operator can explicitly pin the sole bootstrap GitHub user ID.
+            const initialId=process.env.FORTRESS_INITIAL_SSO_GITHUB_ID;
+            const owner = !!initialId && /^[0-9]+$/.test(initialId) &&
+                String(githubUser.id)===initialId && !(await db.hasUsers());
             user = await db.createUser({
                 email,
                 name: githubUser.name || githubUser.login,
                 avatar: githubUser.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${githubUser.login}`,
-                role: 'admin',
+                role: owner ? 'admin' : 'viewer',
                 auth_type: 'sso'
             });
         }

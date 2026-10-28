@@ -29,9 +29,8 @@ export async function resolveSSHKeyCredentials(sshKeyId: string): Promise<Resolv
         const encryptedData = JSON.parse(storedKey.private_key_data);
         try {
             privateKey = decrypt(encryptedData, getJwtSecret());
-        } catch (err) {
-            console.warn('[Decryption] Failed with current secret, trying fallback');
-            privateKey = decrypt(encryptedData, 'fortress-secret-key-change-in-production');
+        } catch {
+            throw new Error('Unable to decrypt SSH key with configured encryption key');
         }
     } else {
         privateKey = storedKey.private_key_data;
@@ -42,9 +41,8 @@ export async function resolveSSHKeyCredentials(sshKeyId: string): Promise<Resolv
         const encryptedPass = JSON.parse(storedKey.passphrase);
         try {
             passphrase = decrypt(encryptedPass, getJwtSecret());
-        } catch (err) {
-            console.warn('[Decryption] Failed with current secret, trying fallback');
-            passphrase = decrypt(encryptedPass, 'fortress-secret-key-change-in-production');
+        } catch {
+            throw new Error('Unable to decrypt SSH key passphrase with configured encryption key');
         }
     } else {
         passphrase = storedKey.passphrase;

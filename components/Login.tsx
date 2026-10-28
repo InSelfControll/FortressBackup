@@ -36,11 +36,24 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
     const code = urlParams.get('code');
     const state = urlParams.get('state');
 
-    if (code && state === 'github_oauth') {
+    if (code) {
+      let allowed = false;
+      const persisted=sessionStorage.getItem('fortress_github_oauth_state');
+      sessionStorage.removeItem('fortress_github_oauth_state');
+      if (persisted && state) {
+        try {
+          const expected=JSON.parse(persisted) as {state:string;expiresAt:number};
+          allowed=expected.state===state && Date.now()<expected.expiresAt;
+        } catch { /* Treat malformed OAuth state as invalid. */ }
+      }
+      window.history.replaceState({}, document.title, window.location.pathname);
+      if (!allowed) {
+        setError('The sign-in request was not initiated in this browser session. Try again.');
+        return;
+      }
       if (processedCode.current === code) return;
       processedCode.current = code;
-      handleGitHubCallback(code);
-      window.history.replaceState({}, document.title, window.location.pathname);
+      void handleGitHubCallback(code);
     }
   }, []);
 
@@ -62,7 +75,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
       const clientId = ssoConfig.clientId;
       const redirectUri = encodeURIComponent(window.location.origin + '/login');
       const scope = encodeURIComponent('user:email read:user');
-      const state = 'github_oauth';
+      const bytes=crypto.getRandomValues(new Uint8Array(32));
+      const state=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+      sessionStorage.setItem('fortress_github_oauth_state',
+        JSON.stringify({state,expiresAt:Date.now()+10*60*1000}));
       window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
     } else if (ssoConfig.provider === 'google') {
       const clientId = ssoConfig.clientId;

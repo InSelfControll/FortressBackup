@@ -16,16 +16,21 @@ interface EnvConfig {
 export const generateEnvFile = (config: EnvConfig, port: number = 9001) => {
     const { dbConfig, aiConfig, ssoConfig, authMode } = config;
 
-    const envPath = path.join(process.cwd(), '.env');
+    const envPath = process.env.FORTRESS_ENV_PATH || path.join(process.cwd(), 'data', '.env');
+    const legacyPath = path.join(process.cwd(), '.env');
+    const priorEnvPath = fs.existsSync(envPath) ? envPath : legacyPath;
     let jwtSecret = `${crypto.randomUUID()}-${crypto.randomUUID()}`;
 
+    let credentialKey = crypto.randomBytes(32).toString('hex');
     // Preserve existing secret if available to prevent token invalidation
-    if (fs.existsSync(envPath)) {
-        const existingContent = fs.readFileSync(envPath, 'utf8');
+    if (fs.existsSync(priorEnvPath)) {
+        const existingContent = fs.readFileSync(priorEnvPath, 'utf8');
         const match = existingContent.match(/JWT_SECRET=(.+)/);
         if (match && match[1]) {
             jwtSecret = match[1].trim();
         }
+        const oldKey=existingContent.match(/^FORTRESS_CREDENTIAL_KEY=([0-9a-fA-F]{64})$/m);
+        if (oldKey) credentialKey=oldKey[1];
     }
 
     const lines: string[] = [
@@ -35,6 +40,7 @@ export const generateEnvFile = (config: EnvConfig, port: number = 9001) => {
         '# Server',
         `PORT=${port}`,
         `JWT_SECRET=${jwtSecret}`,
+        `FORTRESS_CREDENTIAL_KEY=${credentialKey}`,
         '',
         '# Database',
     ];
@@ -75,10 +81,24 @@ export const generateEnvFile = (config: EnvConfig, port: number = 9001) => {
     lines.push('# Frontend');
     lines.push('FRONTEND_URL=http://localhost:3001');
 
-    const envContent = lines.join('\n');
+    // Escape every supplied value and reject record injection before writing .env.
+    const envContent = lines.map(line => {
+        if (!line || line.startsWith('#')) return line;
+        const at=line.indexOf('=');
+        if (at <= 0) throw new Error('Invalid environment record');
+        const name=line.slice(0,at), value=line.slice(at+1);
+        if (/[\\r\\n\\0]/.test(value) || value.length > 4096)
+            throw new Error('Unsafe environment setting');
+        if (name==='JWT_SECRET' || name==='FORTRESS_CREDENTIAL_KEY') return line;
+        return name + '=' + JSON.stringify(value);
+    }).join('\n');
 
-    // Write to envPath
-    fs.writeFileSync(envPath, envContent, 'utf-8');
+    // Persist keys on the volume; never write partially to the active env file.
+    fs.mkdirSync(path.dirname(envPath), {recursive:true,mode:0o700});
+    const temporary = `${envPath}.${process.pid}.tmp`;
+    fs.writeFileSync(temporary, envContent, { encoding: 'utf-8', mode: 0o600, flag:'wx' });
+    fs.renameSync(temporary, envPath);
+    fs.chmodSync(envPath, 0o600);
     console.log(`[Fortress] Generated .env file at: ${envPath}`);
 
     return envPath;

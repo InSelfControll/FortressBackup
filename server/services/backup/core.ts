@@ -3,12 +3,14 @@
  */
 
 import { Client, ConnectConfig } from 'ssh2';
+import { sshHostVerifier } from '../ssh/hostKey.js';
 import { EventEmitter } from 'events';
 import fs from 'fs';
 import os from 'os';
-import { exec as execLocal } from 'child_process';
+import { spawn } from 'node:child_process';
 import { SSHConfig, BackupExecutionLog } from './types.js';
 import { maskSensitiveData } from '../../utils/maskSensitiveData.js';
+import { appendBoundedJobLog } from '../../utils/boundedLog.js';
 
 export class BackupExecutor extends EventEmitter {
     private client: Client;
@@ -40,7 +42,7 @@ export class BackupExecutor extends EventEmitter {
             message: maskedMessage,
             timestamp: new Date()
         };
-        this.logs.push(entry);
+        appendBoundedJobLog(this.logs,entry);
         this.emit('log', entry);
     }
 
@@ -51,6 +53,14 @@ export class BackupExecutor extends EventEmitter {
             return true;
         }
 
+        let keyContent=config.privateKey;
+        if (keyContent && !keyContent.startsWith('-----')) {
+            const keyPath=keyContent.startsWith('~')?keyContent.replace(/^~/,os.homedir()):keyContent;
+            const info=await fs.promises.lstat(keyPath);
+            if(!info.isFile() || (info.mode & 0o077)!==0)
+                throw new Error('SSH private key must be a regular file with owner-only permissions');
+            keyContent=await fs.promises.readFile(keyPath,'utf8');
+        }
         return new Promise((resolve) => {
             this.log('info', `Connecting to ${config.username}@${config.host}:${config.port}...`);
 
@@ -59,45 +69,15 @@ export class BackupExecutor extends EventEmitter {
                 port: config.port,
                 username: config.username,
                 readyTimeout: 30000,
+                hostVerifier: sshHostVerifier(config.hostFingerprint),
             };
 
-            // Handle Private Key Authentication
-            if (config.privateKey) {
-                let keyContent = config.privateKey;
-
-                // Case: Key path provided instead of content
-                if (!keyContent.startsWith('-----')) {
-                    // Expand ~ to home directory
-                    let keyPath = keyContent.startsWith('~')
-                        ? keyContent.replace('~', os.homedir())
-                        : keyContent;
-
-                    // Guard: File access check
-                    try {
-                        if (!fs.existsSync(keyPath)) {
-                            this.log('error', `SSH key invalid: Not a valid PEM / OpenSSH string and not a file on server.`);
-                            resolve(false);
-                            return;
-                        }
-                        keyContent = fs.readFileSync(keyPath, 'utf8');
-                    } catch (err: any) {
-                        this.log('error', `Failed to read SSH key: ${err.message} `);
-                        resolve(false);
-                        return;
-                    }
-                }
-                // Case: valid key content provided
-                else {
-                    this.log('info', `Using ID_RSA / PEM key(Length: ${keyContent.length}).Header: ${keyContent.substring(0, 30)}...`);
-                }
-
+            // Credentials are resolved asynchronously before constructing the
+            // connection. The SSH trust pin is checked by hostVerifier.
+            if (keyContent) {
                 connectConfig.privateKey = keyContent;
-                if (config.passphrase) {
-                    connectConfig.passphrase = config.passphrase;
-                }
-            }
-            // Handle Password Authentication
-            else if (config.password) {
+                if (config.passphrase) connectConfig.passphrase = config.passphrase;
+            } else if (config.password) {
                 connectConfig.password = config.password;
             }
 
@@ -119,61 +99,56 @@ export class BackupExecutor extends EventEmitter {
         });
     }
 
-    async exec(command: string): Promise<{ stdout: string; stderr: string; code: number }> {
-        return new Promise((resolve, reject) => {
-            this.log('info', `Executing: ${command.substring(0, 100)}${command.length > 100 ? '...' : ''}`);
-
-            if (this.isLocal) {
-                execLocal(command, (error, stdout, stderr) => {
-                    if (stdout) {
-                        stdout.split('\n').filter(Boolean).forEach(line => {
-                            if (line.includes('%') || line.includes('MB') || line.includes('files')) {
-                                this.log('progress', line.trim());
-                            }
-                        });
-                    }
-                    if (stderr) {
-                        stderr.split('\n').filter(Boolean).forEach(line => {
-                            this.log('error', line.trim());
-                        });
-                    }
-                    resolve({
-                        stdout,
-                        stderr,
-                        code: error ? (error.code || 1) : 0
-                    });
-                });
-            } else {
-                this.client.exec(command, (err, stream) => {
-                    if (err) {
-                        reject(err);
-                        return;
-                    }
-
-                    let stdout = '';
-                    let stderr = '';
-
-                    stream.on('close', (code: number) => {
-                        resolve({ stdout, stderr, code });
-                    });
-
-                    stream.on('data', (data: Buffer) => {
-                        const text = data.toString();
-                        stdout += text;
-                        text.split('\n').filter(Boolean).forEach(line => {
-                            if (line.includes('%') || line.includes('MB') || line.includes('files')) {
-                                this.log('progress', line.trim());
-                            }
-                        });
-                    });
-
-                    stream.stderr.on('data', (data: Buffer) => {
-                        const text = data.toString();
-                        stderr += text;
-                        text.split('\n').filter(Boolean).forEach(line => {
-                            this.log('error', line.trim());
-                        });
-                    });
+    /**
+     * Run a controlled shell script over stdin. Command bytes (including
+     * credentials) are never part of argv, SSH exec requests, or log messages.
+     * This is a compatibility bridge until fixed remote runners are deployed.
+     */
+    async exec(command: string): Promise<{stdout:string;stderr:string;code:number}> {
+        if (!this.connected || command.length > 128 * 1024)
+            throw new Error('Executor disconnected or script exceeds maximum size');
+        this.log('info', 'Executing constrained backup operation');
+        return new Promise((resolve,reject) => {
+            let stdout='', stderr='', total=0, finished=false;
+            let terminate:()=>void=()=>{};
+            const timeout=setTimeout(()=>fail(new Error('Backup command timed out')), 6*60*60*1000);
+            const fail=(error:Error)=>{
+                if(finished)return;
+                finished=true; clearTimeout(timeout); terminate(); reject(error);
+            };
+            const append=(kind:'stdout'|'stderr',chunk:Buffer)=>{
+                if(finished)return;
+                total+=chunk.length;
+                if(total>8*1024*1024)return fail(new Error('Backup output exceeded 8MiB'));
+                const value=chunk.toString('utf8');
+                if(kind==='stdout')stdout+=value;else stderr+=value;
+                // Limit log fan-out even when a remote job is verbose.
+                if(this.logs.length<2000 && (value.includes('files') || value.includes('MB') || kind==='stderr'))
+                    this.log(kind==='stderr'?'error':'progress',value.slice(0,2048));
+            };
+            const done=(code:number|null)=>{
+                if(finished)return;
+                finished=true;clearTimeout(timeout);
+                resolve({stdout,stderr,code:typeof code==='number'?code:1});
+            };
+            if(this.isLocal){
+                const child=spawn('/bin/sh',['-s'],{stdio:['pipe','pipe','pipe']});
+                terminate=()=>child.kill('SIGKILL');
+                child.on('error',fail);
+                child.stdout.on('data',(chunk:Buffer)=>append('stdout',chunk));
+                child.stderr.on('data',(chunk:Buffer)=>append('stderr',chunk));
+                child.on('close',done);
+                child.stdin.on('error',()=>{});
+                child.stdin.end(command);
+            }else{
+                this.client.exec('sh -s',(error,stream)=>{
+                    if(error)return fail(error);
+                    terminate=()=>stream.close();
+                    stream.on('data',(chunk:Buffer)=>append('stdout',chunk));
+                    stream.stderr.on('data',(chunk:Buffer)=>append('stderr',chunk));
+                    stream.on('close',done);
+                    stream.on('error',fail);
+                    stream.end(command);
                 });
             }
         });

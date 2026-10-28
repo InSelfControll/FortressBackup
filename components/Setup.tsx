@@ -11,6 +11,7 @@ import { AIProvider, AIConfig, DatabaseType, DatabaseConfig, SSOConfig } from '.
 interface SetupProps {
   onComplete: (config: {
     masterPassword: string;
+    bootstrapToken: string;
     aiConfig: AIConfig;
     dbConfig: DatabaseConfig;
     ssoConfig: SSOConfig;
@@ -40,6 +41,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
   const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
 
   // Other configs
+  const [bootstrapToken, setBootstrapToken] = useState('');
   const [masterPassword, setMasterPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [selectedTools, setSelectedTools] = useState<string[]>(['borg']);
@@ -74,8 +76,10 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
   };
 
   const handleFinish = () => {
+    if (bootstrapToken.length < 32) { window.alert('Enter the one-time FORTRESS_BOOTSTRAP_TOKEN provisioned on the server'); return; }
     onComplete({
       masterPassword,
+      bootstrapToken,
       aiConfig,
       dbConfig,
       ssoConfig,
@@ -136,6 +140,11 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-widest mb-2 shadow-sm">
             <Zap size={14} className="fill-current" /> Production Orchestration Setup
           </div>
+          <label className="block max-w-lg mx-auto text-xs text-slate-300 mt-3">One-time server bootstrap token
+            <input type="password" autoComplete="new-password" value={bootstrapToken} onChange={e=>setBootstrapToken(e.target.value)}
+              className="block w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2 mt-2 text-white"
+              placeholder="FORTRESS_BOOTSTRAP_TOKEN" />
+          </label>
           <h1 className="text-5xl font-black text-white tracking-tighter leading-tight">Fortress Core</h1>
           <p className="text-slate-400 max-w-lg mx-auto text-base leading-relaxed">
             Configure the backbone of your backup infrastructure.

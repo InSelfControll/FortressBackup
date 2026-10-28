@@ -85,45 +85,48 @@ export const installBorg = async (executor: SSHExecutor, packageManager: string)
 };
 
 export const installRestic = async (executor: SSHExecutor): Promise<boolean> => {
-    executor.log('info', 'Installing Restic...');
+    executor.log('info', 'Checking the latest stable Restic release...');
 
-    // Try to get latest restic version from GitHub
-    const archRes = await executor.executeCommand('uname -m');
-    const arch = archRes.stdout.trim();
-    let resticArch = 'amd64';
-    if (arch === 'aarch64' || arch === 'arm64') {
-        resticArch = 'arm64';
-    } else if (arch.includes('arm')) {
-        resticArch = 'arm';
-    }
-
-    // Download latest restic binary
-    const downloadCmd = `
-        cd /tmp && 
-        curl -sL https://github.com/restic/restic/releases/download/v0.16.2/restic_0.16.2_linux_${resticArch}.bz2 -o restic.bz2 &&
-        bunzip2 -f restic.bz2 &&
-        sudo mv restic /usr/local/bin/restic &&
-        sudo chmod +x /usr/local/bin/restic
-    `.replace(/\n/g, ' ');
-
-    executor.log('info', `Downloading restic for ${resticArch} architecture...`);
-
-    // Ensure prerequisites
-    await executor.executeCommand('which bunzip2 || sudo apt-get install -y bzip2');
-    await executor.executeCommand('which curl || sudo apt-get install -y curl');
-
-    const { code } = await executor.executeCommand(downloadCmd);
-
-    if (code === 0) {
-        const { stdout } = await executor.executeCommand('restic version 2>/dev/null || echo "not found"');
-        if (stdout.includes('restic')) {
-            executor.log('success', `Restic installed: ${stdout.trim()}`);
-            return true;
+    // Bootstrap from a trusted distribution repository. The upstream self-update
+    // operation validates signed release metadata and selects the correct architecture.
+    const command = [
+        'set -eu',
+        'if ! command -v restic >/dev/null 2>&1; then',
+        '  if command -v apt-get >/dev/null 2>&1; then',
+        '    sudo -n apt-get update -qq',
+        '    sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y restic',
+        '  elif command -v dnf >/dev/null 2>&1; then',
+        '    sudo -n dnf install -y restic',
+        '  elif command -v pacman >/dev/null 2>&1; then',
+        '    sudo -n pacman -S --needed --noconfirm restic',
+        '  else',
+        '    echo "No supported trusted package source for Restic" >&2; exit 1',
+        '  fi',
+        'fi',
+        'tmpdir=$(mktemp -d)',
+        'trap \'rm -rf "$tmpdir"\' EXIT HUP INT TERM',
+        'restic self-update --output "$tmpdir/restic"',
+        'if [ -s "$tmpdir/restic" ]; then',
+        '  chmod 755 "$tmpdir/restic"',
+        '  "$tmpdir/restic" version',
+        '  sudo -n install -m 0755 "$tmpdir/restic" /usr/local/bin/restic',
+        'fi',
+        'restic version',
+    ].join('\n');
+    // This script contains only constant code, never untrusted job parameters.
+    const shellCommand = "sh -c '" + command.replace(/'/g, "'\\''") + "'";
+    try {
+        const { code, stdout, stderr } = await executor.executeCommand(shellCommand);
+        if (code !== 0) {
+            executor.log('error', `Restic update failed: ${stderr || stdout}`);
+            return false;
         }
+        executor.log('success', `Restic updated: ${stdout.trim().split('\n').pop() || 'verified'}`);
+        return true;
+    } catch (error) {
+        executor.log('error', `Restic update failed: ${error instanceof Error ? error.message : String(error)}`);
+        return false;
     }
-
-    executor.log('error', 'Restic installation failed');
-    return false;
 };
 
 export const installRsync = async (executor: SSHExecutor, packageManager: string): Promise<boolean> => {

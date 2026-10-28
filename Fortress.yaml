@@ -1,77 +1,40 @@
-
-version: '3.9'
+# FortressBackup production Compose stack.
+# Accessible only through localhost or an explicitly configured TLS proxy.
+name: fortressbackup
 
 services:
-  # Fortress Web Dashboard & Orchestrator
-  fortress-dashboard:
-    image: node:20-alpine
-    container_name: fortress-dashboard
-    restart: always
+  fortress:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fortressbackup:local
+    init: true
+    user: "1001:1001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    restart: unless-stopped
+    stop_grace_period: 30s
     ports:
-      - "3000:3000"
+      - "127.0.0.1:9001:9001"
     environment:
-      - API_KEY=${GEMINI_API_KEY}
-      - NODE_ENV=production
+      NODE_ENV: production
+      PORT: "9001"
+      FRONTEND_URL: ${FORTRESS_FRONTEND_URL:-http://localhost:9001}
+      FORTRESS_BOOTSTRAP_TOKEN: ${FORTRESS_BOOTSTRAP_TOKEN:?Set a random 32+ character bootstrap token in a private environment file}
     volumes:
-      - .:/app
-    working_dir: /app
-    networks:
-      - fortress-net
-
-  # Fortress Execution Worker (Borg/Restic/Rsync Runner)
-  fortress-worker:
-    image: instrumentisto/borg:latest
-    container_name: fortress-worker
-    restart: always
-    environment:
-      - BORG_PASSPHRASE=${BORG_PASSPHRASE}
-      - RESTIC_PASSWORD=${RESTIC_PASSWORD}
-      - AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY}
-      - AWS_SECRET_ACCESS_KEY=${S3_SECRET_KEY}
-    volumes:
-      - ./backups:/backups
-      - ./cache:/root/.cache
-      - ./config:/root/.config
-      - ~/.ssh:/root/.ssh:ro
-    networks:
-      - fortress-net
-    # Conceptual entrypoint for custom orchestration
-    command: tail -f /dev/null
-
-  # Mock S3 Storage for local testing (MinIO)
-  fortress-storage-mock:
-    image: minio/minio
-    container_name: fortress-storage
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      - MINIO_ROOT_USER=fortress_admin
-      - MINIO_ROOT_PASSWORD=fortress_secret_password
-    volumes:
-      - minio-data:/data
-    command: server /data --console-address ":9001"
-    networks:
-      - fortress-net
-
-  # Vault for secret management (Optional persistence)
-  fortress-vault:
-    image: hashicorp/vault:latest
-    container_name: fortress-vault
-    ports:
-      - "8200:8200"
-    environment:
-      - VAULT_DEV_ROOT_TOKEN_ID=fortress-token
-    cap_add:
-      - IPC_LOCK
-    networks:
-      - fortress-net
-
-networks:
-  fortress-net:
-    driver: bridge
+      - fortress-data:/app/data
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
-  minio-data:
-  backups:
-  cache:
+  fortress-data:

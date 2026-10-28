@@ -4,31 +4,69 @@
 
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'node:crypto';
 import dotenv from 'dotenv';
 import * as db from '../db/index.js';
-import { getJwtSecret, authenticateToken } from '../middleware/auth.js';
+import { getJwtSecret, authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { generateEnvFile } from '../utils/env.js';
 
 const router = Router();
+const editableKeys=new Set(['ai_config','db_config','sso_config','auth_mode','selected_tools']);
+const hideSecrets=(value:any):any=>{
+    if(Array.isArray(value))return value.map(hideSecrets);
+    if(value && typeof value==='object'){
+        return Object.fromEntries(Object.entries(value)
+            .filter(([key])=>!/password|secret|token|apiKey|accessKey|privateKey|credential/i.test(key))
+            .map(([key,item])=>[key,hideSecrets(item)]));
+    }
+    return value;
+};
 
 // Initial setup
 router.post('/setup', async (req, res) => {
     try {
-        const { aiConfig, dbConfig, ssoConfig, authMode, adminUser, selectedTools } = req.body;
+        if (!db.isInitialized()) return res.status(503).json({ error: 'Database must be initialized before setup' });
+        if ((await db.getConfig<boolean>('setup_complete')) || await db.hasUsers()) {
+            return res.status(409).json({ error: 'Setup already completed' });
+        }
+        const expectedToken=process.env.FORTRESS_BOOTSTRAP_TOKEN;
+        const supplied=req.get('x-fortress-bootstrap-token') || '';
+        if (!expectedToken || expectedToken.length < 32)
+            return res.status(503).json({error:'Configure FORTRESS_BOOTSTRAP_TOKEN to complete first-run setup'});
+        const expected=crypto.createHash('sha256').update(expectedToken).digest();
+        const received=crypto.createHash('sha256').update(supplied).digest();
+        if(!supplied || !crypto.timingSafeEqual(expected,received))
+            return res.status(401).json({error:'Invalid bootstrap token'});
+        const { aiConfig, dbConfig, ssoConfig, authMode, adminUser, selectedTools } = req.body || {};
+        const invalidTools = selectedTools !== undefined && (
+            !Array.isArray(selectedTools) ||
+            selectedTools.some((item: unknown) => !['borg','restic','rsync'].includes(String(item)))
+        );
+        const invalidAdmin = authMode === 'local' && (
+            !adminUser || typeof adminUser.name !== 'string' ||
+            typeof adminUser.email !== 'string' ||
+            typeof adminUser.password !== 'string' || adminUser.password.length < 12
+        );
+        if (!dbConfig || !['SQLite','sqlite','PostgreSQL','postgres'].includes(dbConfig.type) ||
+            !ssoConfig || !aiConfig || !['local','sso'].includes(authMode) || invalidAdmin || invalidTools)
+            return res.status(400).json({error:'Invalid setup configuration'});
+        // Claim first-run provisioning atomically to prevent concurrent setup.
+        const claim=await db.getOne<{key:string}>(
+            "INSERT INTO config(key,value) VALUES('bootstrap_claim',?) ON CONFLICT(key) DO NOTHING RETURNING key",
+            [JSON.stringify(new Date().toISOString())]);
+        if(!claim)return res.status(409).json({error:'Initial setup already claimed'});
 
         // Generate .env file
         const envPath = generateEnvFile({ dbConfig, aiConfig, ssoConfig, authMode });
 
         // Reload environment variables runtime
-        dotenv.config({ override: true });
+        dotenv.config({ path: envPath, override: true });
 
         await db.saveConfig('ai_config', aiConfig);
         await db.saveConfig('db_config', dbConfig);
         await db.saveConfig('sso_config', ssoConfig);
         await db.saveConfig('auth_mode', authMode);
         await db.saveConfig('selected_tools', selectedTools || ['borg', 'restic']);
-        await db.saveConfig('setup_complete', true);
-
         // Create admin user if local auth mode
         let token = null;
         let user = null;
@@ -45,6 +83,7 @@ router.post('/setup', async (req, res) => {
             token = jwt.sign({ id: user.id, email: user.email, role: user.role }, getJwtSecret(), { expiresIn: '7d' });
         }
 
+        await db.saveConfig('setup_complete', true);
         res.json({ success: true, user, token, envPath });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -70,20 +109,49 @@ router.get('/public', async (req, res) => {
 });
 
 // Get config by key
-router.get('/:key', authenticateToken, async (req, res) => {
+router.get('/:key', authenticateToken, requireAdmin, async (req, res) => {
     try {
+        if (req.params.key.startsWith('managed_agent_')) return res.status(403).json({error:'Managed agent records are not accessible through generic config API'});
+        if(!editableKeys.has(req.params.key))return res.status(403).json({error:'Configuration key is not public'});
         const value = await db.getConfig(req.params.key);
-        res.json({ value });
+        res.json({ value: hideSecrets(value) });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
 });
 
 // Save config by key
-router.put('/:key', authenticateToken, async (req, res) => {
+router.put('/:key', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        await db.saveConfig(req.params.key, req.body.value);
-        res.json({ success: true });
+        if (req.params.key.startsWith('managed_agent_')) return res.status(403).json({error:'Managed agent records must use dedicated API'});
+        const key=req.params.key;
+        if(!editableKeys.has(key))return res.status(403).json({error:'Configuration key is read-only'});
+        const incoming=req.body?.value;
+        const isObject=(value:unknown):value is Record<string,unknown> =>
+            !!value && typeof value==='object' && !Array.isArray(value);
+        if(['ai_config','db_config','sso_config'].includes(key) && !isObject(incoming))
+            return res.status(400).json({error:'Expected configuration object'});
+        if(key==='auth_mode' && !['local','sso'].includes(incoming))
+            return res.status(400).json({error:'Invalid authentication mode'});
+        if(key==='selected_tools' && (!Array.isArray(incoming) ||
+            incoming.length>8 || incoming.some(item=>!['borg','restic','rsync'].includes(item))))
+            return res.status(400).json({error:'Invalid backup tools'});
+        if(incoming===undefined || JSON.stringify(incoming).length>32768)
+            return res.status(400).json({error:'Invalid configuration payload'});
+        let value=incoming;
+        if(isObject(incoming)){
+            const previous=await db.getConfig<Record<string,unknown>>(key);
+            value={...(isObject(previous)?previous:{}),...incoming};
+            // Redacted GET responses omit sensitive fields. A metadata edit
+            // must never erase previously stored credentials.
+            for(const [field,prior] of Object.entries(isObject(previous)?previous:{})){
+                if(/password|secret|token|apiKey|accessKey|privateKey|credential/i.test(field) &&
+                   (incoming[field]===undefined || incoming[field]===''))
+                    (value as Record<string,unknown>)[field]=prior;
+            }
+        }
+        await db.saveConfig(key,value);
+        res.json({success:true});
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }

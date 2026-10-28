@@ -5,17 +5,18 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import * as db from '../db/index.js';
-import { authenticateToken, getJwtSecret } from '../middleware/auth.js';
+import { authenticateToken, requireAdmin, getJwtSecret } from '../middleware/auth.js';
 import { toAPIJob, toDBJob } from '../utils/mappers.js';
-import { resolveSSHCredentialsFromRequest } from '../utils/sshCredentials.js';
-import { encrypt, decrypt } from '../encryption.js';
+import { buildJobExecutionContext } from '../services/backup/jobContext.js';
+import { encrypt } from '../encryption.js';
 import { runBackupJob, runRestoreJob, listJobSnapshots, listJobFiles, BackupExecutionLog } from '../services/backup/index.js';
 import { subscribeToJobLogs, broadcastJobLog, notifyJobComplete } from '../logStreamer.js';
+import { appendBoundedJobLog } from '../utils/boundedLog.js';
 
 const router = Router();
 
 // Get all jobs
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const jobs = await db.getAllJobs();
         res.json(jobs.map(toAPIJob));
@@ -25,7 +26,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Create job
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const jobId = req.body.id || crypto.randomUUID();
 
@@ -51,13 +52,16 @@ router.post('/', authenticateToken, async (req, res) => {
 });
 
 // Update job
-router.put('/:id', authenticateToken, async (req, res) => {
+router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const job = { ...req.body, id: req.params.id };
+        const existing = await db.getJob(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'Job not found' });
         const dbJob = toDBJob(job);
+        if (!dbJob.repo_password) dbJob.repo_password = existing.repo_password;
 
         // Encrypt repo password if present and not already encrypted
-        if (dbJob.repo_password && !JSON.stringify(dbJob.repo_password).includes('ciphertext')) {
+        if (req.body.repoPassword && dbJob.repo_password) {
             const encrypted = encrypt(dbJob.repo_password, getJwtSecret());
             dbJob.repo_password = JSON.stringify(encrypted);
         }
@@ -70,7 +74,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
 });
 
 // Delete job
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await db.deleteJob(req.params.id);
         res.json({ success: true });
@@ -80,7 +84,8 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 });
 
 // Run a backup job via SSH on the source system
-router.post('/:id/run', authenticateToken, async (req, res) => {
+router.post('/:id/run', authenticateToken, requireAdmin, async (req, res) => {
+    let claimed = false;
     try {
         const jobId = req.params.id;
 
@@ -90,64 +95,21 @@ router.post('/:id/run', authenticateToken, async (req, res) => {
             return res.status(404).json({ error: 'Job not found' });
         }
 
-        const apiJob = toAPIJob(job);
+        const leased = await db.getOne<{id:string}>(`
+            UPDATE jobs SET status='Running'
+            WHERE id=? AND COALESCE(status,'Idle')!='Running' RETURNING id`,[jobId]);
+        if (!leased) return res.status(409).json({ error: 'Backup is already running' });
+        claimed = true;
 
-        // Get source system
-        const sourceSystem = await db.getSystem(apiJob.sourceId);
-        if (!sourceSystem) {
-            return res.status(404).json({ error: 'Source system not found' });
-        }
-
-        console.log(`[Job Run] Source System: ${sourceSystem.name} (ID: ${sourceSystem.id})`);
-        console.log(`[Job Run] SSH Key ID from System: ${sourceSystem.ssh_key_id}`);
-
-        // Resolve SSH credentials
-        const credentials = await resolveSSHCredentialsFromRequest(req.body, sourceSystem.ssh_key_id);
-
-        // Get destination location
-        const destination = await db.getLocation(apiJob.destinationId);
-        if (!destination) {
-            return res.status(404).json({ error: `Destination location not found (ID: ${apiJob.destinationId})` });
-        }
-
-        // Prepare SSH config
-        const sshConfig = {
-            host: sourceSystem.host,
-            port: sourceSystem.port || 22,
-            username: sourceSystem.username || 'root',
-            privateKey: credentials.privateKey,
-            passphrase: credentials.passphrase,
-            password: credentials.password
-        };
-
-        // Prepare job config
-        const toolMapping: Record<string, 'borg' | 'restic' | 'rsync'> = {
-            'BorgBackup': 'borg',
-            'Restic': 'restic',
-            'Rsync': 'rsync'
-        };
-
-        const jobConfig = {
-            jobId: apiJob.id,
-            jobName: apiJob.name.replace(/\s+/g, '_'),
-            tool: toolMapping[apiJob.tool] || apiJob.tool.toLowerCase(),
-            sourcePaths: apiJob.sourcePaths || ['/home'],
-            destinationType: destination.type as any,
-            destinationPath: destination.path,
-            destinationEndpoint: destination.endpoint,
-            destinationRegion: destination.region,
-            destinationAccessKey: destination.access_key,
-            destinationSecretKey: destination.secret_key,
-            repoPassword: apiJob.repoPassword ? decrypt(JSON.parse(apiJob.repoPassword), getJwtSecret()) : undefined,
-            retention: apiJob.retention
-        };
+        const { sshConfig, jobConfig } = await buildJobExecutionContext(job, req.body);
 
         // Collect logs
         const logs: BackupExecutionLog[] = [];
 
         // Run backup with live log streaming
         const result = await runBackupJob(sshConfig, jobConfig, (log) => {
-            logs.push(log);
+            if(logs.length>=2000) logs.shift();
+            appendBoundedJobLog(logs,log);
             console.log(`[Job] [${log.type}] ${log.message}`);
             // Broadcast to SSE subscribers
             broadcastJobLog(jobId, log.type as any, log.message);
@@ -195,7 +157,7 @@ router.post('/:id/run', authenticateToken, async (req, res) => {
 
         res.json({
             success: true,
-            job: updatedJob,
+            job: toAPIJob(updatedJob),
             stats: {
                 filesProcessed: result.filesProcessed,
                 bytesProcessed: result.bytesProcessed,
@@ -204,13 +166,18 @@ router.post('/:id/run', authenticateToken, async (req, res) => {
             logs
         });
     } catch (error: any) {
-        console.error('[Job] Error:', error);
-        res.status(500).json({ error: error.message });
+        if (claimed) {
+            try { await db.run("UPDATE jobs SET status='Failed',last_run=? WHERE id=?",
+                [new Date().toISOString(),req.params.id]); }
+            catch { /* Keep original failure and surface error status. */ }
+        }
+        console.error('[Job] Error:', error instanceof Error ? error.message : 'Backup error');
+        res.status(500).json({ error: 'Backup operation failed' });
     }
 });
 
 // Get job logs
-router.get('/:jobId/logs', async (req, res) => {
+router.get('/:jobId/logs', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const logs = await db.getJobLogs(req.params.jobId);
         res.json(logs);
@@ -220,57 +187,27 @@ router.get('/:jobId/logs', async (req, res) => {
 });
 
 // SSE endpoint for live job log streaming
-router.get('/:jobId/logs/stream', (req, res) => {
-    const jobId = req.params.jobId;
-    console.log(`[SSE] Client subscribed to job ${jobId} logs`);
-    subscribeToJobLogs(jobId, res);
+router.get('/:jobId/logs/stream', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const jobId=req.params.jobId;
+        if (typeof jobId!=='string' || !/^[0-9a-f-]{36}$/i.test(jobId))
+            return res.status(400).json({error:'Invalid job identifier'});
+        if(!await db.getJob(jobId))return res.sendStatus(404);
+        subscribeToJobLogs(jobId,res);
+    }catch {
+        if(!res.headersSent)res.status(500).json({error:'Cannot subscribe to backup logs'});
+    }
 });
 
 // List snapshots for a job
-router.get('/:id/snapshots', authenticateToken, async (req, res) => {
+router.get('/:id/snapshots', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const jobId = req.params.id;
         console.log(`[API] Listing snapshots for job ${jobId}`);
         const job = await db.getJob(jobId);
         if (!job) return res.status(404).json({ error: 'Job not found' });
 
-        const apiJob = toAPIJob(job);
-        const sourceSystem = await db.getSystem(apiJob.sourceId);
-        if (!sourceSystem) return res.status(404).json({ error: 'Source system not found' });
-
-        const credentials = await resolveSSHCredentialsFromRequest({}, sourceSystem.ssh_key_id);
-        const destination = await db.getLocation(apiJob.destinationId);
-        if (!destination) return res.status(404).json({ error: 'Destination not found' });
-
-        const sshConfig = {
-            host: sourceSystem.host,
-            port: sourceSystem.port || 22,
-            username: sourceSystem.username || 'root',
-            privateKey: credentials.privateKey,
-            passphrase: credentials.passphrase,
-            password: credentials.password
-        };
-
-        const toolMapping: Record<string, 'borg' | 'restic' | 'rsync'> = {
-            'BorgBackup': 'borg',
-            'Restic': 'restic',
-            'Rsync': 'rsync'
-        };
-
-        const jobConfig = {
-            jobId: apiJob.id,
-            jobName: apiJob.name.replace(/\s+/g, '_'),
-            tool: toolMapping[apiJob.tool] || apiJob.tool.toLowerCase() as any,
-            sourcePaths: apiJob.sourcePaths || ['/home'],
-            destinationType: destination.type as any,
-            destinationPath: destination.path,
-            destinationEndpoint: destination.endpoint,
-            destinationRegion: destination.region,
-            destinationAccessKey: destination.access_key,
-            destinationSecretKey: destination.secret_key,
-            repoPassword: apiJob.repoPassword ? decrypt(JSON.parse(apiJob.repoPassword), getJwtSecret()) : undefined,
-            retention: apiJob.retention
-        };
+        const { sshConfig, jobConfig } = await buildJobExecutionContext(job);
 
         const snapshots = await listJobSnapshots(sshConfig, jobConfig);
         res.json(snapshots);
@@ -282,46 +219,13 @@ router.get('/:id/snapshots', authenticateToken, async (req, res) => {
 });
 
 // List files in a snapshot
-router.get('/:id/snapshots/:snapshotId/files', authenticateToken, async (req, res) => {
+router.get('/:id/snapshots/:snapshotId/files', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { id, snapshotId } = req.params;
         const job = await db.getJob(id);
         if (!job) return res.status(404).json({ error: 'Job not found' });
 
-        const apiJob = toAPIJob(job);
-        const sourceSystem = await db.getSystem(apiJob.sourceId);
-        if (!sourceSystem) return res.status(404).json({ error: 'Source system not found' });
-
-        const credentials = await resolveSSHCredentialsFromRequest({}, sourceSystem.ssh_key_id);
-        const destination = await db.getLocation(apiJob.destinationId);
-        if (!destination) return res.status(404).json({ error: 'Destination not found' });
-
-        const sshConfig = {
-            host: sourceSystem.host,
-            port: sourceSystem.port || 22,
-            username: sourceSystem.username || 'root',
-            privateKey: credentials.privateKey,
-            passphrase: credentials.passphrase,
-            password: credentials.password
-        };
-
-        const toolMapping: Record<string, 'borg' | 'restic' | 'rsync'> = {
-            'BorgBackup': 'borg', 'Restic': 'restic', 'Rsync': 'rsync'
-        };
-
-        const jobConfig = {
-            jobId: apiJob.id,
-            jobName: apiJob.name.replace(/\s+/g, '_'),
-            tool: toolMapping[apiJob.tool] || apiJob.tool.toLowerCase() as any,
-            sourcePaths: apiJob.sourcePaths || ['/home'],
-            destinationType: destination.type as any,
-            destinationPath: destination.path,
-            destinationEndpoint: destination.endpoint,
-            destinationRegion: destination.region,
-            destinationAccessKey: destination.access_key,
-            destinationSecretKey: destination.secret_key,
-            repoPassword: apiJob.repoPassword ? decrypt(JSON.parse(apiJob.repoPassword), getJwtSecret()) : undefined,
-        };
+        const { sshConfig, jobConfig } = await buildJobExecutionContext(job);
 
         const files = await listJobFiles(sshConfig, jobConfig, snapshotId);
         res.json(files);
@@ -333,7 +237,7 @@ router.get('/:id/snapshots/:snapshotId/files', authenticateToken, async (req, re
 });
 
 // Restore a snapshot
-router.post('/:id/restore', authenticateToken, async (req, res) => {
+router.post('/:id/restore', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const jobId = req.params.id;
         const { snapshotId, restorePath, systemId, paths } = req.body; // paths optional
@@ -345,54 +249,15 @@ router.post('/:id/restore', authenticateToken, async (req, res) => {
         const job = await db.getJob(jobId);
         if (!job) return res.status(404).json({ error: 'Job not found' });
 
-        const apiJob = toAPIJob(job);
-
-        // Use provided systemId (target system) or default to source system
-        const targetSystemId = systemId || apiJob.sourceId;
-        const targetSystem = await db.getSystem(targetSystemId);
-        if (!targetSystem) return res.status(404).json({ error: 'Target system not found' });
-
-        const credentials = await resolveSSHCredentialsFromRequest({}, targetSystem.ssh_key_id);
-        const destination = await db.getLocation(apiJob.destinationId);
-        if (!destination) return res.status(404).json({ error: 'Destination not found' });
-
-        const sshConfig = {
-            host: targetSystem.host,
-            port: targetSystem.port || 22,
-            username: targetSystem.username || 'root',
-            privateKey: credentials.privateKey,
-            passphrase: credentials.passphrase,
-            password: credentials.password
-        };
-
-        const toolMapping: Record<string, 'borg' | 'restic' | 'rsync'> = {
-            'BorgBackup': 'borg',
-            'Restic': 'restic',
-            'Rsync': 'rsync'
-        };
-
-        const restoreConfig = {
-            jobId: apiJob.id,
-            jobName: apiJob.name.replace(/\s+/g, '_'),
-            tool: toolMapping[apiJob.tool] || apiJob.tool.toLowerCase() as any,
-            sourcePaths: apiJob.sourcePaths || ['/home'],
-            destinationType: destination.type as any,
-            destinationPath: destination.path,
-            destinationEndpoint: destination.endpoint,
-            destinationRegion: destination.region,
-            destinationAccessKey: destination.access_key,
-            destinationSecretKey: destination.secret_key,
-            repoPassword: apiJob.repoPassword ? decrypt(JSON.parse(apiJob.repoPassword), getJwtSecret()) : undefined,
-            snapshotId,
-            restorePath,
-            paths // Pass specific paths
-        };
+        const {sshConfig,jobConfig}=await buildJobExecutionContext(job, {}, systemId);
+        const restoreConfig={...jobConfig,snapshotId,restorePath,paths};
 
         const logs: BackupExecutionLog[] = [];
 
         // This runs the restore
         const result = await runRestoreJob(sshConfig, restoreConfig, (log) => {
-            logs.push(log);
+            if(logs.length>=2000) logs.shift();
+            appendBoundedJobLog(logs,log);
             console.log(`[Restore] [${log.type}] ${log.message}`);
             broadcastJobLog(jobId, log.type as any, '[RESTORE] ' + log.message);
         });

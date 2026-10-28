@@ -1,0 +1,9 @@
+# GitGuardian ggshield scanning configuration.
+# Dashboard/GitHub app exclusions are managed separately in GitGuardian.
+version: 2
+exit_zero: false
+secret:
+  ignored_paths:
+    - 'tests/**/*'
+    - 'agent/windows/*_test.go'
+  show_secrets: false

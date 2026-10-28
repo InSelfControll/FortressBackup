@@ -4,6 +4,35 @@
 
 import { sqliteDb, pgPool } from './connection.js';
 
+// Shared SQLite/PostgreSQL managed-client schema (single source of truth).
+const managedTablesDDL = `
+    CREATE TABLE IF NOT EXISTS managed_clients (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_seen TEXT,
+      disabled INTEGER NOT NULL DEFAULT 0,
+      schedule_minutes INTEGER NOT NULL DEFAULT 0,
+      next_run_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS managed_jobs (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL REFERENCES managed_clients(id),
+      operation TEXT NOT NULL CHECK (operation IN ('backup','check','snapshots')),
+      state TEXT NOT NULL CHECK (state IN ('pending','running','success','failed')),
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      finished_at TEXT,
+      lease_until TEXT,
+      schedule_slot TEXT,
+      message TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_managed_jobs_client ON managed_jobs(client_id,created_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_active ON managed_jobs(client_id)
+      WHERE state IN ('pending','running');
+`;
+
 /**
  * Create tables for SQLite
  */
@@ -33,7 +62,8 @@ export const createTables = () => {
       last_seen TEXT,
       health INTEGER DEFAULT 100,
       installed_tools TEXT,
-      ssh_key_id TEXT
+      ssh_key_id TEXT,
+      host_fingerprint TEXT
     );
     
     CREATE TABLE IF NOT EXISTS locations (
@@ -92,12 +122,21 @@ export const createTables = () => {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+
+
   `);
+
+  sqliteDb.exec(managedTablesDDL);
 
   // Schema Migration: Add ssh_key_id to systems if missing
   try {
     const columns = sqliteDb.prepare("PRAGMA table_info(systems)").all() as any[];
+    const managedColumns=sqliteDb.prepare('PRAGMA table_info(managed_jobs)').all() as any[];
+    if (!managedColumns.some(col=>col.name==='schedule_slot'))
+      sqliteDb.prepare('ALTER TABLE managed_jobs ADD COLUMN schedule_slot TEXT').run();
+    sqliteDb.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_schedule_slot ON managed_jobs(client_id,schedule_slot) WHERE schedule_slot IS NOT NULL').run();
     const hasSshKeyId = columns.some(col => col.name === 'ssh_key_id');
+    if (!columns.some(col => col.name === 'host_fingerprint')) sqliteDb.prepare('ALTER TABLE systems ADD COLUMN host_fingerprint TEXT').run();
     if (!hasSshKeyId) {
       console.log('[DB] Migrating: Adding ssh_key_id to systems table');
       sqliteDb.prepare("ALTER TABLE systems ADD COLUMN ssh_key_id TEXT").run();
@@ -136,7 +175,8 @@ export const createTablesPostgres = async () => {
       last_seen TEXT,
       health INTEGER DEFAULT 100,
       installed_tools TEXT,
-      ssh_key_id TEXT
+      ssh_key_id TEXT,
+      host_fingerprint TEXT
     );
     
     CREATE TABLE IF NOT EXISTS locations (
@@ -183,5 +223,21 @@ export const createTablesPostgres = async () => {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+    CREATE TABLE IF NOT EXISTS job_logs (
+      id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      job_id TEXT NOT NULL REFERENCES jobs(id),
+      run_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      message TEXT NOT NULL,
+      timestamp TIMESTAMPTZ NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_logs_lookup ON job_logs(job_id,timestamp);
+
+
+
   `);
+  await pgPool.query(managedTablesDDL);
+  await pgPool.query('ALTER TABLE systems ADD COLUMN IF NOT EXISTS host_fingerprint TEXT');
+  await pgPool.query('ALTER TABLE managed_jobs ADD COLUMN IF NOT EXISTS schedule_slot TEXT');
+  await pgPool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_schedule_slot ON managed_jobs(client_id,schedule_slot) WHERE schedule_slot IS NOT NULL');
 };
