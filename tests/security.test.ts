@@ -13,6 +13,7 @@ import locations from '../server/routes/locations.js';
 import keys from '../server/routes/sshKeys.js';
 import ai from '../server/routes/ai.js';
 import auth from '../server/routes/auth.js';
+import configRouter from '../server/routes/config.js';
 import { getLocation } from '../server/db/locations.js';
 import { saveConfig, getConfig } from '../server/db/config.js';
 import { sshHostVerifier } from '../server/services/ssh/hostKey.js';
@@ -29,6 +30,7 @@ test('privileged APIs deny viewers and never echo stored credentials', async()=>
  app.use('/api/jobs',jobs);app.use('/api/systems',systems);
  app.use('/api/locations',locations);app.use('/api/keys',keys);
   app.use('/api/ai',ai);app.use('/api/auth',auth);
+  app.use('/api/config',configRouter);
  const server=app.listen(0,'127.0.0.1');
  try{
   const a=server.address();if(!a||typeof a==='string')throw Error('bind failed');
@@ -70,6 +72,16 @@ test('privileged APIs deny viewers and never echo stored credentials', async()=>
   expect(sealed?.value).not.toContain(aiSecret);
   expect(sealed?.value).toContain('fortressEncryptedVersion');
   expect((await getConfig<{apiKey:string}>('ai_config'))?.apiKey).toBe(aiSecret);
+  const updateAi=await request('/config/ai_config',admin,'PUT',{value:{provider:'Gemini',model:'test-model'}});
+  expect(updateAi.status).toBe(200);
+  const preserved=await getConfig<{apiKey:string;model:string}>('ai_config');
+  expect(preserved?.apiKey).toBe(aiSecret);
+  expect(preserved?.model).toBe('test-model');
+  const exposed=await (await request('/config/ai_config',admin)).text();
+  expect(exposed).not.toContain(aiSecret);
+  const forbidden=await request('/config/ai_config',viewer);
+  expect(forbidden.status).toBe(403);
+
   await run('INSERT INTO config(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
     ['sso_config',JSON.stringify({provider:'github',clientSecret:aiSecret})]);
   expect((await getConfig<{clientSecret:string}>('sso_config'))?.clientSecret).toBe(aiSecret);
