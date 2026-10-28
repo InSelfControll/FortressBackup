@@ -106,11 +106,12 @@ export const installRestic = async (executor: SSHExecutor): Promise<boolean> => 
         'tmpdir=$(mktemp -d)',
         'trap \'rm -rf "$tmpdir"\' EXIT HUP INT TERM',
         'restic self-update --output "$tmpdir/restic"',
-        'test -s "$tmpdir/restic"',
-        'chmod 755 "$tmpdir/restic"',
-        '"$tmpdir/restic" version',
-        'sudo -n install -m 0755 "$tmpdir/restic" /usr/local/bin/restic',
-        '/usr/local/bin/restic version',
+        'if [ -s "$tmpdir/restic" ]; then',
+        '  chmod 755 "$tmpdir/restic"',
+        '  "$tmpdir/restic" version',
+        '  sudo -n install -m 0755 "$tmpdir/restic" /usr/local/bin/restic',
+        'fi',
+        'restic version',
     ].join('\n');
     // This script contains only constant code, never untrusted job parameters.
     const shellCommand = "sh -c '" + command.replace(/'/g, "'\\''") + "'";
