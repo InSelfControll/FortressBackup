@@ -13,7 +13,7 @@ func writeConfig(t *testing.T, sources []string) string {
  t.Helper()
  d:=t.TempDir()
  pass:=filepath.Join(d,"secret")
- if err:=os.WriteFile(pass,[]byte("example"),0600);err!=nil{t.Fatal(err)}
+ if err:=os.WriteFile(pass,[]byte(filepath.Base(d)),0600);err!=nil{t.Fatal(err)}
  cfg:=filepath.Join(d,"config.json")
  b,err:=json.Marshal(Config{Repository:"sftp:backup:repo",PasswordFile:pass,Sources:sources})
  if err!=nil{t.Fatal(err)}
