@@ -4,25 +4,17 @@
  */
 import { run, query, getOne } from './helpers.js';
 import { currentConfig } from './connection.js';
-import { encryptWithKey, decryptWithKey, type EncryptedData } from '../encryption.js';
+import { seal, open, isEncrypted } from '../security/credentialEnvelope.js';
 
 export interface Location {
     id: string; name: string; type: string; path: string;
     endpoint?: string; region?: string; access_key?: string; secret_key?: string;
 }
 export type PublicLocation = Omit<Location, 'access_key'|'secret_key'> & {hasAccessKey: boolean;hasSecretKey:boolean};
-const key = ():string => {
-    const secret = process.env.FORTRESS_CREDENTIAL_KEY;
-    if (!secret || !/^[0-9a-fA-F]{64}$/.test(secret))
-        throw new Error('FORTRESS_CREDENTIAL_KEY must be a dedicated 32-byte hexadecimal key');
-    return secret;
-};
-const prefix = 'enc:v1:';
-const encryptCredential = (value?:string):string|null => value ? prefix + JSON.stringify(encryptWithKey(value,key())) : null;
-const decryptCredential = (value?:string|null):string|undefined => {
-    if (!value) return undefined;
-    if (!value.startsWith(prefix)) return value; // Legacy row, migrated below
-    return decryptWithKey(JSON.parse(value.slice(prefix.length)) as EncryptedData, key());
+const encryptCredential=(value?:string):string|null=>value?seal(value):null;
+const decryptCredential=(value?:string|null):string|undefined=>{
+    if(!value)return undefined;
+    return isEncrypted(value)?open(value):value; // Legacy rows migrate on read.
 };
 const rawLocation = (id:string) => getOne<Location>(
     'SELECT id,name,type,path,endpoint,region,access_key,secret_key FROM locations WHERE id=?',[id]);
@@ -39,8 +31,8 @@ export const saveLocation = async (location:Location):Promise<void> => {
     const access = location.access_key === undefined ? previous?.access_key || null : encryptCredential(location.access_key);
     const secret = location.secret_key === undefined ? previous?.secret_key || null : encryptCredential(location.secret_key);
     // Any legacy stored credential is encrypted on next edit, without losing it.
-    const secureAccess = access && !access.startsWith(prefix) ? encryptCredential(access) : access;
-    const secureSecret = secret && !secret.startsWith(prefix) ? encryptCredential(secret) : secret;
+    const secureAccess = access && !isEncrypted(access) ? encryptCredential(access) : access;
+    const secureSecret = secret && !isEncrypted(secret) ? encryptCredential(secret) : secret;
     if (currentConfig?.type==='sqlite') {
         await run(`INSERT INTO locations(id,name,type,path,endpoint,region,access_key,secret_key)
           VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
@@ -61,7 +53,7 @@ export const deleteLocation = async (id:string):Promise<void> => {
 export const getLocation = async (id:string):Promise<Location|null> => {
     const stored=await rawLocation(id);
     if (!stored) return null;
-    const needsMigration=!!([stored.access_key,stored.secret_key].filter(Boolean).some(value=>!value!.startsWith(prefix)));
+    const needsMigration=!!([stored.access_key,stored.secret_key].filter(Boolean).some(value=>!isEncrypted(value!)));
     const clear={...stored,access_key:decryptCredential(stored.access_key),secret_key:decryptCredential(stored.secret_key)};
     if (needsMigration) await saveLocation(clear);
     return clear;
