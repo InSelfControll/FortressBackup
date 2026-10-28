@@ -10,6 +10,7 @@ import os from 'os';
 import { SSHConnectionConfig, DeploymentLog, DeploymentResult, SSHExecutor, CommandResult } from './types.js';
 import { detectOS, installBorg, installRestic, installRsync } from './tools.js';
 import { maskSensitiveData } from '../../utils/maskSensitiveData.js';
+import { appendBoundedJobLog } from '../../utils/boundedLog.js';
 
 export class SSHDeployer extends EventEmitter implements SSHExecutor {
     private client: Client;
@@ -29,8 +30,7 @@ export class SSHDeployer extends EventEmitter implements SSHExecutor {
             message: maskedMessage,
             timestamp: new Date()
         };
-        if (this.logs.length >= 2000) this.logs.shift();
-        this.logs.push(entry);
+        appendBoundedJobLog(this.logs,entry);
         this.emit('log', entry);
     }
 
