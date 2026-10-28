@@ -60,15 +60,13 @@ router.post('/setup', async (req, res) => {
         const envPath = generateEnvFile({ dbConfig, aiConfig, ssoConfig, authMode });
 
         // Reload environment variables runtime
-        dotenv.config({ override: true });
+        dotenv.config({ path: envPath, override: true });
 
         await db.saveConfig('ai_config', aiConfig);
         await db.saveConfig('db_config', dbConfig);
         await db.saveConfig('sso_config', ssoConfig);
         await db.saveConfig('auth_mode', authMode);
         await db.saveConfig('selected_tools', selectedTools || ['borg', 'restic']);
-        await db.saveConfig('setup_complete', true);
-
         // Create admin user if local auth mode
         let token = null;
         let user = null;
@@ -85,6 +83,7 @@ router.post('/setup', async (req, res) => {
             token = jwt.sign({ id: user.id, email: user.email, role: user.role }, getJwtSecret(), { expiresIn: '7d' });
         }
 
+        await db.saveConfig('setup_complete', true);
         res.json({ success: true, user, token, envPath });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
