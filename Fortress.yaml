@@ -40,14 +40,15 @@ services:
 
   # Mock S3 Storage for local testing (MinIO)
   fortress-storage-mock:
+    profiles: ["local-test"]
     image: minio/minio
     container_name: fortress-storage
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     environment:
-      - MINIO_ROOT_USER=fortress_admin
-      - MINIO_ROOT_PASSWORD=fortress_secret_password
+      - MINIO_ROOT_USER=${FORTRESS_MINIO_ROOT_USER:?Set FORTRESS_MINIO_ROOT_USER in your private environment}
+      - MINIO_ROOT_PASSWORD=${FORTRESS_MINIO_ROOT_PASSWORD:?Set FORTRESS_MINIO_ROOT_PASSWORD in your private environment}
     volumes:
       - minio-data:/data
     command: server /data --console-address ":9001"
@@ -56,12 +57,13 @@ services:
 
   # Vault for secret management (Optional persistence)
   fortress-vault:
+    profiles: ["local-test"]
     image: hashicorp/vault:latest
     container_name: fortress-vault
     ports:
-      - "8200:8200"
+      - "127.0.0.1:8200:8200"
     environment:
-      - VAULT_DEV_ROOT_TOKEN_ID=fortress-token
+      - VAULT_DEV_ROOT_TOKEN_ID=${FORTRESS_VAULT_DEV_ROOT_TOKEN:?Set FORTRESS_VAULT_DEV_ROOT_TOKEN in your private environment}
     cap_add:
       - IPC_LOCK
     networks:
