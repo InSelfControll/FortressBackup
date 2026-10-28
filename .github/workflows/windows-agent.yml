@@ -57,6 +57,7 @@ jobs:
           $restic = Join-Path $env:RUNNER_TEMP 'restic-stable.exe'
           & $bootstrap self-update --output $restic
           if ($LASTEXITCODE -ne 0) { throw 'Signed Restic self-update failed' }
+          if (-not (Test-Path -LiteralPath $restic)) { $restic = $bootstrap }
           $root = Join-Path $env:RUNNER_TEMP 'fortress-vss-smoke'
           $source = Join-Path $root 'source'
           $repo = Join-Path $root 'repository'
