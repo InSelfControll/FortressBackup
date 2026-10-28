@@ -15,6 +15,7 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
   app.use(express.json());
   app.use('/api/managed-agents',managedAgentsRouter);
   await initDatabase({type:'sqlite',filePath:path.join(dir,'data.db')});
+  await run('INSERT INTO users(id,email,name,role,auth_type) VALUES(?,?,?,?,?)',['admin','admin@example.invalid','Admin','admin','local']);
   const server=app.listen(0,'127.0.0.1');
   try {
     const address=server.address();
