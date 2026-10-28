@@ -4,6 +4,7 @@ on:
     paths:
       - 'server/**'
       - 'tests/**'
+      - 'scripts/**'
       - 'components/**'
       - 'App.tsx'
       - 'types.ts'
@@ -54,3 +55,14 @@ jobs:
         run: |
           test "$(docker image inspect fortressbackup-security-test --format '{{.Config.User}}')" = bunjs
           docker run --rm fortressbackup-security-test sh -c 'test "$(id -u)" -eq 1001 && test "$(stat -c %a /app/data)" = 700 && test -w /app/data'
+
+  restic-integration:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install trusted distribution Restic
+        run: sudo apt-get update -qq && sudo apt-get install -y restic
+      - name: Verify backup, integrity, restore, and replica
+        run: bash scripts/restic-smoke.sh
