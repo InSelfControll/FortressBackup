@@ -9,7 +9,7 @@ export function selectVerifiedGitHubEmail(records:unknown):string|null{
         const candidate=entry as Record<string,unknown>;
         return candidate.verified===true && typeof candidate.email==='string' &&
             candidate.email.length>=3 && candidate.email.length<=254 &&
-            /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(candidate.email);
+            /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate.email);
     }) as Array<{email:string;primary?:boolean}>;
     const chosen=choices.find(entry=>entry.primary===true)||choices[0];
     return chosen?.email.trim().toLowerCase()||null;
