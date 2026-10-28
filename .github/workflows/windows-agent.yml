@@ -47,6 +47,40 @@ jobs:
           } finally {
             Unregister-ScheduledTask -TaskName FortressBackup-CITest -Confirm:$false -ErrorAction SilentlyContinue
           }
+      - name: Verify Windows VSS snapshot and full Restic restore
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install restic --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Restic bootstrap failed' }
+          $bootstrap = (Get-Command restic -ErrorAction Stop).Source
+          $restic = Join-Path $env:RUNNER_TEMP 'restic-stable.exe'
+          & $bootstrap self-update --output $restic
+          if ($LASTEXITCODE -ne 0) { throw 'Signed Restic self-update failed' }
+          $root = Join-Path $env:RUNNER_TEMP 'fortress-vss-smoke'
+          $source = Join-Path $root 'source'
+          $repo = Join-Path $root 'repository'
+          $restore = Join-Path $root 'restore'
+          $pass = Join-Path $root 'password'
+          New-Item -ItemType Directory -Path $source -Force | Out-Null
+          $password = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+          [IO.File]::WriteAllText($pass, $password)
+          $file = Join-Path $source 'test-record.txt'
+          [IO.File]::WriteAllText($file, 'FortressBackup Windows VSS restore verification')
+          & $restic --repo $repo --password-file $pass init
+          if ($LASTEXITCODE -ne 0) { throw 'Repository init failed' }
+          & $restic --repo $repo --password-file $pass backup --use-fs-snapshot -- $source
+          if ($LASTEXITCODE -ne 0) { throw 'VSS backup failed' }
+          & $restic --repo $repo --password-file $pass check
+          if ($LASTEXITCODE -ne 0) { throw 'Windows repository integrity check failed' }
+          & $restic --repo $repo --password-file $pass restore latest --target $restore
+          if ($LASTEXITCODE -ne 0) { throw 'Windows restore failed' }
+          $recovered = Get-ChildItem -LiteralPath $restore -Recurse -File -Filter 'test-record.txt' | Select-Object -First 1
+          if (-not $recovered) { throw 'Restored file is missing' }
+          if ((Get-FileHash $file -Algorithm SHA256).Hash -ne (Get-FileHash $recovered.FullName -Algorithm SHA256).Hash) {
+            throw 'Restored file does not match original'
+          }
+          Write-Output 'Windows VSS backup and restore verified'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: fortress-agent-windows-amd64
