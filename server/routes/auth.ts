@@ -11,10 +11,10 @@ import { selectVerifiedGitHubEmail } from '../security/githubIdentity.js';
 const router = Router();
 const validEmail=(value:unknown):value is string =>
     typeof value==='string' && value.length>=3 && value.length<=254 &&
-    /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value);
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const validName=(value:unknown):value is string =>
     typeof value==='string' && value.trim().length>=1 && value.length<=120 &&
-    !/[\\u0000-\\u001f\\u007f]/.test(value);
+    !/[\u0000-\u001f\u007f]/.test(value);
 
 
 // Register new user
