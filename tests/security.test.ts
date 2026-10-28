@@ -20,6 +20,7 @@ import { sshHostVerifier } from '../server/services/ssh/hostKey.js';
 import { buildBorgCommand, buildBorgRestoreCommand } from '../server/services/backup/borg.js';
 import { buildResticCommand } from '../server/services/backup/restic.js';
 import { buildRsyncCommand } from '../server/services/backup/rsync.js';
+import { selectVerifiedGitHubEmail } from '../server/security/githubIdentity.js';
 
 test('privileged APIs deny viewers and never echo stored credentials', async()=>{
  process.env.JWT_SECRET='security-tests-signed-jwt-'+crypto.randomBytes(24).toString('hex');
@@ -134,4 +135,14 @@ test('pinned host-key identity and command builders reject unsafe input',()=>{
  expect(()=>buildRsyncCommand(rsync,{...ssh,hostFingerprint:''},true)).toThrow();
  const restore=buildBorgRestoreCommand({...config,tool:'borg',destinationType:'nfs',destinationPath:'/safe/repo'},'backup-2026','/tmp/restore');
  expect(restore).not.toContain('exit 0');
+});
+
+test('GitHub identities require provider-verified email ownership',()=>{
+  expect(selectVerifiedGitHubEmail(undefined)).toBeNull();
+  expect(selectVerifiedGitHubEmail([{email:'admin@example.invalid',primary:true,verified:false}])).toBeNull();
+  expect(selectVerifiedGitHubEmail([{email:'admin@example.invalid',primary:true,verified:true}])).toBe('admin@example.invalid');
+  expect(selectVerifiedGitHubEmail([
+    {email:'unverified@example.invalid',primary:true,verified:false},
+    {email:'Verified@Example.invalid',primary:false,verified:true}
+  ])).toBe('verified@example.invalid');
 });
