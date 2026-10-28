@@ -114,7 +114,7 @@ test('pinned host-key identity and command builders reject unsafe input',()=>{
  expect(verify(crypto.randomBytes(64))).toBe(false);
  expect(()=>sshHostVerifier(undefined)).toThrow();
  const config:any={tool:'restic',destinationType:'sftp',destinationPath:'host:repo',
-  sourcePaths:['/home/test user'],repoPassword:'test-only',jobName:'backup'};
+  sourcePaths:['/home/test user'],repoPassword:crypto.randomBytes(32).toString('hex'),jobName:'backup'};
  const cmd=buildResticCommand(config);
  expect(cmd).toContain(' -- ');
  expect(()=>buildResticCommand({...config,sourcePaths:['--help']})).toThrow();
