@@ -8,11 +8,21 @@ import * as db from '../db/index.js';
 import { getJwtSecret, authenticateToken, requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
+const validEmail=(value:unknown):value is string =>
+    typeof value==='string' && value.length>=3 && value.length<=254 &&
+    /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value);
+const validName=(value:unknown):value is string =>
+    typeof value==='string' && value.trim().length>=1 && value.length<=120 &&
+    !/[\\u0000-\\u001f\\u007f]/.test(value);
+
 
 // Register new user
 router.post('/register', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const { email, password, name, authType = 'local' } = req.body;
+        const { email, password, name, authType = 'local' } = req.body || {};
+        if(!validEmail(email)||!validName(name)||!['local','sso'].includes(authType)||
+           (authType==='local' && (typeof password!=='string'||password.length<12||password.length>256)))
+            return res.status(400).json({error:'Invalid registration data'});
 
         // Check if user already exists
         const existing = await db.getUserByEmail(email);
@@ -44,7 +54,9 @@ router.post('/register', authenticateToken, requireAdmin, async (req, res) => {
 // Login
 router.post('/login', async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password } = req.body || {};
+        if(!validEmail(email)||typeof password!=='string'||password.length<1||password.length>256)
+            return res.status(400).json({error:'Invalid login credentials'});
 
         const user = await db.validateUser(email, password);
         if (!user) {
