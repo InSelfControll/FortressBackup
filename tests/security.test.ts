@@ -26,6 +26,8 @@ test('privileged APIs deny viewers and never echo stored credentials', async()=>
  process.env.FORTRESS_CREDENTIAL_KEY=crypto.randomBytes(32).toString('hex');
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'fortress-security-'));
  await initDatabase({type:'sqlite',filePath:path.join(dir,'db.sqlite')});
+ await run('INSERT INTO users(id,email,name,role,auth_type) VALUES(?,?,?,?,?)',['admin','admin@example.invalid','Admin','admin','local']);
+ await run('INSERT INTO users(id,email,name,role,auth_type) VALUES(?,?,?,?,?)',['viewer','viewer@example.invalid','Viewer','viewer','local']);
  const app=express(); app.use(express.json());
  app.use('/api/jobs',jobs);app.use('/api/systems',systems);
  app.use('/api/locations',locations);app.use('/api/keys',keys);
@@ -37,12 +39,14 @@ test('privileged APIs deny viewers and never echo stored credentials', async()=>
   const base='http://127.0.0.1:'+a.port+'/api';
   const viewer=jwt.sign({id:'viewer',role:'viewer'},process.env.JWT_SECRET);
   const admin=jwt.sign({id:'admin',role:'admin'},process.env.JWT_SECRET);
+  const staleRole=jwt.sign({id:'viewer',role:'admin'},process.env.JWT_SECRET);
   const request=(route:string,token:string,method='GET',body?:unknown)=>fetch(base+route,{
    method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:body===undefined?undefined:JSON.stringify(body)
   });
   for(const route of ['/jobs','/systems','/locations','/keys']){
    expect((await request(route,viewer)).status).toBe(403);
+   expect((await request(route,staleRole)).status).toBe(403);
   }
   for(const route of ['/jobs','/systems','/locations','/keys']){
    expect((await request(route,viewer,'POST',{})).status).toBe(403);
