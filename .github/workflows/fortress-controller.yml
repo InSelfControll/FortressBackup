@@ -63,6 +63,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Install trusted distribution Restic
-        run: sudo apt-get update -qq && sudo apt-get install -y restic
+        run: sudo apt-get update -qq && sudo apt-get install -y restic openssh-server
       - name: Verify backup, integrity, restore, and replica
         run: bash scripts/restic-smoke.sh
+      - name: Verify pinned SSH/SFTP repository and restore
+        run: bash scripts/restic-sftp-smoke.sh
