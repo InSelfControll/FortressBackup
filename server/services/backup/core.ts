@@ -10,6 +10,7 @@ import os from 'os';
 import { spawn } from 'node:child_process';
 import { SSHConfig, BackupExecutionLog } from './types.js';
 import { maskSensitiveData } from '../../utils/maskSensitiveData.js';
+import { appendBoundedJobLog } from '../../utils/boundedLog.js';
 
 export class BackupExecutor extends EventEmitter {
     private client: Client;
@@ -41,8 +42,7 @@ export class BackupExecutor extends EventEmitter {
             message: maskedMessage,
             timestamp: new Date()
         };
-        if (this.logs.length >= 2000) this.logs.shift();
-        this.logs.push(entry);
+        appendBoundedJobLog(this.logs,entry);
         this.emit('log', entry);
     }
 
