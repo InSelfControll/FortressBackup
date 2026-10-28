@@ -3,14 +3,14 @@
 set -euo pipefail
 umask 077
 dir=$(mktemp -d)
-trap 'sudo pkill -f "sshd: /usr/sbin/sshd -p 22482" 2>/dev/null || true; rm -rf "$dir"' EXIT
+trap 'if [ -f "$dir/sshd.pid" ]; then sudo kill "$(cat "$dir/sshd.pid")" 2>/dev/null || true; fi; rm -rf "$dir"' EXIT
 
-sudo useradd -m -s /bin/bash fortress-ci || true
+sudo useradd -m -U -s /bin/bash fortress-ci
 sudo install -d -m 700 -o fortress-ci -g fortress-ci /home/fortress-ci/.ssh
 ssh-keygen -q -t ed25519 -N '' -f "$dir/client-key"
 sudo install -m 600 -o fortress-ci -g fortress-ci "$dir/client-key.pub" /home/fortress-ci/.ssh/authorized_keys
 sudo install -d -m 755 /run/sshd
-sudo /usr/sbin/sshd -p 22482 -o ListenAddress=127.0.0.1 -o PasswordAuthentication=no -o PubkeyAuthentication=yes
+sudo /usr/sbin/sshd -p 22482 -o PidFile=$dir/sshd.pid -o ListenAddress=127.0.0.1 -o PasswordAuthentication=no -o PubkeyAuthentication=yes
 ssh-keyscan -p 22482 -t ed25519 127.0.0.1 2>/dev/null > "$dir/known_hosts"
 test -s "$dir/known_hosts"
 mkdir -p "$HOME/.ssh"
