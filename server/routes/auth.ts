@@ -67,7 +67,7 @@ router.post('/github/callback', async (req, res) => {
     try {
         const { code } = req.body;
 
-        if (!code) {
+        if (typeof code !== 'string' || code.length < 1 || code.length > 2048) {
             return res.status(400).json({ error: 'Authorization code required' });
         }
 
@@ -112,20 +112,24 @@ router.post('/github/callback', async (req, res) => {
             return res.status(400).json({ error: 'Failed to get GitHub user info' });
         }
 
-        // Get user email (might be private)
-        let email = githubUser.email;
-        if (!email) {
-            const emailsResponse = await fetch('https://api.github.com/user/emails', {
-                headers: {
-                    'Authorization': `Bearer ${tokenData.access_token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'User-Agent': 'Fortress-Backup-Manager'
-                }
-            });
-            const emails = await emailsResponse.json();
-            const primaryEmail = emails.find((e: any) => e.primary) || emails[0];
-            email = primaryEmail?.email || `${githubUser.login}@github.local`;
-        }
+        // Never associate an OAuth identity with an unverified or synthetic
+        // email address: an email match may grant privileges to an existing user.
+        const emailsResponse = await fetch('https://api.github.com/user/emails', {
+            headers: {
+                'Authorization': `Bearer ${tokenData.access_token}`,
+                'Accept': 'application/vnd.github+json',
+                'User-Agent': 'Fortress-Backup-Manager'
+            }
+        });
+        if (!emailsResponse.ok) return res.status(403).json({error:'Verified GitHub email access is required'});
+        const emailRecords: unknown = await emailsResponse.json();
+        if (!Array.isArray(emailRecords)) return res.status(403).json({error:'Verified GitHub email required'});
+        const verified = emailRecords.filter((entry: any) =>
+            entry && entry.verified === true && typeof entry.email === 'string' &&
+            entry.email.length <= 254 && /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(entry.email));
+        const selected = verified.find((entry:any) => entry.primary === true) || verified[0];
+        if (!selected) return res.status(403).json({error:'Verified GitHub email required'});
+        const email: string = selected.email.trim().toLowerCase();
 
         // Check if user exists, otherwise create
         let user = await db.getUserByEmail(email);
