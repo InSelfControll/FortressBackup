@@ -80,7 +80,7 @@ export function broadcastJobLog(jobId: string, type: LogEntry['type'], message: 
     const log: LogEntry = {
         jobId,
         type,
-        message,
+        message: message.slice(0,2048),
         timestamp: new Date()
     };
 
