@@ -23,7 +23,7 @@ import { buildRsyncCommand } from '../server/services/backup/rsync.js';
 import { selectVerifiedGitHubEmail } from '../server/security/githubIdentity.js';
 
 test('privileged APIs deny viewers and never echo stored credentials', async()=>{
- process.env.JWT_SECRET='security-tests-signed-jwt-'+crypto.randomBytes(24).toString('hex');
+ process.env.JWT_SECRET=crypto.randomBytes(48).toString('hex');
  process.env.FORTRESS_CREDENTIAL_KEY=crypto.randomBytes(32).toString('hex');
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'fortress-security-'));
  await initDatabase({type:'sqlite',filePath:path.join(dir,'db.sqlite')});
