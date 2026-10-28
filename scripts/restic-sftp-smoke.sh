@@ -11,7 +11,7 @@ ssh-keygen -q -t ed25519 -N '' -f "$dir/client-key"
 sudo install -m 600 -o fortress-ci -g fortress-ci "$dir/client-key.pub" /home/fortress-ci/.ssh/authorized_keys
 sudo install -d -m 755 /run/sshd
 sudo /usr/sbin/sshd -p 22482 -o PidFile=$dir/sshd.pid -o ListenAddress=127.0.0.1 -o PasswordAuthentication=no -o PubkeyAuthentication=yes
-ssh-keyscan -p 22482 -t ed25519 127.0.0.1 2>/dev/null > "$dir/known_hosts"
+ssh-keyscan -T 5 -p 22482 -t ed25519 127.0.0.1 2>/dev/null > "$dir/known_hosts"
 test -s "$dir/known_hosts"
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
@@ -34,10 +34,14 @@ printf '%s' "$(openssl rand -hex 32)" > "$pass"
 mkdir -p "$dir/source" "$dir/restore"
 printf 'Verified encrypted SFTP backup\n' > "$dir/source/record.txt"
 
-restic -r "$repo" --password-file "$pass" init
-restic -r "$repo" --password-file "$pass" backup -- "$dir/source"
-restic -r "$repo" --password-file "$pass" check
-restic -r "$repo" --password-file "$pass" restore latest --target "$dir/restore"
+echo 'SFTP: initialize repository'
+timeout --signal=TERM --kill-after=5 90 restic -r "$repo" --password-file "$pass" init
+echo 'SFTP: backup source'
+timeout --signal=TERM --kill-after=5 90 restic -r "$repo" --password-file "$pass" backup -- "$dir/source"
+echo 'SFTP: verify repository integrity'
+timeout --signal=TERM --kill-after=5 90 restic -r "$repo" --password-file "$pass" check
+echo 'SFTP: restore snapshot'
+timeout --signal=TERM --kill-after=5 90 restic -r "$repo" --password-file "$pass" restore latest --target "$dir/restore"
 restored=$(find "$dir/restore" -type f -name record.txt -print -quit)
 test -n "$restored"
 cmp "$dir/source/record.txt" "$restored"
