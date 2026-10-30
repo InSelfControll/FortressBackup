@@ -1,122 +1,82 @@
-# 🛡️ Fortress Backup Manager
+# Fortress Backup
 
-**Fortress** is an enterprise-grade orchestration dashboard designed for modern infrastructure management. It provides a unified, secure interface for managing disparate backup engines including **BorgBackup**, **Restic**, **Rsync**, and **Rclone**.
+Fortress is a self-hosted backup controller with a React interface and a Bun/Express backend. It supports Borg and Restic backup workflows, with Rsync and Rclone integrations and AI-assisted configuration also present in the project.
 
-Featuring an automatic **SSH Deployment Service**, an AI-powered job architect, and a zero-trust cryptographic vault, Fortress simplifies complex CLI-based backup workflows into a high-visibility, professional experience.
+Rsync, Rclone, and AI-assisted configuration have not completed the verification and stable testing recorded in `TODO.md`. Managed Windows clients are pre-production and retain the limitations listed below.
 
----
-
-## ✨ Key Features
-
-- **Multi-Engine Orchestration**: Native support for:
-  - **BorgBackup**: High-efficiency deduplication and compression.
-  - **Restic**: Modern, secure cloud-native backups.
-  - **Rsync over SSH**: Reliable 1:1 file mirroring.
-  - **Rclone**: Cloud storage synchronization (S3, B2, Google Drive, etc.).
-- **🚀 SSH Deployment Service**: Automatically detect remote OS and install required backup tools (Borg, Restic, Rsync) with one click. Rsync & Rclone are not tested yet.
-- **AI Backup Architect**: Leverages **Google Gemini** and **OpenAI COMPATIBLE** to translate natural language requirements into optimized cron schedules and retention policies. - Not tested yet
-- **Zero-Trust Identity Vault**: Local-first AES-256-GCM encryption for SSH private keys. Keys are only decrypted at the last possible moment for connection.
-- **Universal Health Monitoring**: Real-time "Vitality Index" for all managed systems with live log streaming.
-- **Visual Analytics**: Interactive Recharts-powered dashboard for storage growth and deduplication tracking.
-
----
-
-## 🛠️ Tech Stack
-
-### Frontend
-- **Framework**: React 19 + TypeScript
-- **Build Tool**: Vite 6
-- **Styling**: Tailwind CSS
-- **Charts**: Recharts
-- **Icons**: Lucide React
-
-### Backend
-- **Runtime**: Bun (native TypeScript execution)
-- **Framework**: Express 5
-- **SSH**: `ssh2` for remote orchestration
-- **Auth**: JWT + bcryptjs
-
-### Database
-- **Primary**: PostgreSQL (via `pg`)
-- **Local/Embedded**: bun:sqlite (built-in, 3-6x faster than better-sqlite3)
-
----
-
-## 🚀 Getting Started
+## Run locally
 
 ### Prerequisites
-- **Bun**: v1.0 or higher ([install](https://bun.sh))
-- **PostgreSQL**: A running instance (optional - SQLite works out of the box)
-- **(Optional) Gemini API Key**: For natural language backup configuration
 
-### Installation
+- Git
+- Bun. The production Dockerfile currently uses Bun 1.4.4.
+- Docker with Compose, only for container deployment
 
-1. **Clone and Install**:
-   ```bash
-   git clone https://github.com/InSelfControll/FortressBackup.git
-   cd FortressBackup
-   bun install
-   ```
+The default SQLite setup does not require a separate database server.
 
-2. **Running the System**:
-   ```bash
-   # Start both API and Web UI (using concurrently)
-   bun run dev
-
-   # Or run separately
-   bun run dev:server    # Backend only
-   bun run dev:frontend  # Frontend only
-   ```
-
-3. **Initialize Setup**:
-   - Open your browser to `http://localhost:3001`
-   - Follow the on-screen setup wizard to configure your database, admin user, and master password
-   - The `.env` file is automatically generated after completing setup
-
-### Docker Deployment
-
-**Protect the first-run bootstrap and encryption keys.** Set a unique `FORTRESS_BOOTSTRAP_TOKEN` (at least 32 random characters) in the container's protected runtime environment before starting. The setup wizard requires it. Do not expose port 9001 to the public network; use a TLS reverse proxy or private access path.
-
-Fortress stores JWT and credential-encryption keys in `/app/data/.env`, which **must** be persisted alongside the database. Back up the protected env file separately. Losing its key prevents decryption of stored credentials.
-
-
+Set `FORTRESS_BOOTSTRAP_TOKEN` to a random value of at least 32 characters in the environment used to start Fortress. Keep this value private. The first-run setup wizard requires the configured bootstrap token.
 
 ```bash
-# Build the container
-docker build -t fortressbackup .
-
-# Run with SQLite (default)
-docker run -p 127.0.0.1:9001:9001 -v fortress-data:/app/data fortressbackup
-
-# Run with volume mount (ensure directory is owned by UID 1001)
-mkdir -p ./data && sudo chown 1001:1001 ./data && chmod 700 ./data
-docker run -p 127.0.0.1:9001:9001 -v ./data:/app/data fortressbackup
+git clone https://github.com/InSelfControll/FortressBackup.git
+cd FortressBackup
+bun install
+bun run dev
 ```
 
----
+To run the backend and frontend in separate terminals, use:
 
-### Optional security environment settings
+```bash
+bun run dev:server
+bun run dev:frontend
+```
 
-- `FORTRESS_INITIAL_SSO_GITHUB_ID`: Verified numeric GitHub account ID allowed to become the **first** SSO administrator. Without it, new SSO users remain viewers. Configure this before initial GitHub SSO login.
-- `FORTRESS_AI_HOSTS`: Comma-separated allowlist of HTTPS AI provider hostnames. Defaults to `api.openai.com`. Do not include private addresses or wildcard domains.
-- `FORTRESS_CREDENTIAL_KEY`: Automatically generated 32-byte credential-encryption key, stored in the protected persistent data-volume environment file. Keep secure independent backups of that file.
+Open `http://localhost:9001` and complete the first-run setup wizard. Setup generates protected runtime configuration in the persistent data location. Preserve and restrict access to that configuration together with the database.
 
-## 🔒 Security Architecture
+## Production with Compose
 
-- Remote SSH systems require manually verified SHA256 host-key fingerprints before connection.
-- Never grant writable permissions to other users on the `/app/data` volume.
-- Keep the Windows agent, Restic executable, and credential files protected with installer-enforced NTFS ACLs.
-- Validate backup and restore against a disposable repository before production use.
+Use `Fortress.yaml` as the hardened Compose reference. It publishes Fortress only on loopback as `127.0.0.1:9001:9001`, runs as non-root UID/GID `1001:1001` with a read-only root filesystem, and mounts the `fortress-data` volume at `/app/data`.
 
+Set a private, random `FORTRESS_BOOTSTRAP_TOKEN` of at least 32 characters before starting the stack. Compose refuses to start without it.
 
-Fortress implements several layers of security:
-1. **At-Rest Encryption**: Sensitive credentials and SSH keys are encrypted in the database.
-2. **Path Isolation**: Backup processes are executed with minimum required privileges on remote systems.
-3. **Session Management**: Secure JWT-based authentication with automatic expiration handling.
-4. **Non-Root Container**: Production container runs as non-root user (UID 1001) for enhanced security.
+```bash
+docker compose -f Fortress.yaml up -d --build
+```
 
----
+Open `http://localhost:9001` on the host. Non-local access requires a trusted TLS reverse proxy or a private access path. Do not publish port `9001` directly to an untrusted network.
 
-<p align="center">
-  Built with ❤️ by the Fortress Engineering Team
-</p>
+## Security and recovery
+
+- Persist `/app/data` and do not grant writable access to unrelated users. The container stores generated runtime configuration, including JWT and credential-encryption material, in `/app/data/.env`.
+- Protect credential-encryption material and back it up independently. Losing it prevents decryption of stored credentials, so a database backup alone is not sufficient for recovery.
+- Keep the bootstrap token and generated runtime configuration out of source control and public logs.
+- Before production use, create a disposable repository and validate both backup and restore against it. Repeat restore validation after changes to repository, credential, client, or recovery configuration.
+- Managed Windows executables, Restic, enrollment tokens, credential files, and local configuration require the protections described in the Windows guide.
+
+## Managed Windows clients (pre-production)
+
+Read [`agent/windows/MANAGED.md`](agent/windows/MANAGED.md) before enrolling a client. It is the canonical setup and operations guide.
+
+Managed clients initiate outbound HTTPS polling to the controller, so they do not require inbound Windows firewall rules. Enrollment returns the client token once, while the controller stores its hash. Repository settings, source paths, credentials, SSH verification, and the Restic executable remain in locally protected Windows configuration. The controller can queue only the allow-listed `backup`, `check`, and `snapshots` operations.
+
+Duplicate-execution safeguards include one in-flight job per client, execution leases, an active-job marker that requires operator intervention after interruption, and replay of unacknowledged completion reports.
+
+The following production blockers remain:
+
+- No full remote policy provisioning. Backup sources, repository destinations, and credentials are not centrally editable.
+- No automatic enrollment-token rotation or client auto-update.
+- No file-level managed-client restore interface.
+- No completed end-to-end Windows VSS and Hetzner Storage Box restore test.
+
+## Contributor guide
+
+Read [`ARCH_README.md`](ARCH_README.md) for the internal architecture. The main source directories are `server/`, `client/`, `components/`, `src/routes/`, `agent/windows/`, `scripts/`, and `tests/`.
+
+Run the controller CI-equivalent checks before submitting changes:
+
+```bash
+bun install --frozen-lockfile
+bun audit --audit-level=high
+bun test tests/managed-agents.test.ts tests/security.test.ts
+bun run build
+bunx tsc --noEmit
+```
