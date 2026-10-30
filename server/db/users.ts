@@ -52,3 +52,8 @@ export const hasUsers = async (): Promise<boolean> => {
     const result = await getOne<{ count: number }>(`SELECT COUNT(*) as count FROM users`);
     return (result?.count || 0) > 0;
 };
+
+export const hasAdminUsers = async (): Promise<boolean> => {
+    const result = await getOne<{ count: number }>(`SELECT COUNT(*) as count FROM users WHERE role = 'admin'`);
+    return (result?.count || 0) > 0;
+};

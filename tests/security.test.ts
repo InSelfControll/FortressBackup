@@ -15,6 +15,7 @@ import ai from '../server/routes/ai.js';
 import auth from '../server/routes/auth.js';
 import configRouter from '../server/routes/config.js';
 import { getLocation } from '../server/db/locations.js';
+import { createUser, getUserByEmail } from '../server/db/users.js';
 import { saveConfig, getConfig } from '../server/db/config.js';
 import { sshHostVerifier } from '../server/services/ssh/hostKey.js';
 import { buildBorgCommand, buildBorgRestoreCommand } from '../server/services/backup/borg.js';
@@ -155,3 +156,119 @@ test('backup log buffer stays bounded without quadratic per-message shifting',()
   expect(logs.at(-1)).toBe(9999);
   expect(logs[0]).toBeGreaterThan(7000);
 });
+
+test('login methods enforce persisted auth mode',async()=>{
+  const previousFetch=globalThis.fetch;
+  const previousJwtSecret=process.env.JWT_SECRET;
+  const previousCredentialKey=process.env.FORTRESS_CREDENTIAL_KEY;
+  process.env.JWT_SECRET=crypto.randomBytes(48).toString('hex');
+  process.env.FORTRESS_CREDENTIAL_KEY=crypto.randomBytes(32).toString('hex');
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'fortress-auth-mode-'));
+  await initDatabase({type:'sqlite',filePath:path.join(dir,'db.sqlite')});
+  const app=express();app.use(express.json());app.use('/api/auth',auth);
+  const server=app.listen(0,'127.0.0.1');
+  try{
+    const address=server.address();
+    if(!address||typeof address==='string')throw new Error('Unable to bind test server');
+    const base='http://127.0.0.1:'+address.port+'/api/auth';
+    await createUser({email:'admin@example.invalid',name:'Admin',role:'admin',auth_type:'local'},'correct-dummy-password');
+    await saveConfig('sso_config',{provider:'github',clientId:'dummy-client',clientSecret:'dummy-secret'});
+    await saveConfig('auth_mode','sso');
+    const localResponse=await fetch(base+'/login',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:'admin@example.invalid',password:'correct-dummy-password'})
+    });
+    expect(localResponse.status).toBe(403);
+    expect(await localResponse.json()).toEqual({error:'Local authentication is disabled'});
+
+    await saveConfig('auth_mode','local');
+    globalThis.fetch=(async(input:any,init:any)=>{
+      const url=String(input);
+      if(url==='https://github.com/login/oauth/access_token'){
+        return new Response(JSON.stringify({access_token:'dummy-token',token_type:'bearer',scope:'user:email'}),{
+          status:200,headers:{'Content-Type':'application/json'}
+        });
+      }
+      if(url==='https://api.github.com/user'){
+        return new Response(JSON.stringify({id:1001,login:'disabled-user',name:'Disabled User',avatar_url:'https://example.invalid/disabled.png'}),{
+          status:200,headers:{'Content-Type':'application/json'}
+        });
+      }
+      if(url==='https://api.github.com/user/emails'){
+        return new Response(JSON.stringify([{email:'github@example.invalid',primary:true,verified:true,visibility:'private'}]),{
+          status:200,headers:{'Content-Type':'application/json'}
+        });
+      }
+      return previousFetch(input,init);
+    }) as typeof fetch;
+    const githubResponse=await fetch(base+'/github/callback',{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:'dummy-code'})
+    });
+    expect(githubResponse.status).toBe(403);
+    expect(await githubResponse.json()).toEqual({error:'GitHub authentication is disabled'});
+    expect(await getUserByEmail('github@example.invalid')).toBeNull();
+  }finally{
+    globalThis.fetch=previousFetch;
+    await new Promise<void>(resolve=>server.close(()=>resolve()));
+    await closeDatabase();fs.rmSync(dir,{recursive:true,force:true});
+    if(previousJwtSecret===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=previousJwtSecret;
+    if(previousCredentialKey===undefined)delete process.env.FORTRESS_CREDENTIAL_KEY;else process.env.FORTRESS_CREDENTIAL_KEY=previousCredentialKey;
+  }
+},30000);
+
+test('a first viewer does not consume the pinned owner bootstrap',async()=>{
+  const previousFetch=globalThis.fetch;
+  const previousJwtSecret=process.env.JWT_SECRET;
+  const previousCredentialKey=process.env.FORTRESS_CREDENTIAL_KEY;
+  const previousInitialId=process.env.FORTRESS_INITIAL_SSO_GITHUB_ID;
+  process.env.JWT_SECRET=crypto.randomBytes(48).toString('hex');
+  process.env.FORTRESS_CREDENTIAL_KEY=crypto.randomBytes(32).toString('hex');
+  process.env.FORTRESS_INITIAL_SSO_GITHUB_ID='1002';
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'fortress-owner-bootstrap-'));
+  await initDatabase({type:'sqlite',filePath:path.join(dir,'db.sqlite')});
+  await saveConfig('sso_config',{provider:'github',clientId:'dummy-client',clientSecret:'dummy-secret'});
+  const app=express();app.use(express.json());app.use('/api/auth',auth);
+  const server=app.listen(0,'127.0.0.1');
+  try{
+    const address=server.address();
+    if(!address||typeof address==='string')throw new Error('Unable to bind test server');
+    const base='http://127.0.0.1:'+address.port+'/api/auth';
+    globalThis.fetch=(async(input:any,init:any)=>{
+      const url=String(input);
+      if(url==='https://github.com/login/oauth/access_token'){
+        const body=JSON.parse(String(init?.body));
+        const id=body.code==='owner-code'?1002:1001;
+        return new Response(JSON.stringify({access_token:'dummy-token-'+id,token_type:'bearer',scope:'user:email'}),{
+          status:200,headers:{'Content-Type':'application/json'}
+        });
+      }
+      const authorization=String(init?.headers?.Authorization||'');
+      const id=authorization.endsWith('1002')?1002:1001;
+      if(url==='https://api.github.com/user'){
+        return new Response(JSON.stringify({id,login:id===1002?'owner':'viewer',name:id===1002?'Owner':'Viewer',avatar_url:'https://example.invalid/'+id+'.png'}),{
+          status:200,headers:{'Content-Type':'application/json'}
+        });
+      }
+      if(url==='https://api.github.com/user/emails'){
+        return new Response(JSON.stringify([{email:(id===1002?'owner':'viewer')+'@example.invalid',primary:true,verified:true,visibility:'private'}]),{
+          status:200,headers:{'Content-Type':'application/json'}
+        });
+      }
+      return previousFetch(input,init);
+    }) as typeof fetch;
+    const githubCallback=(code:string)=>fetch(base+'/github/callback',{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})
+    });
+    expect((await githubCallback('viewer-code')).status).toBe(200);
+    expect((await getUserByEmail('viewer@example.invalid'))?.role).toBe('viewer');
+    expect((await githubCallback('owner-code')).status).toBe(200);
+    expect((await getUserByEmail('owner@example.invalid'))?.role).toBe('admin');
+  }finally{
+    globalThis.fetch=previousFetch;
+    await new Promise<void>(resolve=>server.close(()=>resolve()));
+    await closeDatabase();fs.rmSync(dir,{recursive:true,force:true});
+    if(previousJwtSecret===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=previousJwtSecret;
+    if(previousCredentialKey===undefined)delete process.env.FORTRESS_CREDENTIAL_KEY;else process.env.FORTRESS_CREDENTIAL_KEY=previousCredentialKey;
+    if(previousInitialId===undefined)delete process.env.FORTRESS_INITIAL_SSO_GITHUB_ID;else process.env.FORTRESS_INITIAL_SSO_GITHUB_ID=previousInitialId;
+  }
+},30000);

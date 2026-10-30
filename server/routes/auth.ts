@@ -59,6 +59,11 @@ router.post('/login', async (req, res) => {
         if(!validEmail(email)||typeof password!=='string'||password.length<1||password.length>256)
             return res.status(400).json({error:'Invalid login credentials'});
 
+        const authMode = await db.getConfig<string>('auth_mode');
+        if (authMode === 'sso') {
+            return res.status(403).json({ error: 'Local authentication is disabled' });
+        }
+
         const user = await db.validateUser(email, password);
         if (!user) {
             return res.status(401).json({ error: 'Invalid credentials' });
@@ -88,6 +93,11 @@ router.post('/github/callback', async (req, res) => {
         const ssoConfig = await db.getConfig<any>('sso_config');
         if (!ssoConfig || ssoConfig.provider !== 'github') {
             return res.status(400).json({ error: 'GitHub SSO not configured' });
+        }
+
+        const authMode = await db.getConfig<string>('auth_mode');
+        if (authMode === 'local') {
+            return res.status(403).json({ error: 'GitHub authentication is disabled' });
         }
 
         // Exchange code for access token
@@ -147,7 +157,7 @@ router.post('/github/callback', async (req, res) => {
             // An operator can explicitly pin the sole bootstrap GitHub user ID.
             const initialId=process.env.FORTRESS_INITIAL_SSO_GITHUB_ID;
             const owner = !!initialId && /^[0-9]+$/.test(initialId) &&
-                String(githubUser.id)===initialId && !(await db.hasUsers());
+                String(githubUser.id)===initialId && !(await db.hasAdminUsers());
             user = await db.createUser({
                 email,
                 name: githubUser.name || githubUser.login,
