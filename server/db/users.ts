@@ -14,6 +14,7 @@ export interface User {
     avatar?: string;
     role: 'admin' | 'viewer';
     auth_type: 'local' | 'sso';
+    github_id?: string;
     created_at?: string;
 }
 
@@ -22,8 +23,8 @@ export const createUser = async (user: Omit<User, 'id' | 'created_at'>, password
     const passwordHash = password ? await bcrypt.hash(password, 10) : null;
 
     await run(
-        `INSERT INTO users (id, email, name, password_hash, avatar, role, auth_type) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [id, user.email, user.name, passwordHash, user.avatar || '', user.role, user.auth_type]
+        `INSERT INTO users (id, email, name, password_hash, avatar, role, auth_type, github_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, user.email, user.name, passwordHash, user.avatar || '', user.role, user.auth_type, user.github_id || null]
     );
 
     return { ...user, id };
@@ -41,11 +42,23 @@ export const validateUser = async (email: string, password: string): Promise<Use
 };
 
 export const getUserById = async (id: string): Promise<User | null> => {
-    return getOne<User>(`SELECT id, email, name, avatar, role, auth_type FROM users WHERE id = ?`, [id]);
+    return getOne<User>(`SELECT id, email, name, avatar, role, auth_type, github_id FROM users WHERE id = ?`, [id]);
 };
 
 export const getUserByEmail = async (email: string): Promise<User | null> => {
-    return getOne<User>(`SELECT id, email, name, avatar, role, auth_type FROM users WHERE email = ?`, [email]);
+    return getOne<User>(`SELECT id, email, name, avatar, role, auth_type, github_id FROM users WHERE email = ?`, [email]);
+};
+
+export const getUserByGitHubId = async (githubId: string): Promise<User | null> =>
+    getOne<User>(`SELECT id, email, name, avatar, role, auth_type, github_id FROM users WHERE github_id = ?`, [githubId]);
+
+export const linkGitHubIdentity = async (userId: string, githubId: string): Promise<boolean> => {
+    await run(
+        `UPDATE users SET github_id = ?, auth_type = 'sso' WHERE id = ? AND github_id IS NULL`,
+        [githubId, userId]
+    );
+    const user = await getUserByGitHubId(githubId);
+    return user?.id === userId;
 };
 
 export const hasUsers = async (): Promise<boolean> => {

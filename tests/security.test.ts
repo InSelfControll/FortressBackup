@@ -272,3 +272,71 @@ test('a first viewer does not consume the pinned owner bootstrap',async()=>{
     if(previousInitialId===undefined)delete process.env.FORTRESS_INITIAL_SSO_GITHUB_ID;else process.env.FORTRESS_INITIAL_SSO_GITHUB_ID=previousInitialId;
   }
 },30000);
+
+test('GitHub subject binding requires authenticated linking and rejects duplicate subjects',async()=>{
+  const previousFetch=globalThis.fetch;
+  const previousJwtSecret=process.env.JWT_SECRET;
+  const previousCredentialKey=process.env.FORTRESS_CREDENTIAL_KEY;
+  process.env.JWT_SECRET=crypto.randomBytes(48).toString('hex');
+  process.env.FORTRESS_CREDENTIAL_KEY=crypto.randomBytes(32).toString('hex');
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'fortress-github-binding-'));
+  await initDatabase({type:'sqlite',filePath:path.join(dir,'db.sqlite')});
+  const admin=await createUser({email:'admin@example.invalid',name:'Admin',role:'admin',auth_type:'local'},'correct-dummy-password');
+  const second=await createUser({email:'second@example.invalid',name:'Second',role:'viewer',auth_type:'local'},'second-dummy-password');
+  await saveConfig('sso_config',{provider:'github',clientId:'dummy-client',clientSecret:'dummy-secret'});
+  await saveConfig('auth_mode','sso');
+  const app=express();app.use(express.json());app.use('/api/auth',auth);
+  const server=app.listen(0,'127.0.0.1');
+  try{
+    const address=server.address();
+    if(!address||typeof address==='string')throw new Error('Unable to bind test server');
+    const base='http://127.0.0.1:'+address.port+'/api/auth';
+    globalThis.fetch=(async(input:any,init:any)=>{
+      const url=String(input);
+      if(url==='https://github.com/login/oauth/access_token'){
+        return new Response(JSON.stringify({access_token:'dummy-token',token_type:'bearer',scope:'user:email'}),{
+          status:200,headers:{'Content-Type':'application/json'}
+        });
+      }
+      if(url==='https://api.github.com/user'){
+        return new Response(JSON.stringify({id:1001,login:'admin',name:'Admin',avatar_url:'https://example.invalid/admin.png'}),{
+          status:200,headers:{'Content-Type':'application/json'}
+        });
+      }
+      if(url==='https://api.github.com/user/emails'){
+        return new Response(JSON.stringify([{email:'admin@example.invalid',primary:true,verified:true,visibility:'private'}]),{
+          status:200,headers:{'Content-Type':'application/json'}
+        });
+      }
+      return previousFetch(input,init);
+    }) as typeof fetch;
+    const githubCallback=()=>fetch(base+'/github/callback',{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:'dummy-code'})
+    });
+    const githubLink=(userId:string)=>fetch(base+'/github/link',{
+      method:'POST',headers:{Authorization:'Bearer '+jwt.sign({id:userId,role:'viewer'},process.env.JWT_SECRET),'Content-Type':'application/json'},
+      body:JSON.stringify({code:'dummy-code'})
+    });
+    const unlinkedCallback=await githubCallback();
+    expect(unlinkedCallback.status).toBe(403);
+    expect(await unlinkedCallback.json()).toEqual({error:'Account linking required'});
+    const linkResponse=await githubLink(admin.id);
+    expect(linkResponse.status).toBe(200);
+    expect((await getUserByEmail('admin@example.invalid'))?.github_id).toBe('1001');
+    const boundCallback=await githubCallback();
+    expect(boundCallback.status).toBe(200);
+    const boundBody=await boundCallback.json() as any;
+    expect(boundBody.user.id).toBe(admin.id);
+    expect(typeof boundBody.token).toBe('string');
+    const secondLinkResponse=await githubLink(second.id);
+    expect(secondLinkResponse.status).toBe(409);
+    expect((await getUserByEmail('second@example.invalid'))?.github_id).toBeNull();
+    expect((await getUserByEmail('admin@example.invalid'))?.github_id).toBe('1001');
+  }finally{
+    globalThis.fetch=previousFetch;
+    await new Promise<void>(resolve=>server.close(()=>resolve()));
+    await closeDatabase();fs.rmSync(dir,{recursive:true,force:true});
+    if(previousJwtSecret===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=previousJwtSecret;
+    if(previousCredentialKey===undefined)delete process.env.FORTRESS_CREDENTIAL_KEY;else process.env.FORTRESS_CREDENTIAL_KEY=previousCredentialKey;
+  }
+},30000);

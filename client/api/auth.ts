@@ -56,6 +56,11 @@ export const githubAuth = async (code: string) => {
     return response;
 };
 
+export const githubLink = async (code: string) => apiFetch<{ success: boolean }>('/auth/github/link', {
+    method: 'POST',
+    body: JSON.stringify({ code })
+});
+
 export const getMe = async () => {
     return apiFetch<{ user: AuthUser }>('/auth/me');
 };

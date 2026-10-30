@@ -80,102 +80,130 @@ router.post('/login', async (req, res) => {
     }
 });
 
+const exchangeGitHubCode = async (code: string) => {
+    const ssoConfig = await db.getConfig<any>('sso_config');
+    if (!ssoConfig || ssoConfig.provider !== 'github') {
+        return { status: 400, error: 'GitHub SSO not configured' };
+    }
+
+    const authMode = await db.getConfig<string>('auth_mode');
+    if (authMode === 'local') {
+        return { status: 403, error: 'GitHub authentication is disabled' };
+    }
+
+    const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            client_id: ssoConfig.clientId,
+            client_secret: ssoConfig.clientSecret,
+            code
+        })
+    });
+    const tokenData = await tokenResponse.json();
+    if (tokenData.error) {
+        return { status: 400, error: tokenData.error_description || 'Failed to exchange code' };
+    }
+
+    const userResponse = await fetch('https://api.github.com/user', {
+        headers: {
+            'Authorization': `Bearer ${tokenData.access_token}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Fortress-Backup-Manager'
+        }
+    });
+    const githubUser = await userResponse.json();
+    if (!githubUser.id) {
+        return { status: 400, error: 'Failed to get GitHub user info' };
+    }
+
+    const emailsResponse = await fetch('https://api.github.com/user/emails', {
+        headers: {
+            'Authorization': `Bearer ${tokenData.access_token}`,
+            'Accept': 'application/vnd.github+json',
+            'User-Agent': 'Fortress-Backup-Manager'
+        }
+    });
+    if (!emailsResponse.ok) return { status: 403, error: 'Verified GitHub email access is required' };
+    const emailRecords: unknown = await emailsResponse.json();
+    const email = selectVerifiedGitHubEmail(emailRecords);
+    if (!email) return { status: 403, error: 'Verified GitHub email required' };
+
+    return { githubUser, email };
+};
+
+const isUniqueConstraintError = (error: any): boolean =>
+    error?.code === '23505' || String(error?.message || '').includes('UNIQUE constraint failed');
+
 // GitHub OAuth callback
 router.post('/github/callback', async (req, res) => {
     try {
         const { code } = req.body;
-
         if (typeof code !== 'string' || code.length < 1 || code.length > 2048) {
             return res.status(400).json({ error: 'Authorization code required' });
         }
 
-        // Get SSO config for client secret
-        const ssoConfig = await db.getConfig<any>('sso_config');
-        if (!ssoConfig || ssoConfig.provider !== 'github') {
-            return res.status(400).json({ error: 'GitHub SSO not configured' });
-        }
+        const exchange = await exchangeGitHubCode(code);
+        if ('error' in exchange) return res.status(exchange.status).json({ error: exchange.error });
+        const { githubUser, email } = exchange;
+        const githubId = String(githubUser.id);
 
-        const authMode = await db.getConfig<string>('auth_mode');
-        if (authMode === 'local') {
-            return res.status(403).json({ error: 'GitHub authentication is disabled' });
-        }
-
-        // Exchange code for access token
-        const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                client_id: ssoConfig.clientId,
-                client_secret: ssoConfig.clientSecret,
-                code: code
-            })
-        });
-
-        const tokenData = await tokenResponse.json();
-
-        if (tokenData.error) {
-            return res.status(400).json({ error: tokenData.error_description || 'Failed to exchange code' });
-        }
-
-        // Get user info from GitHub
-        const userResponse = await fetch('https://api.github.com/user', {
-            headers: {
-                'Authorization': `Bearer ${tokenData.access_token}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'Fortress-Backup-Manager'
-            }
-        });
-
-        const githubUser = await userResponse.json();
-
-        if (!githubUser.id) {
-            return res.status(400).json({ error: 'Failed to get GitHub user info' });
-        }
-
-        // Never associate an OAuth identity with an unverified or synthetic
-        // email address: an email match may grant privileges to an existing user.
-        const emailsResponse = await fetch('https://api.github.com/user/emails', {
-            headers: {
-                'Authorization': `Bearer ${tokenData.access_token}`,
-                'Accept': 'application/vnd.github+json',
-                'User-Agent': 'Fortress-Backup-Manager'
-            }
-        });
-        if (!emailsResponse.ok) return res.status(403).json({error:'Verified GitHub email access is required'});
-        const emailRecords: unknown = await emailsResponse.json();
-        const email=selectVerifiedGitHubEmail(emailRecords);
-        if (!email) return res.status(403).json({error:'Verified GitHub email required'});
-
-        // Check if user exists, otherwise create
-        let user = await db.getUserByEmail(email);
-
+        let user = await db.getUserByGitHubId(githubId);
         if (!user) {
+            if (await db.getUserByEmail(email)) {
+                return res.status(403).json({ error: 'Account linking required' });
+            }
+
             // Never let an arbitrary first OAuth login seize administrator rights.
             // An operator can explicitly pin the sole bootstrap GitHub user ID.
-            const initialId=process.env.FORTRESS_INITIAL_SSO_GITHUB_ID;
+            const initialId = process.env.FORTRESS_INITIAL_SSO_GITHUB_ID;
             const owner = !!initialId && /^[0-9]+$/.test(initialId) &&
-                String(githubUser.id)===initialId && !(await db.hasAdminUsers());
+                githubId === initialId && !(await db.hasAdminUsers());
             user = await db.createUser({
                 email,
                 name: githubUser.name || githubUser.login,
                 avatar: githubUser.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${githubUser.login}`,
                 role: owner ? 'admin' : 'viewer',
-                auth_type: 'sso'
+                auth_type: 'sso',
+                github_id: githubId
             });
         }
 
-        // Generate JWT token
         const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, getJwtSecret(), { expiresIn: '7d' });
-
         res.json({
             user: { id: user.id, email: user.email, name: user.name, avatar: user.avatar, role: user.role },
             token
         });
     } catch (error: any) {
+        if (isUniqueConstraintError(error)) {
+            return res.status(409).json({ error: 'Account linking conflict' });
+        }
         console.error('[GitHub OAuth Error]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/github/link', authenticateToken, async (req, res) => {
+    try {
+        const { code } = req.body || {};
+        if (typeof code !== 'string' || code.length < 1 || code.length > 2048) {
+            return res.status(400).json({ error: 'Authorization code required' });
+        }
+
+        const exchange = await exchangeGitHubCode(code);
+        if ('error' in exchange) return res.status(exchange.status).json({ error: exchange.error });
+
+        const linked = await db.linkGitHubIdentity((req as any).user.id, String(exchange.githubUser.id));
+        if (!linked) return res.status(409).json({ error: 'Account linking conflict' });
+        res.json({ success: true });
+    } catch (error: any) {
+        if (isUniqueConstraintError(error)) {
+            return res.status(409).json({ error: 'Account linking conflict' });
+        }
+        console.error('[GitHub Link Error]', error);
         res.status(500).json({ error: error.message });
     }
 });
