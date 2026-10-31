@@ -33,7 +33,7 @@ jobs:
         run: |
           go build -trimpath -o fortress-agent.exe .
           if ($LASTEXITCODE -ne 0) { throw 'Agent build failed' }
-          go build -trimpath -ldflags '-H=windowsgui' -o FortressBackup-Setup.exe ./cmd/setup
+          go build -trimpath -ldflags '-H=windowsgui' -o FortressBackup.exe ./cmd/setup
           if ($LASTEXITCODE -ne 0) { throw 'Setup launcher build failed' }
       - name: Hash agent executable
         shell: pwsh
@@ -42,9 +42,9 @@ jobs:
           $digest = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
           $checksum = Join-Path (Split-Path -Parent $exe) 'fortress-agent.exe.sha256'
           Set-Content -LiteralPath $checksum -Value "$digest  fortress-agent.exe" -Encoding ascii -NoNewline
-          $setup = (Resolve-Path ./agent/windows/FortressBackup-Setup.exe).Path
+          $setup = (Resolve-Path ./agent/windows/FortressBackup.exe).Path
           $setupDigest = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash
-          Set-Content -LiteralPath "$setup.sha256" -Value "$setupDigest  FortressBackup-Setup.exe" -Encoding ascii -NoNewline
+          Set-Content -LiteralPath "$setup.sha256" -Value "$setupDigest  FortressBackup.exe" -Encoding ascii -NoNewline
           Write-Output "Agent SHA256: $digest"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: github.event_name == 'push'
@@ -53,8 +53,8 @@ jobs:
           path: |
             agent/windows/fortress-agent.exe
             agent/windows/fortress-agent.exe.sha256
-            agent/windows/FortressBackup-Setup.exe
-            agent/windows/FortressBackup-Setup.exe.sha256
+            agent/windows/FortressBackup.exe
+            agent/windows/FortressBackup.exe.sha256
           if-no-files-found: error
 
   verify:
@@ -68,7 +68,15 @@ jobs:
           cache: false
       - name: Build verification executable
         working-directory: agent/windows
-        run: go build -trimpath -o fortress-agent.exe .
+        run: |
+          go build -trimpath -o fortress-agent.exe .
+          if ($LASTEXITCODE -ne 0) { throw 'Agent verification build failed' }
+          go build -trimpath -ldflags '-H=windowsgui' -o FortressBackup.exe ./cmd/setup
+          if ($LASTEXITCODE -ne 0) { throw 'App verification build failed' }
+          foreach ($name in @('fortress-agent.exe','FortressBackup.exe')) {
+            $digest = (Get-FileHash -LiteralPath $name -Algorithm SHA256).Hash
+            Set-Content -LiteralPath "$name.sha256" -Value "$digest  $name" -Encoding ascii
+          }
       - name: Validate protected managed scheduled task
         shell: pwsh
         run: |
@@ -135,6 +143,15 @@ jobs:
           name: windows-setup-gui-verification
           path: ${{ runner.temp }}/fortress-setup-gui.png
           if-no-files-found: ignore
+      - name: Verify single-file application installer lifecycle
+        shell: powershell
+        timeout-minutes: 5
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $artifacts = (Resolve-Path ./agent/windows).Path
+          $downloads = Join-Path $env:RUNNER_TEMP 'fortress-installer-fixture'
+          & ./agent/windows/package.ps1 -AgentDirectory $artifacts -ResticPath (Join-Path $artifacts 'fortress-agent.exe') -Version v0.0.0-ci -OutputDirectory $downloads
+          & ./agent/windows/test-installer.ps1 -InstallerPath (Join-Path $downloads 'FortressBackup-Setup-v0.0.0-ci.exe')
       - name: Verify Windows VSS snapshot and full Restic restore
         shell: pwsh
         run: |

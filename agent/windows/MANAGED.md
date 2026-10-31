@@ -6,9 +6,10 @@ Get the Windows x64 bundle from [GitHub Releases](https://github.com/InSelfContr
 and follow [INSTALL.md](INSTALL.md). The bundle includes both executables, the
 installer, a complete configuration example, and checksums. Enrollment only creates
 an identity and token; install and configure the agent on the laptop separately.
-Choose source folders with `Install FortressBackup.cmd` from the complete Windows
-release ZIP, or edit the local configuration's `sources` list. See [INSTALL.md](INSTALL.md)
-for the guided setup, SYSTEM storage prerequisites, and local diagnostic logs.
+Run the single **FortressBackup-Setup-<version>.exe** installer, then open
+**Fortress Backup** from the Start menu to connect the laptop and choose folders.
+Configuration can be completed later and reopened to edit saved folders.
+See [INSTALL.md](INSTALL.md) for installation and diagnostics.
 
 ## Trust model
 - Windows clients initiate HTTPS connections to the Fortress controller. No inbound Windows firewall rules needed.

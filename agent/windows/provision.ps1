@@ -43,6 +43,13 @@ function Install-ManagedSetup([string]$SetupRoot,[object]$Profile,[string]$Contr
         [IO.File]::WriteAllText($tokenPath,$Token,$utf8)
         $configPath=Join-Path $temporary 'agent.json'
         $config=@{resticPath=(Join-Path $SetupRoot 'restic.exe');repository=$credentials.repository;passwordFile=$credentials.passwordFile;sftpKeyFile=$credentials.sftpKeyFile;sftpKnownHostsFile=$credentials.sftpKnownHostsFile;sources=@($Sources | Select-Object -Unique);excludes=@();host=$env:COMPUTERNAME;timeoutMinutes=240;useVSS=$true;controllerUrl=$Controller;agentId=$Id;agentTokenFile=$tokenPath}
+        $existingPath=Join-Path $env:ProgramData 'FortressBackup\agent.json'
+        if(Test-Path -LiteralPath $existingPath){
+            $existing=Get-Content -LiteralPath $existingPath -Raw | ConvertFrom-Json
+            foreach($name in @('excludes','host','timeoutMinutes','useVSS')){
+                if($existing.PSObject.Properties[$name]){$config[$name]=$existing.$name}
+            }
+        }
         [IO.File]::WriteAllText($configPath,($config | ConvertTo-Json -Depth 8),$utf8)
         & (Join-Path $SetupRoot 'setup.ps1') -ConfigPath $configPath -NonInteractive
     }finally{

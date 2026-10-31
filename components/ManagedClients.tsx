@@ -97,9 +97,9 @@ export const ManagedClients:React.FC=()=>{
   <details className="rounded-xl border border-slate-700 bg-slate-900 p-4 space-y-3" open={agents.some(agent=>!agent.lastSeen&&!agent.disabled)}>
    <summary className="cursor-pointer font-semibold">Set up the Windows laptop and choose folders</summary>
    <ol className="list-decimal pl-5 space-y-2 text-sm text-slate-300">
-    <li>Download and extract the complete Windows ZIP from Releases. Double-click <code>Install FortressBackup.cmd</code> and approve the Windows administrator prompt. The background <code>fortress-agent.exe</code> is not an installer.</li>
-    <li>Choose a saved repository here. Enter your enrollment credentials in setup; it retrieves the repository, encryption password, SSH key, and pinned host key automatically. Choose folders such as Documents or Pictures in the folder picker. The local <code>agent.json</code> stores your selected <code>sources</code>.</li>
-    <li>Set a trusted HTTPS controller address and the enrollment ID and token file, then install the managed scheduled task. The agent cannot connect to an HTTP controller address.</li>
+    <li>Download the Windows installer from Releases and run it. It installs Fortress Backup and adds a Start menu shortcut. Open the app after installation or configure it later.</li>
+    <li>Choose a saved repository here. In the installed Fortress Backup app, enter the trusted HTTPS controller address and enrollment credentials, then click Connect. The app retrieves the saved repository and credentials automatically.</li>
+    <li>Use Add folder and Remove to choose folders, then Save and connect to verify access and start the agent. Reopen the app from the Start menu to edit saved folders later.</li>
     <li>Setup verifies storage and controller access as SYSTEM before starting the task. The task checks in every minute. Check-ins and queued, running, completed, or failed operations appear here and on the dashboard. Setup errors stay visible; local diagnostics are in <code>C:\ProgramData\FortressBackup</code>.</li>
    </ol>
    <div className="flex flex-wrap gap-4 text-sm"><a className="text-indigo-300 underline" href="https://github.com/InSelfControll/FortressBackup/releases" target="_blank" rel="noreferrer">Download Windows agent and installer</a><a className="text-indigo-300 underline" href="https://github.com/InSelfControll/FortressBackup/blob/main/agent/windows/INSTALL.md" target="_blank" rel="noreferrer">Windows agent setup guide</a></div>

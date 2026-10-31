@@ -19,7 +19,7 @@ function New-SetupWindow([string]$SetupRoot){
     $startOperation=${function:Start-SetupOperation}
     [Windows.Forms.Application]::EnableVisualStyles()
     $form=New-Object Windows.Forms.Form
-    $form.Text='Fortress Backup setup'
+    $form.Text='Fortress Backup'
     $form.ClientSize=New-Object Drawing.Size(650,605)
     $form.StartPosition='CenterScreen'
     $form.FormBorderStyle='FixedDialog'
@@ -53,11 +53,11 @@ function New-SetupWindow([string]$SetupRoot){
     $add=Add-SetupControl Button addFolder 'Add folder...' 490 337 140 33
     $remove=Add-SetupControl Button removeFolder 'Remove' 490 378 140 33
     $progress=Add-SetupControl ProgressBar progress '' 20 469 610 15
-    $status=Add-SetupControl TextBox status 'Connect, choose folders, then click Install.' 20 492 610 57
+    $status=Add-SetupControl TextBox status 'Connect, choose folders, then save your configuration.' 20 492 610 57
     $status.Multiline=$true;$status.ReadOnly=$true;$status.ScrollBars='Vertical'
     $status.BorderStyle='None';$status.BackColor=[Drawing.SystemColors]::Control
     $status.AccessibleName='Setup status'
-    $install=Add-SetupControl Button install 'Install' 340 558 140 33
+    $install=Add-SetupControl Button install 'Save and connect' 340 558 140 33
     $close=Add-SetupControl Button close 'Cancel' 490 558 140 33
     $install.Enabled=$false;$add.Enabled=$false;$remove.Enabled=$false
     $form.AcceptButton=$connect
@@ -135,9 +135,9 @@ function New-SetupWindow([string]$SetupRoot){
                 $state.Profile=$result[0]
                 $form.AcceptButton=$install
                 $repository.Text='Saved repository: '+$state.Profile.storageName+' / '+$state.Profile.repositoryName
-                $status.Text='Connected. Choose the folders you want to back up, then click Install.'
+                $status.Text='Connected. Choose the folders you want to back up, then click Save and connect.'
             }else{
-                $status.Text='Installed and connected. Open Managed Clients to start a backup and follow its progress. A completed installation is not a completed backup.'
+                $status.Text='Configured and connected. Open Managed Clients to start a backup and follow its progress. Saving the configuration does not mean a backup has completed.'
                 $close.Text='Finish'
                 $state.Token='';$token.Clear();$state.Profile=$null
                 $form.AcceptButton=$close
@@ -163,6 +163,17 @@ function New-SetupWindow([string]$SetupRoot){
         }
     }.GetNewClosure())
     $form.Add_FormClosed({$timer.Stop();$timer.Dispose();$state.Token='';$token.Clear();$state.Profile=$null}.GetNewClosure())
+    $existingPath=Join-Path $env:ProgramData 'FortressBackup\agent.json'
+    if(Test-Path -LiteralPath $existingPath){
+        try {
+            $existing=Get-Content -LiteralPath $existingPath -Raw | ConvertFrom-Json
+            $controller.Text=[string]$existing.controllerUrl
+            $id.Text=[string]$existing.agentId
+            if($existing.agentTokenFile){$token.Text=[IO.File]::ReadAllText([string]$existing.agentTokenFile).Trim()}
+            foreach($source in $existing.sources){if($source -and !$folders.Items.Contains([string]$source)){[void]$folders.Items.Add([string]$source)}}
+            $status.Text='Your existing configuration is loaded. Click Connect to refresh the saved repository and edit folders.'
+        }catch{$status.Text='Existing settings could not be loaded. Enter enrollment credentials to configure this laptop again.'}
+    }
     $timer.Start()
     return $form
 }

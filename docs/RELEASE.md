@@ -1,8 +1,10 @@
 ## Downloads
 
-- **Windows x64 bundle:** Fortress agent, Restic 0.19.1, guided setup launcher and protected-task installer,
-  configuration example, setup guides, Restic license, and checksums. No Go build
-  is required on the laptop.
+- **Windows installer:** **FortressBackup-Setup-<version>.exe** installs the app,
+  bundled Restic, Start menu shortcut, and Windows uninstall entry. Configure
+  after installation or later from the Start menu; no ZIP extraction is required.
+- **Advanced Windows ZIP:** agent, app launcher, scripts, configuration example,
+  guides, license, and checksums remain available for manual deployments.
 - **Controller archive:** complete controller source with the production frontend
   already built. Install Bun, run `bun install --production --frozen-lockfile`, set
   a private `FORTRESS_BOOTSTRAP_TOKEN`, and run `bun start`.
@@ -11,19 +13,16 @@
 
 ## Fixes
 
-- Windows installation now opens a graphical setup window with enrollment fields,
-  saved-repository status, Add/Remove Folder buttons, installation progress, and
-  visible connection errors. Extract the complete ZIP and open
-  **FortressBackup-Setup.exe**; no terminal input is required.
+- Install the app first, then open **Fortress Backup** to configure enrollment,
+  the saved repository, and local folders. Reopening loads existing settings.
+  Upgrade preserves configuration; uninstall removes the task/runtime while
+  retaining saved settings and backup repositories.
 - Windows setup now reuses the saved Restic SFTP repository selected in Managed
   Clients. Its address, encryption password, SSH identity, and pinned host key are
   downloaded securely using the enrollment credentials. Choose folders locally;
   no repository password or manual SYSTEM SSH setup is required in guided setup.
 - Editing an existing backup job now opens with saved values on the first render.
   Standalone launcher download names match their published checksum entries.
-- Extract the complete Windows ZIP and double-click **FortressBackup-Setup.exe**.
-  Setup asks for enrollment credentials and opens a folder picker. It installs
-  saved storage credentials for SYSTEM; a trusted HTTPS controller is required.
 - Setup checks storage and enrollment as SYSTEM without claiming queued backups,
   then starts polling immediately. Errors stay visible; diagnostic logs are stored
   in `C:\ProgramData\FortressBackup`. Failed verification restores the previous install.
@@ -39,5 +38,5 @@
 
 Windows managed clients remain **pre-production**. Enrollment does not install the
 agent or select folders. Choose its repository in Managed Clients and run the
-included setup launcher with enrollment credentials and a trusted HTTPS controller. A complete Windows VSS
+installed app with enrollment credentials and a trusted HTTPS controller. A complete Windows VSS
 backup and restore against your own storage is still required before relying on it.

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-rc.6] - 2026-10-31
+
+- Add a single Windows installer with bundled app/agent/Restic, Program Files installation, Start menu and optional desktop shortcuts, and an Installed apps uninstall entry.
+- Separate installation from configuration. Open the installed app afterward or later to connect the laptop and choose folders; reopening loads the saved connection and folders.
+- Preserve settings during upgrades and folder edits. Uninstall stops/removes the agent task/runtime while retaining saved configuration and backup repositories.
+
 ## [0.1.0-rc.5] - 2026-10-31
 
 - Replace Windows setup console prompts with a native graphical window for enrollment, saved repository discovery, and folder selection.

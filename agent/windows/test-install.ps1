@@ -74,6 +74,8 @@ try {
     $window=New-SetupWindow -SetupRoot $PSScriptRoot
     try {
         $window.Show()
+        $window.Controls['controller'].Clear()
+        $window.Controls['folders'].Items.Clear()
         $window.Controls['connect'].PerformClick()
         if($window.Controls['status'].Text -notmatch 'HTTPS'){throw 'GUI did not validate the controller address'}
         $window.Controls['controller'].Text=$config.controllerUrl
