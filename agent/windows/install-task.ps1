@@ -26,52 +26,128 @@ if(!$config.resticPath -or !$config.passwordFile){throw 'Agent config requires r
 $resticSource=(Resolve-Path -LiteralPath $config.resticPath -ErrorAction Stop).Path
 if(!((Get-FileHash -LiteralPath $resticSource -Algorithm SHA256).Hash -ieq $ResticSha256)){throw 'Restic binary SHA256 mismatch'}
 if($config.sshCommand){throw 'Arbitrary RESTIC_SFTP_COMMAND is not allowed for elevated tasks'}
-$root=Join-Path $env:ProgramData 'FortressBackup'
-if(Test-Path -LiteralPath $root){
-    if(((Get-Item -LiteralPath $root -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Reparse-point install directory rejected'}
-}else{New-Item -ItemType Directory -Path $root -Force | Out-Null}
-# SID-based ACLs avoid localized group names; protect the directory before copying.
-& icacls.exe $root /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
-if($LASTEXITCODE -ne 0){throw 'Could not secure install directory'}
+$sourcePassword=(Resolve-Path -LiteralPath $config.passwordFile -ErrorAction Stop).Path
+if($Managed){
+    if(!$config.agentTokenFile){throw 'Managed mode requires an enrollment token file'}
+    $sourceToken=(Resolve-Path -LiteralPath $config.agentTokenFile -ErrorAction Stop).Path
+}
+function Set-ProtectedSecurityDescriptor([string]$Path,[switch]$Directory){
+    $acl=Get-Acl -LiteralPath $Path -ErrorAction Stop
+    $sddl=if($Directory){'O:BAG:BAD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)'}else{'O:BAG:BAD:PAI(A;;FA;;;SY)(A;;FA;;;BA)'}
+    $acl.SetSecurityDescriptorSddlForm($sddl)
+    Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+}
+function Assert-FileDigest([string]$Path,[string]$Expected,[string]$Label){
+    if((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ine $Expected){throw "$Label SHA256 mismatch"}
+}
 function Copy-Protected([string]$source,[string]$destination){
     $item=Get-Item -LiteralPath $source -Force -ErrorAction Stop
     if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Reparse-point input rejected'}
     Copy-Item -LiteralPath $source -Destination $destination -Force
-    & icacls.exe $destination /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
-    if($LASTEXITCODE -ne 0){throw 'Could not secure installed file'}
+    Set-ProtectedSecurityDescriptor -Path $destination
 }
+$root=Join-Path $env:ProgramData 'FortressBackup'
+if(Test-Path -LiteralPath $root){
+    if(((Get-Item -LiteralPath $root -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Reparse-point install directory rejected'}
+}else{New-Item -ItemType Directory -Path $root -Force | Out-Null}
+# SID-based descriptors avoid localized group names and replace retained owners and trustees.
+Set-ProtectedSecurityDescriptor -Path $root -Directory
+$staging=Join-Path $root ('.staging-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $staging | Out-Null
+Set-ProtectedSecurityDescriptor -Path $staging -Directory
 $agent=Join-Path $root 'fortress-agent.exe'
 $restic=Join-Path $root 'restic.exe'
-Copy-Protected $sourceAgent $agent
-Copy-Protected $resticSource $restic
-$sourcePassword=(Resolve-Path -LiteralPath $config.passwordFile -ErrorAction Stop).Path
 $password=Join-Path $root 'repo-password.txt'
-Copy-Protected $sourcePassword $password
-$config.passwordFile=$password
-$config.resticPath=$restic
-if($Managed){
-    if(!$config.agentTokenFile){throw 'Managed mode requires an enrollment token file'}
-    $sourceToken=(Resolve-Path -LiteralPath $config.agentTokenFile -ErrorAction Stop).Path
-    $token=Join-Path $root 'agent-token.txt'
-    Copy-Protected $sourceToken $token
-    $config.agentTokenFile=$token
-}
+$token=Join-Path $root 'agent-token.txt'
 $configuration=Join-Path $root 'agent.json'
-$config | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $configuration -Encoding UTF8
-& icacls.exe $configuration /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
-if($LASTEXITCODE -ne 0){throw 'Could not secure agent configuration'}
-$mode=if($Managed){'managed'}else{'backup'}
-$args='-config "{0}" -operation {1}' -f $configuration,$mode
-$settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 5) -StartWhenAvailable
-if($Managed){
-    $command='"{0}" {1}' -f $agent,$args
-    & schtasks.exe /Create /SC MINUTE /MO 1 /TN $TaskName /TR $command /RU SYSTEM /RL HIGHEST /F | Out-Null
-    if($LASTEXITCODE -ne 0){throw 'Task creation failed'}
-    Set-ScheduledTask -TaskName $TaskName -Settings $settings | Out-Null
-}else{
-    $action=New-ScheduledTaskAction -Execute $agent -Argument $args
-    $trigger=New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.AddHours($DailyHour))
-    $principal=New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest
-    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+$stagedAgent=Join-Path $staging 'fortress-agent.exe'
+$stagedRestic=Join-Path $staging 'restic.exe'
+$stagedPassword=Join-Path $staging 'repo-password.txt'
+$stagedToken=Join-Path $staging 'agent-token.txt'
+$stagedConfig=Join-Path $staging 'agent.json'
+try{
+    Copy-Protected $sourceAgent $stagedAgent
+    Copy-Protected $resticSource $stagedRestic
+    Assert-FileDigest -Path $stagedAgent -Expected $AgentSha256 -Label 'Staged agent binary'
+    Assert-FileDigest -Path $stagedRestic -Expected $ResticSha256 -Label 'Staged Restic binary'
+    Copy-Protected $sourcePassword $stagedPassword
+    if($Managed){Copy-Protected $sourceToken $stagedToken}
+    $config.passwordFile=$password
+    $config.resticPath=$restic
+    if($Managed){$config.agentTokenFile=$token}
+    $config | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $stagedConfig -Encoding UTF8
+    Set-ProtectedSecurityDescriptor -Path $stagedConfig
+
+    $payloadNames=@('fortress-agent.exe','restic.exe','repo-password.txt','agent.json')
+    if($Managed){$payloadNames+='agent-token.txt'}
+    $backedUp=@{}
+    $installed=@{}
+    $existingTask=$null
+    $existingTaskXml=$null
+    try{
+        $existingTask=Get-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction SilentlyContinue
+        if($existingTask){$existingTaskXml=Export-ScheduledTask -TaskName $TaskName -TaskPath '\'}
+        foreach($name in $payloadNames){
+            $destination=Join-Path $root $name
+            if(Test-Path -LiteralPath $destination){
+                $item=Get-Item -LiteralPath $destination -Force
+                if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw "Reparse-point installation file rejected: $name"}
+            }
+        }
+        foreach($name in $payloadNames){
+            $destination=Join-Path $root $name
+            $staged=Join-Path $staging $name
+            $backup=Join-Path $staging ('backup-' + $name)
+            if(Test-Path -LiteralPath $destination){
+                Move-Item -LiteralPath $destination -Destination $backup
+                $backedUp[$name]=$backup
+            }
+            Move-Item -LiteralPath $staged -Destination $destination
+            $installed[$name]=$destination
+        }
+        Assert-FileDigest -Path $agent -Expected $AgentSha256 -Label 'Installed agent binary'
+        Assert-FileDigest -Path $restic -Expected $ResticSha256 -Label 'Installed Restic binary'
+        $mode=if($Managed){'managed'}else{'backup'}
+        $args='-config "{0}" -operation {1}' -f $configuration,$mode
+        $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 5) -StartWhenAvailable
+        if($Managed){
+            $command='"{0}" {1}' -f $agent,$args
+            & schtasks.exe /Create /SC MINUTE /MO 1 /TN $TaskName /TR $command /RU SYSTEM /RL HIGHEST /F | Out-Null
+            if($LASTEXITCODE -ne 0){throw 'Task creation failed'}
+            Set-ScheduledTask -TaskName $TaskName -Settings $settings | Out-Null
+        }else{
+            $action=New-ScheduledTaskAction -Execute $agent -Argument $args
+            $trigger=New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.AddHours($DailyHour))
+            $principal=New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest
+            Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+        }
+    }catch{
+        $failure=$_
+        $rollbackErrors=@()
+        for($i=$payloadNames.Count-1;$i-ge 0;$i--){
+            $name=$payloadNames[$i]
+            $destination=Join-Path $root $name
+            try{
+                if($backedUp.ContainsKey($name)){
+                    $backup=$backedUp[$name]
+                    if(Test-Path -LiteralPath $destination){Remove-Item -LiteralPath $destination -Force}
+                    Move-Item -LiteralPath $backup -Destination $destination
+                }elseif($installed.ContainsKey($name) -and (Test-Path -LiteralPath $destination)){
+                    Remove-Item -LiteralPath $destination -Force
+                }
+            }catch{$rollbackErrors+=$_.Exception.Message}
+        }
+        try{
+            if($existingTaskXml){
+                Register-ScheduledTask -TaskName $TaskName -Xml $existingTaskXml -Force | Out-Null
+            }elseif(Get-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction SilentlyContinue){
+                Unregister-ScheduledTask -TaskName $TaskName -TaskPath '\' -Confirm:$false
+            }
+        }catch{$rollbackErrors+=$_.Exception.Message}
+        if($rollbackErrors.Count -gt 0){throw "Upgrade failed: $($failure.Exception.Message). Rollback failed: $($rollbackErrors -join '; ')"}
+        throw $failure
+    }
+}finally{
+    Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
 }
 Write-Output "Protected Fortress task registered: $TaskName. Verify VSS, SSH trust and a complete restore before production."

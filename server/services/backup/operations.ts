@@ -20,7 +20,16 @@ export async function mountSshfs(executor: BackupExecutor, config: BackupJobConf
     const mountPoint = `/tmp/fortress_mnt_${config.jobId}`;
 
     let sshfsTarget: string;
-    if (config.destinationPath.includes('@')) {
+    let sshfsPort: number | undefined;
+    if (config.destinationPath.startsWith('sftp://')) {
+        const target = new URL(config.destinationPath);
+        if (target.password || target.search || target.hash)
+            throw new Error('SFTP URL must not contain a password, query, or fragment');
+        sshfsPort = Number(target.port || 22);
+        if (!Number.isInteger(sshfsPort) || sshfsPort < 1 || sshfsPort > 65535)
+            throw new Error('Invalid SFTP port');
+        sshfsTarget = `${target.username}@${target.hostname}:${target.pathname}`;
+    } else if (config.destinationPath.includes('@')) {
         sshfsTarget = config.destinationPath;
     } else if (config.destinationEndpoint) {
         sshfsTarget = `${config.destinationEndpoint}:${config.destinationPath}`;
@@ -32,7 +41,8 @@ export async function mountSshfs(executor: BackupExecutor, config: BackupJobConf
         throw new Error('SFTP target must be a user@host:/path remote target');
     executor.log('info', `Mounting verified SFTP destination at ${mountPoint}`);
 
-    const mountCmd = `mkdir -p -- ${quote(mountPoint)} && sshfs -o StrictHostKeyChecking=yes,reconnect,ServerAliveInterval=15 ${quote(sshfsTarget)} ${quote(mountPoint)}`;
+    const portOption = sshfsPort ? ` -p ${sshfsPort}` : '';
+    const mountCmd = `mkdir -p -- ${quote(mountPoint)} && sshfs${portOption} -o StrictHostKeyChecking=yes,reconnect,ServerAliveInterval=15 ${quote(sshfsTarget)} ${quote(mountPoint)}`;
 
     const { code, stderr } = await executor.exec(mountCmd);
     if (code !== 0) {
@@ -197,7 +207,7 @@ export async function executeBackup(
 /**
  * List snapshots for a job
  */
-export async function listSnapshots(executor: BackupExecutor, config: BackupJobConfig): Promise<Snapshot[]> {
+export async function listSnapshots(executor: BackupExecutor, config: BackupJobConfig, signal?: AbortSignal): Promise<Snapshot[]> {
     const command = config.tool === 'borg'
         ? buildBorgSnapshotListCommand(config)
         : config.tool === 'restic'
@@ -209,7 +219,7 @@ export async function listSnapshots(executor: BackupExecutor, config: BackupJobC
         throw new Error(`Snapshot listing not supported for ${config.tool}`);
     }
 
-    const { stdout, code } = await executor.exec(command);
+    const { stdout, code } = await executor.exec(command, signal);
     if (code !== 0) throw new Error('Failed to list snapshots');
 
     const snapshots: Snapshot[] = [];
@@ -243,7 +253,7 @@ export async function listSnapshots(executor: BackupExecutor, config: BackupJobC
 /**
  * List files in a snapshot
  */
-export async function listFiles(executor: BackupExecutor, config: BackupJobConfig, snapshotId: string): Promise<any[]> {
+export async function listFiles(executor: BackupExecutor, config: BackupJobConfig, snapshotId: string, signal?: AbortSignal): Promise<any[]> {
     const command = config.tool === 'borg'
         ? buildBorgFileListCommand(config, snapshotId)
         : config.tool === 'restic'
@@ -252,7 +262,7 @@ export async function listFiles(executor: BackupExecutor, config: BackupJobConfi
 
     if (!command) throw new Error(`File listing not supported for ${config.tool}`);
 
-    const { stdout, code } = await executor.exec(command);
+    const { stdout, code } = await executor.exec(command, signal);
     if (code !== 0) throw new Error('Failed to list files');
 
     const files: any[] = [];
@@ -300,10 +310,12 @@ export async function restore(executor: BackupExecutor, config: RestoreJobConfig
     executor.log('info', `Starting Restore for snapshot: ${config.snapshotId}`);
     executor.log('info', `Target Path: ${config.restorePath}`);
 
+    if (config.paths?.length === 0) throw new Error('Restore path selection cannot be empty');
+
     const command = config.tool === 'borg'
-        ? buildBorgRestoreCommand(config, config.snapshotId, config.restorePath)
+        ? buildBorgRestoreCommand(config, config.snapshotId, config.restorePath, config.paths)
         : config.tool === 'restic'
-            ? buildResticRestoreCommand(config, config.snapshotId, config.restorePath)
+            ? buildResticRestoreCommand(config, config.snapshotId, config.restorePath, config.paths)
             : null;
 
     if (!command) {

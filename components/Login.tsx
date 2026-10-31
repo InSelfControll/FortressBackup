@@ -13,13 +13,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLinking, setIsLinking] = useState(false);
 
   const processedCode = React.useRef<string | null>(null);
 
   const [authMode, setAuthMode] = useState<'local' | 'sso' | null>(propAuthMode);
   const checkedAuthMode = React.useRef(false);
-
-
 
   useEffect(() => {
     if (!authMode && !checkedAuthMode.current) {
@@ -38,12 +37,22 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
 
     if (code) {
       let allowed = false;
+      let purpose: 'login' | 'link' = 'login';
+      let linkToken: string | undefined;
       const persisted=sessionStorage.getItem('fortress_github_oauth_state');
       sessionStorage.removeItem('fortress_github_oauth_state');
       if (persisted && state) {
         try {
-          const expected=JSON.parse(persisted) as {state:string;expiresAt:number};
-          allowed=expected.state===state && Date.now()<expected.expiresAt;
+          const expected=JSON.parse(persisted) as {
+            state:string;
+            expiresAt:number;
+            purpose?:'login'|'link';
+            linkToken?:string;
+          };
+          purpose=expected.purpose==='link'?'link':'login';
+          linkToken=expected.linkToken;
+          allowed=expected.state===state && Date.now()<expected.expiresAt &&
+            (purpose!=='link'||typeof linkToken==='string');
         } catch { /* Treat malformed OAuth state as invalid. */ }
       }
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -53,14 +62,14 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
       }
       if (processedCode.current === code) return;
       processedCode.current = code;
-      void handleGitHubCallback(code);
+      void handleGitHubCallback(code,purpose,linkToken);
     }
   }, []);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleSSO = () => {
+  const handleSSO = (purpose: 'login' | 'link' = 'login', linkToken?: string) => {
     if (!ssoConfig?.provider) {
       setError('SSO not configured');
       return;
@@ -78,7 +87,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
       const bytes=crypto.getRandomValues(new Uint8Array(32));
       const state=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
       sessionStorage.setItem('fortress_github_oauth_state',
-        JSON.stringify({state,expiresAt:Date.now()+10*60*1000}));
+        JSON.stringify({state,expiresAt:Date.now()+10*60*1000,purpose,linkToken}));
       window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
     } else if (ssoConfig.provider === 'google') {
       const clientId = ssoConfig.clientId;
@@ -92,16 +101,19 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
     }
   };
 
-  const handleGitHubCallback = async (code: string) => {
+  const handleGitHubCallback = async (code: string, purpose: 'login' | 'link', linkToken?: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await API.githubAuth(code);
+      const response = purpose==='link'
+        ? await API.githubLink(code,linkToken)
+        : await API.githubAuth(code);
       const result = response.data;
       if (result && result.user) {
         localStorage.setItem('fortress_user_session', JSON.stringify(result.user));
         onLogin(result.user);
       } else {
+        if (response.error==='Account linking required') setIsLinking(true);
         setError(response.error || 'GitHub authentication failed');
       }
     } catch (err) {
@@ -117,6 +129,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
     setIsLoading(true);
     try {
       const response = await API.login(email, password);
+      if (response.linkToken) {
+        handleSSO('link',response.linkToken);
+        return;
+      }
       const result = response.data;
       if (result && result.user) {
         localStorage.setItem('fortress_user_session', JSON.stringify(result.user));
@@ -173,7 +189,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
           {authMode === 'sso' && ssoConfig?.provider && (
             <>
               <button
-                onClick={handleSSO}
+                onClick={()=>handleSSO()}
                 className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg font-medium transition-colors"
                 style={{
                   backgroundColor: ssoConfig?.provider === 'google' ? '#fff' : 'var(--color-bg-tertiary)',
@@ -189,12 +205,27 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
               <p className="text-center text-xs mt-4" style={{ color: 'var(--color-text-muted)' }}>
                 Your organization uses {providerName} for authentication
               </p>
+              {ssoConfig.provider==='github' && (
+                <button
+                  type="button"
+                  onClick={()=>{setIsLinking(!isLinking);setError(null)}}
+                  className="w-full mt-4 py-2 text-sm font-medium"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                >
+                  {isLinking?'Cancel account linking':'Link an existing local account'}
+                </button>
+              )}
             </>
           )}
 
           {/* Local Auth */}
-          {authMode === 'local' && (
+          {(authMode === 'local' || isLinking) && (
             <form onSubmit={handleLocalLogin} className="space-y-4">
+              {authMode==='sso' && (
+                <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                  Prove your current password, then authorize GitHub to link your account.
+                </p>
+              )}
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>Email</label>
                 <div className="relative">
@@ -234,7 +265,9 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
                 style={{ backgroundColor: 'var(--color-accent-primary)', color: '#fff' }}
               >
                 {isLoading ? <Loader2 size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
-                {isLoading ? 'Signing in...' : 'Sign In'}
+                {isLoading
+                  ? (authMode==='sso'?'Checking password...':'Signing in...')
+                  : (authMode==='sso'?'Verify password and continue with GitHub':'Sign In')}
               </button>
             </form>
           )}

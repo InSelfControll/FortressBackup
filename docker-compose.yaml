@@ -7,7 +7,7 @@ services:
     container_name: fortress-backup
     restart: unless-stopped
     ports:
-      - "9001:9001"
+      - "127.0.0.1:9001:9001"
     environment:
       - NODE_ENV=production
       - DB_TYPE=sqlite

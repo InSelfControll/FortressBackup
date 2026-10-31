@@ -52,6 +52,7 @@ export interface Snapshot {
 export interface RestoreJobConfig extends BackupJobConfig {
     snapshotId: string;
     restorePath: string; // Directory to restore files into
+    paths?: string[];
 }
 
 export interface SSHConfig {

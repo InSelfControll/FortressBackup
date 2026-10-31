@@ -9,7 +9,7 @@ services:
     container_name: fortress-backup
     restart: unless-stopped
     ports:
-      - "9001:9001"
+      - "127.0.0.1:9001:9001"
     environment:
       - NODE_ENV=production
       - DB_TYPE=postgres
@@ -18,6 +18,9 @@ services:
       - PG_DATABASE=fortress
       - PG_USER=fortress
       - PG_PASSWORD=${PG_PASSWORD:?Set a strong PostgreSQL password}
+      # Explicit exception: plaintext is limited to this private Compose bridge; PostgreSQL publishes no host port.
+      - PG_SSLMODE=disable
+      - FORTRESS_ALLOW_PRIVATE_POSTGRES_WITHOUT_TLS=true
       - JWT_SECRET=${JWT_SECRET:?Set a random JWT_SECRET of at least 32 characters}
       - FORTRESS_BOOTSTRAP_TOKEN=${FORTRESS_BOOTSTRAP_TOKEN:?Set a random one-time bootstrap token}
       - FORTRESS_CREDENTIAL_KEY=${FORTRESS_CREDENTIAL_KEY:?Set a random 32-byte hex encryption key}
@@ -29,7 +32,7 @@ services:
       - fortress-network
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
     container_name: fortress-postgres
     restart: unless-stopped
     environment:

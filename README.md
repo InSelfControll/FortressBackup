@@ -44,6 +44,8 @@ docker compose -f Fortress.yaml up -d --build
 
 Open `http://localhost:9001` on the host. Non-local access requires a trusted TLS reverse proxy or a private access path. Do not publish port `9001` directly to an untrusted network.
 
+By default, Fortress identifies clients by their direct connection and ignores forwarding headers for login admission. When exactly one trusted reverse proxy connects to Fortress, set `TRUST_PROXY=1` in the controller environment so login limits use the client address supplied by that proxy. For Compose, add it to the service's `environment` mapping. Leave it unset for direct access or any other proxy topology.
+
 ## Security and recovery
 
 - Persist `/app/data` and do not grant writable access to unrelated users. The container stores generated runtime configuration, including JWT and credential-encryption material, in `/app/data/.env`.

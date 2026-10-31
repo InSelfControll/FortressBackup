@@ -9,7 +9,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Builder - Install dependencies and build frontend
 # -----------------------------------------------------------------------------
-FROM oven/bun:1.4.4-alpine AS builder
+FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS builder
 
 WORKDIR /app
 
@@ -28,7 +28,7 @@ RUN bun run build
 # -----------------------------------------------------------------------------
 # Stage 2: Production - Bun runtime with bun:sqlite
 # -----------------------------------------------------------------------------
-FROM oven/bun:1.4.4-alpine AS production
+FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS production
 
 WORKDIR /app
 
@@ -38,6 +38,8 @@ WORKDIR /app
 # - wget for healthchecks
 # - tzdata for timezone support
 # - su-exec for dropping privileges in entrypoint
+# Unresolved immutable Alpine package inputs: borgbackup, restic, rclone, openssh-client, wget, tzdata, su-exec.
+# No repository snapshot or package-content digests are verified; version labels alone are not immutable identities.
 RUN apk add --no-cache \
     borgbackup \
     restic \

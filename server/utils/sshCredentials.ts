@@ -1,10 +1,10 @@
 /**
  * SSH Credential Resolution Utility
- * Handles decryption and resolution of SSH credentials from database
+ * Handles decryption, resolution, and legacy migration of SSH credentials from database
  */
 
 import * as db from '../db/index.js';
-import { decrypt } from '../encryption.js';
+import { decrypt, encrypt } from '../encryption.js';
 import { getJwtSecret } from '../middleware/auth.js';
 
 export interface ResolvedSSHCredentials {
@@ -23,9 +23,14 @@ export async function resolveSSHKeyCredentials(sshKeyId: string): Promise<Resolv
 
     let privateKey: string | undefined;
     let passphrase: string | undefined;
+    const hasEncryptedPrivateKey = storedKey.is_encrypted && storedKey.private_key_data.startsWith('{');
+    const hasEncryptedPassphrase = storedKey.passphrase?.startsWith('{') ?? false;
+    const hasPlaintextPassphrase = typeof storedKey.passphrase === 'string'
+        && storedKey.passphrase.length > 0
+        && !hasEncryptedPassphrase;
 
     // Decrypt private key
-    if (storedKey.is_encrypted && storedKey.private_key_data.startsWith('{')) {
+    if (hasEncryptedPrivateKey) {
         const encryptedData = JSON.parse(storedKey.private_key_data);
         try {
             privateKey = decrypt(encryptedData, getJwtSecret());
@@ -37,8 +42,8 @@ export async function resolveSSHKeyCredentials(sshKeyId: string): Promise<Resolv
     }
 
     // Decrypt passphrase if present
-    if (storedKey.passphrase && storedKey.passphrase.startsWith('{')) {
-        const encryptedPass = JSON.parse(storedKey.passphrase);
+    if (hasEncryptedPassphrase) {
+        const encryptedPass = JSON.parse(storedKey.passphrase!);
         try {
             passphrase = decrypt(encryptedPass, getJwtSecret());
         } catch {
@@ -46,6 +51,20 @@ export async function resolveSSHKeyCredentials(sshKeyId: string): Promise<Resolv
         }
     } else {
         passphrase = storedKey.passphrase;
+    }
+
+    if (!hasEncryptedPrivateKey || hasPlaintextPassphrase) {
+        const encryptionSecret = getJwtSecret();
+        await db.saveSSHKey({
+            ...storedKey,
+            private_key_data: hasEncryptedPrivateKey
+                ? storedKey.private_key_data
+                : JSON.stringify(encrypt(privateKey!, encryptionSecret)),
+            passphrase: hasPlaintextPassphrase
+                ? JSON.stringify(encrypt(passphrase!, encryptionSecret))
+                : storedKey.passphrase,
+            is_encrypted: true
+        });
     }
 
     console.log(`[SSH] Successfully resolved key: ${storedKey.name}`);

@@ -9,8 +9,22 @@ import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { toAPISystem, toDBSystem } from '../utils/mappers.js';
 import { resolveSSHCredentialsFromRequest } from '../utils/sshCredentials.js';
 import { deployToSystem, DeploymentLog } from '../services/ssh/index.js';
+import { validateHostPublicKey } from '../services/backup/rsync.js';
+import { hostFingerprintFromPublicKey } from '../services/ssh/hostKey.js';
 
 const router = Router();
+const withHostFingerprint=(system:any):any=>
+    system.hostPublicKey && !system.hostFingerprint
+        ? {...system,hostFingerprint:hostFingerprintFromPublicKey(system.hostPublicKey)}
+        : system;
+const validHostPublicKey=(value:unknown):boolean=>{
+    if(value===undefined)return true;
+    try{validateHostPublicKey(value);return true;}catch{return false;}
+};
+const saveSystem=async(system:any):Promise<void>=>{
+    await db.saveSystem(system);
+    await db.run('UPDATE systems SET host_public_key=? WHERE id=?',[system.host_public_key||null,system.id]);
+};
 const validSystem=(value:any):boolean =>
     value && typeof value.name==='string' && value.name.trim().length>0 && value.name.length<=120 &&
     typeof value.host==='string' && value.host.length<=253 &&
@@ -19,7 +33,8 @@ const validSystem=(value:any):boolean =>
     (value.username===undefined || typeof value.username==='string' &&
       /^[A-Za-z0-9._-]{1,120}$/.test(value.username)) &&
     (value.hostFingerprint===undefined || typeof value.hostFingerprint==='string' &&
-      /^SHA256:[A-Za-z0-9+/]{43}=?$/.test(value.hostFingerprint));
+      /^SHA256:[A-Za-z0-9+/]{43}=?$/.test(value.hostFingerprint)) &&
+    validHostPublicKey(value.hostPublicKey);
 
 
 // Get all systems
@@ -38,9 +53,9 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
         if (!validSystem(req.body))
             return res.status(400).json({error:'Invalid system host, user or fingerprint'});
         const systemId = crypto.randomUUID();
-        const system = { ...req.body, id: systemId };
+        const system = withHostFingerprint({ ...req.body, id: systemId });
         const dbSystem = toDBSystem(system);
-        await db.saveSystem(dbSystem);
+        await saveSystem(dbSystem);
         res.json(toAPISystem(dbSystem));
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -52,9 +67,9 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         if (!validSystem(req.body))
             return res.status(400).json({error:'Invalid system host, user or fingerprint'});
-        const system = { ...req.body, id: req.params.id };
+        const system = withHostFingerprint({ ...req.body, id: req.params.id });
         const dbSystem = toDBSystem(system);
-        await db.saveSystem(dbSystem);
+        await saveSystem(dbSystem);
         res.json(toAPISystem(dbSystem));
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -124,7 +139,7 @@ router.post('/:id/deploy', authenticateToken, requireAdmin, async (req, res) => 
                 status: 'online' as const,
                 last_seen: new Date().toISOString()
             };
-            await db.saveSystem(updatedSystem);
+            await saveSystem(updatedSystem);
 
             res.json({
                 success: true,

@@ -39,7 +39,8 @@ export const toAPISystem = (sys: any) => {
         installedTools: sys.installed_tools && typeof sys.installed_tools === 'string' ? JSON.parse(sys.installed_tools) : [],
         lastSeen: sys.last_seen,
         sshKeyId: sys.ssh_key_id,
-        hostFingerprint: sys.host_fingerprint
+        hostFingerprint: sys.host_fingerprint,
+        hostPublicKey: sys.host_public_key
     };
 };
 
@@ -49,6 +50,7 @@ export const toDBSystem = (sys: any) => {
         installed_tools: Array.isArray(sys.installedTools) ? JSON.stringify(sys.installedTools) : sys.installed_tools,
         last_seen: sys.lastSeen || sys.last_seen,
         ssh_key_id: sys.sshKeyId || sys.ssh_key_id,
-        host_fingerprint: sys.hostFingerprint || sys.host_fingerprint
+        host_fingerprint: sys.hostFingerprint || sys.host_fingerprint,
+        host_public_key: sys.hostPublicKey || sys.host_public_key
     };
 };

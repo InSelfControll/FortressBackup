@@ -68,7 +68,8 @@ export const runRestoreJob = async (
  */
 export const listJobSnapshots = async (
     sshConfig: SSHConfig,
-    config: BackupJobConfig
+    config: BackupJobConfig,
+    signal?: AbortSignal
 ): Promise<Snapshot[]> => {
     const executor = new BackupExecutor(false);
     const connected = await executor.connect(sshConfig);
@@ -78,12 +79,9 @@ export const listJobSnapshots = async (
     }
 
     try {
-        const snapshots = await listSnapshots(executor, config);
+        return await listSnapshots(executor, config, signal);
+    } finally {
         executor.disconnect();
-        return snapshots;
-    } catch (error) {
-        executor.disconnect();
-        throw error;
     }
 };
 
@@ -93,18 +91,16 @@ export const listJobSnapshots = async (
 export const listJobFiles = async (
     sshConfig: SSHConfig,
     config: BackupJobConfig,
-    snapshotId: string
+    snapshotId: string,
+    signal?: AbortSignal
 ): Promise<any[]> => {
     const executor = new BackupExecutor(false);
     const connected = await executor.connect(sshConfig);
     if (!connected) throw new Error('Failed to connect to SSH server');
 
     try {
-        const files = await listFiles(executor, config, snapshotId);
+        return await listFiles(executor, config, snapshotId, signal);
+    } finally {
         executor.disconnect();
-        return files;
-    } catch (error) {
-        executor.disconnect();
-        throw error;
     }
 };

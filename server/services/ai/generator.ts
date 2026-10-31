@@ -1,6 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { BackupTool, AIProvider, AIConfig } from '../../../types.js';
+import { fetchJsonWithLimits } from '../../utils/http.js';
 
 const backupConfigSchema = {
     type: Type.OBJECT,
@@ -36,7 +37,7 @@ const backupConfigSchema = {
 const SYSTEM_PROMPT = `Suggest a backup configuration in JSON format.
 Ensure fields: tool (BorgBackup, Restic, Rsync, Rclone), schedule (cron), jobName (string), and retention (object with keepHourly, keepDaily, keepWeekly, keepMonthly, keepYearly as integers).`;
 
-export const generateBackupConfig = async (userPrompt: string, config: AIConfig) => {
+export const generateBackupConfig = async (userPrompt: string, config: AIConfig, signal?: AbortSignal) => {
     if (config.provider === AIProvider.NONE) {
         throw new Error("AI is not configured.");
     }
@@ -82,7 +83,7 @@ export const generateBackupConfig = async (userPrompt: string, config: AIConfig)
         if (!apiKey) throw new Error("API Key is missing for OpenAI provider");
 
         try {
-            const response = await fetch(`${baseUrl}/chat/completions`, {
+            const response = await fetchJsonWithLimits(`${baseUrl}/chat/completions`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -96,13 +97,13 @@ export const generateBackupConfig = async (userPrompt: string, config: AIConfig)
                     ],
                     response_format: { type: "json_object" }
                 })
-            });
+            }, { timeoutMs: 30_000, maxBytes: 1_048_576, signal });
 
             if (!response.ok) {
-                throw new Error(`OpenAI API error: ${response.statusText}`);
+                throw new Error(`OpenAI API error: ${response.status}`);
             }
 
-            const data = await response.json();
+            const data = response.data;
             return JSON.parse(data.choices[0].message.content);
         } catch (error) {
             console.error("AI provider request failed");

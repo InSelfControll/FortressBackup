@@ -55,6 +55,7 @@ export const generateEnvFile = (config: EnvConfig, port: number = 9001) => {
         lines.push(`PG_DATABASE=${dbConfig.database || 'fortress'}`);
         lines.push(`PG_USER=${dbConfig.username || 'postgres'}`);
         lines.push(`PG_PASSWORD=${dbConfig.password || ''}`);
+        lines.push('PG_SSLMODE=verify-full');
     }
 
     lines.push('');
@@ -87,7 +88,7 @@ export const generateEnvFile = (config: EnvConfig, port: number = 9001) => {
         const at=line.indexOf('=');
         if (at <= 0) throw new Error('Invalid environment record');
         const name=line.slice(0,at), value=line.slice(at+1);
-        if (/[\\r\\n\\0]/.test(value) || value.length > 4096)
+        if (/[\r\n\0]/.test(value) || value.length > 4096)
             throw new Error('Unsafe environment setting');
         if (name==='JWT_SECRET' || name==='FORTRESS_CREDENTIAL_KEY') return line;
         return name + '=' + JSON.stringify(value);

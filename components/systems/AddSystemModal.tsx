@@ -9,26 +9,28 @@ interface AddSystemModalProps {
     sshKeys: SSHKey[];
 }
 
+export const buildSystemData = (newSystem: Partial<System>, id: string): System => ({
+    ...newSystem,
+    id,
+    status: 'online',
+    lastSeen: 'Now',
+    health: 100,
+    installedTools: []
+} as System);
+
 export const AddSystemModal: React.FC<AddSystemModalProps> = ({ isOpen, onClose, sshKeys }) => {
     const createSystemMutation = useCreateSystem();
 
     const [newSystem, setNewSystem] = useState<Partial<System> & { sshKeyId?: string }>({
-        name: '', host: '', type: 'remote', port: 22, username: 'root', sshKeyId: ''
+        name: '', host: '', type: 'remote', port: 22, username: 'root', sshKeyId: '', hostPublicKey: ''
     });
 
     const handleAddSystem = () => {
         if (newSystem.name && newSystem.host) {
-            createSystemMutation.mutate({
-                ...newSystem,
-                id: crypto.randomUUID(),
-                status: 'online',
-                lastSeen: 'Now',
-                health: 100,
-                installedTools: []
-            } as System, {
+            createSystemMutation.mutate(buildSystemData(newSystem, crypto.randomUUID()), {
                 onSuccess: () => {
                     onClose();
-                    setNewSystem({ name: '', host: '', type: 'remote', port: 22, username: 'root' });
+                    setNewSystem({ name: '', host: '', type: 'remote', port: 22, username: 'root', hostPublicKey: '' });
                     toast.success('System registered successfully');
                 }
             });
@@ -72,6 +74,10 @@ export const AddSystemModal: React.FC<AddSystemModalProps> = ({ isOpen, onClose,
                                 <option key={key.id} value={key.id}>{key.name}</option>
                             ))}
                         </select>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Host Public Key (Optional)</label>
+                        <textarea rows={3} value={newSystem.hostPublicKey || ''} onChange={e => setNewSystem({ ...newSystem, hostPublicKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..." />
                     </div>
                 </div>
                 <div className="flex justify-end gap-4 mt-10">

@@ -24,7 +24,7 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     const address=server.address();
     if (!address || typeof address==='string') throw new Error('Unable to bind test server');
     const base='http://127.0.0.1:'+address.port+'/api/managed-agents';
-    const adminToken=jwt.sign({id:'admin',role:'admin'},ephemeralJwtSecret);
+    const adminToken=jwt.sign({id:'admin',role:'admin',authEpoch:0},ephemeralJwtSecret);
     const adminHeaders={Authorization:'Bearer '+adminToken,'Content-Type':'application/json'};
     const api=async(path:string,body:any,headers:Record<string,string>=adminHeaders,method='POST')=>{
       const response=await fetch(base+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});

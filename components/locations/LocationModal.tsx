@@ -21,67 +21,108 @@ const LOCATION_TYPES = [
     { id: 'onedrive', name: 'OneDrive (Rclone)', icon: Cloud, color: 'bg-blue-600/10 text-blue-300 border-blue-500/20' },
 ];
 
+type LocationPayload = Omit<Location, 'accessKey' | 'secretKey'> & {
+    access_key?: string;
+    secret_key?: string;
+    host_public_key?: string;
+};
+
+const parseSftpTarget = (path: string): Partial<Location> => {
+    if (!path.startsWith('sftp://')) return {};
+    try {
+        const target = new URL(path);
+        return {
+            path: target.pathname,
+            endpoint: target.hostname,
+            region: target.port || '22',
+            accessKey: target.username || undefined
+        };
+    } catch {
+        return {};
+    }
+};
+
+const buildSftpTarget = (location: Partial<Location>): string => {
+    const path = location.path as string;
+    if (path.startsWith('sftp:')) return path;
+    const remotePath = path.startsWith('/') ? path : `/${path}`;
+    const username = location.accessKey ? `${location.accessKey}@` : '';
+    return `sftp://${username}${location.endpoint}:${location.region || '22'}${remotePath}`;
+};
+
+export const getLocationFormState = (location: Location | null): Partial<Location> => {
+    if (!location) {
+        return { type: 's3', path: '', endpoint: 'https://s3.amazonaws.com', region: 'us-east-1' };
+    }
+
+    const serverLocation = location as Location & { host_public_key?: string };
+    const sftpFields = location.type === 'sftp' ? parseSftpTarget(location.path) : {};
+    return {
+        name: location.name,
+        type: location.type,
+        path: sftpFields.path ?? location.path,
+        endpoint: sftpFields.endpoint ?? location.endpoint,
+        region: sftpFields.region ?? location.region,
+        accessKey: sftpFields.accessKey ?? location.accessKey,
+        secretKey: location.secretKey,
+        hostPublicKey: location.hostPublicKey ?? serverLocation.host_public_key
+    };
+};
+
+export const canSubmitLocation = (location: Partial<Location>): boolean => Boolean(
+    location.name && location.path && (location.type !== 'sftp' || location.hostPublicKey?.trim())
+);
+
+export const buildLocationData = (
+    newLocation: Partial<Location>,
+    isCustomS3: boolean,
+    id: string
+): LocationPayload => ({
+    id,
+    name: newLocation.name as string,
+    type: newLocation.type as Location['type'],
+    path: newLocation.type === 'sftp' ? buildSftpTarget(newLocation) : newLocation.path as string,
+    endpoint: newLocation.type === 'sftp' || isCustomS3 ? newLocation.endpoint : undefined,
+    region: newLocation.region,
+    access_key: newLocation.accessKey,
+    secret_key: newLocation.secretKey,
+    ...(newLocation.type === 'sftp' ? { host_public_key: newLocation.hostPublicKey?.trim() } : {})
+});
+
 export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, onClose }) => {
     const createLocationMutation = useCreateLocation();
     const updateLocationMutation = useUpdateLocation();
 
-    const [newLocation, setNewLocation] = useState<Partial<Location>>({
-        type: 's3',
-        path: '',
-        endpoint: 'https://s3.amazonaws.com',
-        region: 'us-east-1'
-    });
-
-    const [isCustomS3, setIsCustomS3] = useState(false);
+    const [newLocation, setNewLocation] = useState<Partial<Location>>(() => getLocationFormState(location));
+    const [isCustomS3, setIsCustomS3] = useState(
+        !!location?.endpoint && location.endpoint !== 'https://s3.amazonaws.com'
+    );
 
     useEffect(() => {
-        if (location) {
-            setNewLocation({
-                name: location.name,
-                type: location.type,
-                path: location.path,
-                endpoint: location.endpoint,
-                region: location.region,
-                accessKey: location.accessKey,
-                secretKey: location.secretKey
-            });
-            setIsCustomS3(!!location.endpoint && location.endpoint !== 'https://s3.amazonaws.com');
-        } else {
-            setNewLocation({ type: 's3', path: '', endpoint: 'https://s3.amazonaws.com', region: 'us-east-1' });
-            setIsCustomS3(false);
-        }
+        setNewLocation(getLocationFormState(location));
+        setIsCustomS3(!!location?.endpoint && location.endpoint !== 'https://s3.amazonaws.com');
     }, [location, isOpen]);
 
     const handleSubmit = () => {
-        if (newLocation.name && newLocation.path) {
-            const locationData: Location = {
-                id: location?.id || crypto.randomUUID(),
-                name: newLocation.name,
-                type: newLocation.type as Location['type'],
-                path: newLocation.path,
-                endpoint: isCustomS3 ? newLocation.endpoint : undefined,
-                region: newLocation.region,
-                accessKey: newLocation.accessKey,
-                secretKey: newLocation.secretKey
-            };
+        if (!canSubmitLocation(newLocation)) return;
 
-            if (location) {
-                updateLocationMutation.mutate(locationData, {
-                    onSuccess: () => {
-                        onClose();
-                        toast.success('Location updated successfully');
-                    },
-                    onError: () => toast.error('Failed to update location')
-                });
-            } else {
-                createLocationMutation.mutate(locationData, {
-                    onSuccess: () => {
-                        onClose();
-                        toast.success('Location added successfully');
-                    },
-                    onError: () => toast.error('Failed to add location')
-                });
-            }
+        const locationData = buildLocationData(newLocation, isCustomS3, location?.id || crypto.randomUUID());
+        if (location) {
+            updateLocationMutation.mutate(locationData, {
+                onSuccess: () => {
+                    onClose();
+                    toast.success('Location updated successfully');
+                },
+                onError: () => toast.error('Failed to update location')
+            });
+        } else {
+            createLocationMutation.mutate(locationData, {
+                onSuccess: () => {
+                    onClose();
+                    toast.success('Location added successfully');
+                },
+                onError: () => toast.error('Failed to add location')
+            });
         }
     };
 
@@ -143,6 +184,10 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                             </div>
                         </div>
                         <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Host Public Key</label>
+                            <textarea required rows={3} value={newLocation.hostPublicKey || ''} onChange={e => setNewLocation({ ...newLocation, hostPublicKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..." />
+                        </div>
+                        <div className="space-y-2">
                             <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Remote Path</label>
                             <input type="text" value={newLocation.path || ''} onChange={e => setNewLocation({ ...newLocation, path: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono outline-none focus:ring-2 focus:ring-indigo-500" placeholder="/backups/production" />
                         </div>
@@ -152,8 +197,9 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                                 <input type="text" value={newLocation.accessKey || ''} onChange={e => setNewLocation({ ...newLocation, accessKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="backup_user" />
                             </div>
                             <div className="space-y-2">
-                                <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Password / Key</label>
-                                <input type="password" value={newLocation.secretKey || ''} onChange={e => setNewLocation({ ...newLocation, secretKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Use SSH key or password" />
+                                <label className="text-[10px] font-black uppercase text-slate-500 ml-2">SSH Private Key</label>
+                                <textarea rows={5} value={newLocation.secretKey || ''} onChange={e => setNewLocation({ ...newLocation, secretKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />
+                                <p className="text-xs text-slate-400">Restic requires an SSH private key. Password-only authentication is not supported.</p>
                             </div>
                         </div>
                     </>
@@ -277,7 +323,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                     <button onClick={onClose} className="px-6 py-3 text-slate-400 hover:text-white font-bold transition-colors">Cancel</button>
                     <button
                         onClick={handleSubmit}
-                        disabled={!newLocation.name || !newLocation.path}
+                        disabled={!canSubmitLocation(newLocation)}
                         className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50"
                     >
                         {location ? 'Update Location' : 'Add Location'}

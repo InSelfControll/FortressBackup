@@ -3,15 +3,17 @@ on:
   push:
     paths:
       - 'agent/windows/**'
+      - 'tests/windows-static.test.ts'
       - '.github/workflows/windows-agent.yml'
   pull_request:
     paths:
       - 'agent/windows/**'
+      - 'tests/windows-static.test.ts'
       - '.github/workflows/windows-agent.yml'
 permissions:
   contents: read
 jobs:
-  test-windows:
+  build:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -28,9 +30,39 @@ jobs:
       - name: Build executable
         working-directory: agent/windows
         run: go build -trimpath -o fortress-agent.exe .
+      - name: Hash agent executable
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path ./agent/windows/fortress-agent.exe).Path
+          $digest = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+          $checksum = Join-Path (Split-Path -Parent $exe) 'fortress-agent.exe.sha256'
+          Set-Content -LiteralPath $checksum -Value "$digest  fortress-agent.exe" -Encoding ascii -NoNewline
+          Write-Output "Agent SHA256: $digest"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: github.event_name == 'push'
+        with:
+          name: fortress-agent-windows-amd64
+          path: |
+            agent/windows/fortress-agent.exe
+            agent/windows/fortress-agent.exe.sha256
+          if-no-files-found: error
+
+  verify:
+    needs: build
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version-file: agent/windows/go.mod
+          cache: false
+      - name: Build verification executable
+        working-directory: agent/windows
+        run: go build -trimpath -o fortress-agent.exe .
       - name: Validate protected managed scheduled task
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $exe = (Resolve-Path ./agent/windows/fortress-agent.exe).Path
           $cfg = Join-Path $env:RUNNER_TEMP 'agent-config.json'
           $pw = Join-Path $env:RUNNER_TEMP 'repo-password.txt'
@@ -40,12 +72,48 @@ jobs:
           @{resticPath=$exe;passwordFile=$pw;agentTokenFile=$token;repository='sftp:example:repo';sources=@('C:\\Windows')} |
             ConvertTo-Json | Set-Content -LiteralPath $cfg -Encoding utf8
           $digest = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+          & ./agent/windows/install-task.ps1 -AgentPath $exe -ConfigPath $cfg -AgentSha256 $digest -ResticSha256 $digest -TaskName FortressBackup-CITest -Managed
+          $task = Get-ScheduledTask -TaskName FortressBackup-CITest -ErrorAction Stop
+          if (-not $task) { throw 'Task not registered' }
+      - name: Verify upgrade rollback and protected ACLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:ProgramData 'FortressBackup'
+          $installedAgent = Join-Path $root 'fortress-agent.exe'
+          $exe = (Resolve-Path ./agent/windows/fortress-agent.exe).Path
+          $cfg = Join-Path $env:RUNNER_TEMP 'agent-config.json'
+          $digest = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
           try {
+            $beforeHash=(Get-FileHash -LiteralPath $installedAgent -Algorithm SHA256).Hash
+            $beforeTask=Export-ScheduledTask -TaskName FortressBackup-CITest
+            $rejected=$false
+            try {
+              & ./agent/windows/install-task.ps1 -AgentPath $exe -ConfigPath $cfg -AgentSha256 ('0' * 64) -ResticSha256 $digest -TaskName FortressBackup-CITest -Managed
+            } catch {
+              $rejected=$true
+            }
+            if (-not $rejected) { throw 'Upgrade with a mismatched digest unexpectedly succeeded' }
+            if ($beforeHash -ne (Get-FileHash -LiteralPath $installedAgent -Algorithm SHA256).Hash) {
+              throw 'Live agent changed after a rejected upgrade'
+            }
+            if ($beforeTask -ne (Export-ScheduledTask -TaskName FortressBackup-CITest)) {
+              throw 'Scheduled task changed after a rejected upgrade'
+            }
+
+            $acl=Get-Acl -LiteralPath $root
+            $acl.SetSecurityDescriptorSddlForm($acl.Sddl + '(A;OICI;FA;;;WD)')
+            Set-Acl -LiteralPath $root -AclObject $acl
+            $acl=Get-Acl -LiteralPath $installedAgent
+            $acl.SetSecurityDescriptorSddlForm($acl.Sddl + '(A;;FA;;;WD)')
+            Set-Acl -LiteralPath $installedAgent -AclObject $acl
+
             & ./agent/windows/install-task.ps1 -AgentPath $exe -ConfigPath $cfg -AgentSha256 $digest -ResticSha256 $digest -TaskName FortressBackup-CITest -Managed
-            $task = Get-ScheduledTask -TaskName FortressBackup-CITest -ErrorAction Stop
-            if (-not $task) { throw 'Task not registered' }
+            if ((Get-Acl -LiteralPath $root).Sddl.Contains(';;;WD')) { throw 'Hostile ACL survived successful upgrade' }
+            if ((Get-Acl -LiteralPath $installedAgent).Sddl.Contains(';;;WD')) { throw 'Hostile ACL survived successful upgrade' }
           } finally {
             Unregister-ScheduledTask -TaskName FortressBackup-CITest -Confirm:$false -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
           }
       - name: Verify Windows VSS snapshot and full Restic restore
         shell: pwsh
@@ -82,8 +150,3 @@ jobs:
             throw 'Restored file does not match original'
           }
           Write-Output 'Windows VSS backup and restore verified'
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: fortress-agent-windows-amd64
-          path: agent/windows/fortress-agent.exe
-          if-no-files-found: error

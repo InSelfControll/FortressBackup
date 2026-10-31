@@ -33,7 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, c
                     { id: 'systems', label: 'Systems', icon: Server },
                     ...(currentUser.role === 'admin' ? [{ id: 'managed-clients', label: 'Managed Clients', icon: Server }] : []),
                     { id: 'locations', label: 'Storage Locations', icon: HardDrive },
-                    { id: 'settings', label: 'Settings', icon: Settings },
+                    ...(currentUser.role === 'admin' ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
                 ].map((item) => {
                     const Icon = item.icon;
                     const active = currentView === item.id;
