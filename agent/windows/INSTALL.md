@@ -1,53 +1,61 @@
 # Install Fortress Backup on Windows x64
 
-Download `fortressbackup-windows-amd64-<version>.zip` from
-[GitHub Releases](https://github.com/InSelfControll/FortressBackup/releases).
-It includes the Fortress agent, Restic, the installer, an example configuration,
-the managed-client guide, licenses, and SHA-256 checksums. You do not need Go.
+Download **FortressBackup-Setup-<version>.exe** from
+[GitHub Releases](https://github.com/InSelfControll/FortressBackup/releases),
+then double-click it and approve the administrator prompt. The single installer
+includes Fortress Backup, its agent, and Restic. No ZIP extraction, Go, or
+separate Restic download is needed.
 
-**Enrollment creates credentials; it does not install software.** Windows clients
-remain pre-production. Folder selection is configured on the laptop rather than
-through the dashboard.
+The installer adds the app to `C:\Program Files\FortressBackup`, the Start menu,
+and Windows **Installed apps**. You can open configuration after Finish or skip
+it and configure later. Installing the app does not enroll a client or start an
+unconfigured backup task.
 
-## Guided setup
+## Configure the installed app
 
-Extract the **complete ZIP**, then double-click **FortressBackup-Setup.exe**.
-The executable opens setup without a terminal. **Install FortressBackup.cmd**
-remains available as an alternative launcher for the same graphical setup.
-Approve the administrator prompt. A graphical setup window asks for the
-enrollment ID and token and trusted HTTPS controller URL. Click **Connect** to retrieve the
-saved repository selected in **Managed Clients**. A sole configured Restic SFTP
-repository is selected automatically during enrollment. Existing clients can
-choose their repository in the client row without enrolling again.
+Open **Fortress Backup** from the Start menu. Enter the trusted HTTPS controller
+address and the enrollment ID/token from **Managed Clients**, then click
+**Connect**. Select the repository in the dashboard; a sole saved Restic SFTP
+repository is assigned automatically during enrollment. Existing enrollments
+remain valid.
 
-The repository URL, encryption password, SSH identity, and pinned host key come
-from the controller. Setup does not ask you to type them again or configure
-SYSTEM's global SSH files. It installs protected credentials for the agent and
-enables the native Windows OpenSSH client if missing. Use **Add folder...** and
-**Remove** to choose folders, then click **Install**. Connection and installation
-run in the background with visible progress. Errors remain in the setup window;
-there are no console prompts. Closing before Install leaves the installation unchanged.
+The repository URL, encryption password, SSH identity, and pinned host key are
+retrieved automatically. Use **Add folder...** and **Remove** to select folders,
+then click **Save and connect**. The app enables Windows OpenSSH if needed,
+installs protected credentials, and checks storage and controller access as
+SYSTEM before starting the background agent. Errors and progress stay visible.
+Closing the app before saving leaves your current backup configuration unchanged.
 
-The repository must already be initialized and reachable from the laptop. An
-HTTP server IP cannot be used for credential provisioning; use a reachable
-controller HTTPS name with a certificate Windows trusts. The controller's
-`TRUST_PROXY` must identify the trusted HTTPS reverse proxy when TLS terminates
-outside Fortress. Untrusted forwarding headers and plaintext HTTP are rejected.
+Reopen Fortress Backup to edit folders later. It loads the existing connection,
+masked enrollment token, and selected folders. Saving folder changes preserves
+existing exclusions, host name, timeout, and VSS settings.
 
-Setup verifies binary checksums, validates configuration, and checks repository
-access and enrollment **as SYSTEM**. Verification only reads snapshots and sends
-a heartbeat; it does not claim a queued backup. On failure, the previous files
-and task are restored and an error remains visible. Read
-`C:\ProgramData\FortressBackup\setup-check.log` for details.
+The repository must already be initialized and reachable from the laptop. Use
+a controller HTTPS address with a certificate Windows trusts. An HTTP server IP
+cannot be used for credential provisioning. When TLS terminates at a reverse
+proxy, set the controller's `TRUST_PROXY` to that proxy's exact addresses.
 
-On success, setup starts the task immediately. The dashboard shows the check-in;
-any queued backup may then start. The latest polling run is recorded in
-`C:\ProgramData\FortressBackup\agent.log`. Setup success does not mean a backup
-has finished: check the job result and perform a full restore test.
+Verification reads snapshots and sends a heartbeat without claiming a queued
+backup. Failed verification rolls back the previous protected files and task.
+Diagnostics are in `C:\ProgramData\FortressBackup\setup-check.log` and `agent.log`.
+After saving, follow check-ins and operations in **Managed Clients**. A successful
+installation/configuration does not mean a backup has completed; test a backup
+and a complete restore before relying on it. Windows clients remain pre-production.
 
-**fortress-agent.exe is the background runner.** Double-clicking it displays setup
-instructions. It does not install anything or select folders. Download the ZIP
-instead of the individual executable for installation.
+## Upgrade and uninstall
+
+Run the newer installer to upgrade the app. Saved configuration and the existing
+background task are retained; reopen the app and save to update its protected
+runtime files. Wait for active backups to finish before applying configuration.
+
+Uninstall through Windows **Installed apps**. This removes the app, shortcuts,
+and its background task/runtime. Saved settings and credentials in
+`C:\ProgramData\FortressBackup` are retained for reinstall. Backup repositories
+are never deleted.
+
+The ZIP and individual files remain available for advanced/manual deployment.
+`fortress-agent.exe` is the background runner. For ordinary installation, use the
+single **FortressBackup-Setup-<version>.exe** installer.
 
 ## Advanced manual configuration
 

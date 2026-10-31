@@ -122,15 +122,17 @@ test('release publication waits for validation and verifies bundled executables'
   expect(release.jobs['package-windows'].needs).toBe('windows');
   expect(release.jobs.publish.needs).toEqual(['controller', 'package-windows']);
   const packaging = step(release.jobs['package-windows'], 'Assemble Windows x64 download');
+  const packageScript = readFileSync(new URL('../agent/windows/package.ps1', import.meta.url), 'utf8');
   expect(packaging.env.RESTIC_ZIP_SHA256).toMatch(/^[a-f0-9]{64}$/);
   expect(packaging.run.indexOf('Restic download checksum mismatch')).toBeLessThan(packaging.run.indexOf('Expand-Archive'));
-  expect(packaging.run).toContain('Agent artifact checksum mismatch');
-  expect(packaging.run).toContain('RESTIC-LICENSE.txt');
-  expect(packaging.run).toContain('Install FortressBackup.cmd');
-  expect(packaging.run).toContain('setup.ps1');
-  expect(packaging.run).toContain('setup-ui.ps1');
-  expect(packaging.run).toContain('FortressBackup-Setup.exe');
-  expect(packaging.run).toContain('Setup artifact checksum mismatch');
+  expect(packaging.run).toContain('package.ps1');
+  expect(packageScript).toContain('Artifact checksum mismatch');
+  for (const name of ['RESTIC-LICENSE.txt', 'Install FortressBackup.cmd', 'setup.ps1', 'setup-ui.ps1', 'FortressBackup.exe', 'uninstall-task.ps1']) {
+    expect(packageScript).toContain(name);
+  }
+  expect(packageScript).toContain('installer.iss');
+  expect(step(release.jobs['package-windows'], 'Verify published installer lifecycle').run).toContain('test-installer.ps1');
+  expect(step(windowsWorkflow.jobs.verify, 'Verify single-file application installer lifecycle').shell).toBe('powershell');
   expect(step(windowsWorkflow.jobs.verify, 'Verify setup with Windows PowerShell 5.1').shell).toBe('powershell');
   expect(step(release.jobs.controller, 'Require a version tag on main').run).toContain('git merge-base --is-ancestor HEAD origin/main');
 });

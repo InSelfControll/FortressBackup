@@ -1,6 +1,6 @@
 //go:build windows
 
-// Setup opens the graphical installer without a terminal window.
+// The installed app opens graphical configuration without a terminal window.
 package main
 
 import (
@@ -29,7 +29,7 @@ func main() {
 		}
 	}
 	if err != nil {
-		message, _ := syscall.UTF16PtrFromString("Setup could not finish. Extract the complete Windows ZIP into a fresh folder, then open FortressBackup-Setup.exe. If the setup window reported an error, follow its instructions.\n\nhttps://github.com/InSelfControll/FortressBackup/releases")
+		message, _ := syscall.UTF16PtrFromString("Fortress Backup could not open. Run the Fortress Backup installer again to repair the application. If the configuration window reported an error, follow its instructions.\n\nhttps://github.com/InSelfControll/FortressBackup/releases")
 		title, _ := syscall.UTF16PtrFromString("Fortress Backup setup")
 		syscall.NewLazyDLL("user32.dll").NewProc("MessageBoxW").Call(0, uintptr(unsafe.Pointer(message)), uintptr(unsafe.Pointer(title)), 0x10)
 		os.Exit(1)

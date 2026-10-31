@@ -40,8 +40,9 @@ test('enrolled clients receive installation and local folder-selection instructi
   const html=renderToStaticMarkup(React.createElement(QueryClientProvider,{client},React.createElement(ManagedClients)));
   expect(html).toContain('Enrollment creates an ID and token. It does not install software');
   expect(html).toContain('Set up the Windows laptop and choose folders');
-  expect(html).toContain('agent.json');
-  expect(html).toContain('sources');
+  expect(html).toContain('Download the Windows installer');
+  expect(html).toContain('Start menu');
+  expect(html).toContain('Save and connect');
   expect(html).toContain('trusted HTTPS controller address');
   expect(html).toContain('No backup has started.');
   expect(html).toContain('Queued — waiting for the Windows agent');

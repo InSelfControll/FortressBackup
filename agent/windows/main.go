@@ -103,7 +103,7 @@ func execute(ctx context.Context,c Config,operation string) error {
 
 func main(){
  if len(os.Args)==1 {
-  message,_:=syscall.UTF16PtrFromString("This is the Fortress Backup background agent.\n\nTo install it and choose backup folders, extract the Windows ZIP from GitHub Releases and double-click FortressBackup-Setup.exe.\n\nEnrollment in the dashboard creates credentials; it does not install the agent.\n\nhttps://github.com/InSelfControll/FortressBackup/releases")
+  message,_:=syscall.UTF16PtrFromString("This is the Fortress Backup background agent.\n\nDownload and run the FortressBackup-Setup installer from GitHub Releases. After installation, open Fortress Backup from the Start menu to connect this laptop and choose folders.\n\nEnrollment in the dashboard creates credentials; it does not install the app.\n\nhttps://github.com/InSelfControll/FortressBackup/releases")
   title,_:=syscall.UTF16PtrFromString("Fortress Backup setup")
   syscall.NewLazyDLL("user32.dll").NewProc("MessageBoxW").Call(0,uintptr(unsafe.Pointer(message)),uintptr(unsafe.Pointer(title)),0x40)
   return

@@ -104,7 +104,7 @@ Borg and Rsync use native SSH transport with the saved destination identity and 
 
 Managed Windows clients are **pre-production**. Read the [managed client guide](agent/windows/MANAGED.md) before enrollment.
 
-Download and extract the complete [Windows ZIP from Releases](https://github.com/InSelfControll/FortressBackup/releases), then run **FortressBackup-Setup.exe**. The graphical setup selects folders and verifies storage and controller access as SYSTEM before starting the agent. The individual `fortress-agent.exe` is a background runner, not an installer. See the [Windows setup guide](agent/windows/INSTALL.md) for prerequisites and diagnostics.
+Download the single **FortressBackup-Setup-<version>.exe** from [Releases](https://github.com/InSelfControll/FortressBackup/releases) and run it. It installs the app and adds a Start menu entry; no ZIP extraction is needed. Open **Fortress Backup** after installation or later to connect the laptop and choose backup folders. See the [Windows installation guide](agent/windows/INSTALL.md) for configuration and diagnostics.
 
 Clients poll the controller over outbound HTTPS. Enrollment displays a client token once, while the controller stores its hash. Select a saved Restic SFTP repository during enrollment; a single configured repository is selected automatically. Setup retrieves only the repository assigned to that client, including its encryption password, SSH identity, and pinned host key, over authenticated HTTPS. Credentials and selected folders are stored in protected local Windows configuration. The controller can queue `backup`, `check`, and `snapshots` operations.
 

@@ -27,13 +27,13 @@ try {
     $sums=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'SHA256SUMS')
     function Get-ReleaseDigest([string]$Name){
         $matches=@($sums | Where-Object {$_ -match ('^[a-fA-F0-9]{64}  '+[regex]::Escape($Name)+'$')})
-        if($matches.Count -ne 1){throw "Missing or ambiguous release checksum for $Name. Extract the complete Windows ZIP."}
+        if($matches.Count -ne 1){throw "Missing or ambiguous release checksum for $Name. Run the Fortress Backup installer again to repair the app."}
         return ($matches[0] -split '\s+')[0]
     }
     $agentHash=Get-ReleaseDigest 'fortress-agent.exe'
     $resticHash=Get-ReleaseDigest 'restic.exe'
     foreach($item in @(@($agent,$agentHash),@($restic,$resticHash))){
-        if((Get-FileHash -LiteralPath $item[0] -Algorithm SHA256).Hash -ine $item[1]){throw 'Release binary checksum mismatch. Download the ZIP again.'}
+        if((Get-FileHash -LiteralPath $item[0] -Algorithm SHA256).Hash -ine $item[1]){throw 'Release binary checksum mismatch. Run the Fortress Backup installer again to repair the app.'}
     }
     & $agent -config $ConfigPath -operation validate
     if($LASTEXITCODE -ne 0){throw 'Configuration validation failed. Nothing was installed.'}
