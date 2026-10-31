@@ -59,14 +59,15 @@ func loadConfig(path string) (Config,error) {
  if c.AgentTokenFile!="" && !filepath.IsAbs(c.AgentTokenFile) {return c,errors.New("agentTokenFile must be absolute")}
  for _,source:=range c.Sources {if !filepath.IsAbs(source) {return c,fmt.Errorf("source must be absolute: %q",source)}; if _,err=os.Stat(source);err!=nil{return c,fmt.Errorf("source %q: %w",source,err)}}
  for _,exclude:=range c.Excludes {if strings.TrimSpace(exclude)=="" {return c,errors.New("empty exclude")}}
- if _,err:=sftpCommand(c);err!=nil{return c,err}
+ if _,err:=managedSFTPArgs(c);err!=nil{return c,err}
  return c,nil
 }
 
 func execute(ctx context.Context,c Config,operation string) error {
  args:=[]string{"--repo",c.Repository,"--password-file",c.PasswordFile}
- transport,err:=sftpCommand(c)
+ transport,cleanup,err:=prepareSFTP(c)
  if err!=nil{return err}
+ defer cleanup()
  if transport!="" {
   // Restic's option flag parses CSV before parsing the SSH argv string.
   var option strings.Builder

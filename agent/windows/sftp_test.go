@@ -17,7 +17,9 @@ import (
 // The copied test binary records exactly what Restic passes to its SSH child.
 func TestMain(m *testing.M) {
  if capture:=os.Getenv("FORTRESS_TEST_SSH_CAPTURE");capture!="" {
-  data,err:=json.Marshal(os.Args[1:]);if err!=nil{os.Exit(2)}
+  args:=os.Args[1:];if len(args)<2||args[0]!="-F"{os.Exit(2)}
+  configuration,err:=os.ReadFile(args[1]);if err!=nil{os.Exit(2)}
+  data,err:=json.Marshal(struct{Args []string;Configuration string}{args,string(configuration)});if err!=nil{os.Exit(2)}
   if os.WriteFile(capture,data,0600)!=nil{os.Exit(2)}
   os.Exit(0)
  }
@@ -30,17 +32,18 @@ func TestManagedSFTPUsesOnlyProtectedIdentityAndPinnedHosts(t *testing.T) {
  key:=filepath.Join(directory,"identity");hosts:=filepath.Join(directory,"known_hosts")
  for _,file:=range []string{key,hosts}{if err:=os.WriteFile(file,[]byte("fixture"),0600);err!=nil{t.Fatal(err)}}
  c:=Config{Repository:"sftp://backup@storage.example.invalid:23/repo",SFTPKeyFile:key,SFTPKnownHostsFile:hosts}
- command,err:=sftpCommand(c);if err!=nil{t.Fatal(err)}
- for _,required:=range []string{quoteSFTPArgument(key),quoteSFTPArgument(`UserKnownHostsFile="`+filepath.ToSlash(hosts)+`"`),"'StrictHostKeyChecking=yes'","'IdentitiesOnly=yes'","'BatchMode=yes'","'GlobalKnownHostsFile=NUL'","'23'","'storage.example.invalid'"} {
-  if !strings.Contains(command,required){t.Fatalf("managed transport lost an identity/trust argument: %s",required)}
+ args,err:=managedSFTPArgs(c);if err!=nil{t.Fatal(err)}
+ configuration:=sftpConfiguration(c)
+ for _,required:=range []string{filepath.ToSlash(key),filepath.ToSlash(hosts),"StrictHostKeyChecking yes","IdentitiesOnly yes","BatchMode yes","GlobalKnownHostsFile NUL"} {
+  if !strings.Contains(configuration,required){t.Fatalf("managed transport lost an identity/trust setting: %s",required)}
  }
- if !strings.HasPrefix(command,quoteSFTPArgument(filepath.Join(os.Getenv("SystemRoot"),"System32","OpenSSH","ssh.exe"))){t.Fatal("transport must use the native absolute SSH executable")}
+ if args[0]!=filepath.Join(os.Getenv("SystemRoot"),"System32","OpenSSH","ssh.exe"){t.Fatal("transport must use the native absolute SSH executable")}
  c.SSHCommand="custom executable"
- if _,err=sftpCommand(c);err==nil{t.Fatal("arbitrary command mixed with managed identity")}
+ if _,err=managedSFTPArgs(c);err==nil{t.Fatal("arbitrary command mixed with managed identity")}
  c.SSHCommand="";c.Repository="sftp://-bad@-option:23/repo"
- if _,err=sftpCommand(c);err==nil{t.Fatal("option-like host accepted")}
+ if _,err=managedSFTPArgs(c);err==nil{t.Fatal("option-like host accepted")}
  c.Repository="sftp://backup@storage.example.invalid:23/repo";c.SFTPKnownHostsFile=""
- if _,err=sftpCommand(c);err==nil{t.Fatal("unpinned managed transport accepted")}
+ if _,err=managedSFTPArgs(c);err==nil{t.Fatal("unpinned managed transport accepted")}
 }
 
 func TestResticManagedSFTPArgv(t *testing.T) {
@@ -60,12 +63,20 @@ func TestResticManagedSFTPArgv(t *testing.T) {
  ctx,cancel:=context.WithTimeout(context.Background(),20*time.Second);defer cancel()
  if execute(ctx,c,"snapshots")==nil{t.Fatal("an SSH recorder is not an SFTP server")}
  data,err:=os.ReadFile(capture);if err!=nil{t.Fatalf("Restic never invoked the configured SSH identity: %v",err)}
- var args []string;if err:=json.Unmarshal(data,&args);err!=nil{t.Fatal(err)}
- expected:=[]string{"-F","NUL","-i",c.SFTPKeyFile,"-o","BatchMode=yes","-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=yes","-o","GlobalKnownHostsFile=NUL","-o",`UserKnownHostsFile="`+filepath.ToSlash(c.SFTPKnownHostsFile)+`"`,"-o","ConnectTimeout=15","-p","23","-l","backup","-s","--","storage.example.invalid","sftp"}
+ var captured struct{Args []string;Configuration string};if err:=json.Unmarshal(data,&captured);err!=nil{t.Fatal(err)}
+ args:=captured.Args
+ if len(args)<2{t.Fatal("missing protected SSH configuration")}
+ if filepath.Dir(args[1])!=directory{t.Fatal("SSH configuration escaped the protected directory")}
+ if _,err:=os.Stat(args[1]);!os.IsNotExist(err){t.Fatal("temporary SSH configuration was not removed")}
+ if captured.Configuration!=sftpConfiguration(c){t.Fatal("protected identity or host pin changed")}
+ expected:=[]string{"-F",args[1],"-p","23","-l","backup","-s","--","storage.example.invalid","sftp"}
  if !reflect.DeepEqual(args,expected){t.Fatalf("Restic changed protected path or trust arguments:\ngot %q\nwant %q",args,expected)}
  nativeSSH:=filepath.Join(nativeRoot,"System32","OpenSSH","ssh.exe")
  if _,err:=os.Stat(nativeSSH);err==nil {
   t.Setenv("SystemRoot",nativeRoot)
+  configuration:=filepath.Join(directory,"native-config")
+  if err:=os.WriteFile(configuration,[]byte(captured.Configuration),0600);err!=nil{t.Fatal(err)}
+  args[1]=configuration
   check:=exec.CommandContext(ctx,nativeSSH,append([]string{"-G"},args...)...)
   if output,err:=check.CombinedOutput();err!=nil{t.Fatalf("native OpenSSH rejected managed trust settings: %v\n%s",err,output)}
  }
