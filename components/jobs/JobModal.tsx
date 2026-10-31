@@ -127,13 +127,13 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
-                <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+            <div role="dialog" aria-modal="true" aria-label="Backup job" className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl shadow-2xl max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
+                <div className="p-4 sm:p-6 shrink-0 border-b border-slate-800 flex justify-between items-center">
                     <h3 className="text-xl font-bold text-white">{job ? 'Edit Job' : 'Configure New Job'}</h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
+                    <button onClick={onClose} aria-label="Close dialog" className="p-3 shrink-0 text-slate-400 hover:text-white"><X size={24} /></button>
                 </div>
 
-                <div className="p-6 overflow-y-auto flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="p-4 sm:p-6 min-h-0 min-w-0 overflow-y-auto flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="space-y-6">
                         <div>
                             <label className="block text-sm font-medium text-slate-400 mb-2">Job Name</label>
@@ -172,7 +172,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                                                     newPaths[idx] = e.target.value;
                                                     setFormData({ ...formData, sourcePaths: newPaths });
                                                 }}
-                                                className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs"
+                                                className="min-w-0 flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs"
                                                 placeholder="/home/user/data"
                                             />
                                             {formData.sourcePaths.length > 1 && (
@@ -337,7 +337,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                     </div>
                 </div>
 
-                <div className="p-6 border-t border-slate-800 flex justify-end gap-3 bg-slate-800/20">
+                <div className="p-4 sm:p-6 shrink-0 border-t border-slate-800 flex flex-wrap justify-end gap-3 bg-slate-800/20">
                     <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white transition-colors">Cancel</button>
                     <button
                         onClick={handleSubmit}

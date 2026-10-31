@@ -47,7 +47,7 @@ export const Locations: React.FC<LocationsProps> = () => {
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-white tracking-tight">Storage Registry</h2>
           <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">Backup Destination Endpoints</p>
@@ -57,7 +57,7 @@ export const Locations: React.FC<LocationsProps> = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
         {locations.length === 0 && (
           <div className="col-span-full py-16 text-center border-2 border-dashed border-slate-800 rounded-[2rem] bg-slate-800/20">
             <HardDrive size={48} className="mx-auto text-slate-700 mb-4" />

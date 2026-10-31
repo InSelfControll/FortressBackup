@@ -122,9 +122,9 @@ export const DeploymentTerminal = ({ system, sshKeys, onClose, onComplete }: Dep
     };
 
     return (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[100] p-6">
-            <div className="w-full max-w-3xl bg-slate-900 border border-slate-700 rounded-[2rem] shadow-2xl overflow-hidden flex flex-col h-[70vh]">
-                <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+            <div role="dialog" aria-modal="true" aria-label="Engine deployment" className="w-full max-w-3xl bg-slate-900 border border-slate-700 rounded-[2rem] shadow-2xl overflow-hidden flex flex-col h-[calc(100dvh-2rem)] sm:h-[85dvh]">
+                <div className="p-4 sm:p-6 shrink-0 border-b border-slate-800 flex flex-wrap gap-3 justify-between items-center bg-slate-900/50">
                     <div className="flex items-center gap-3">
                         <div className="w-3 h-3 rounded-full bg-rose-500" />
                         <div className="w-3 h-3 rounded-full bg-amber-500" />
@@ -137,7 +137,7 @@ export const DeploymentTerminal = ({ system, sshKeys, onClose, onComplete }: Dep
                 </div>
 
                 {status === 'credentials' ? (
-                    <div className="flex-1 p-8 space-y-6">
+                    <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-8 space-y-6">
                         <div>
                             <h3 className="text-xl font-black text-white mb-2">SSH Authentication</h3>
                             <p className="text-slate-500 text-sm">Provide credentials to connect to {system.host}</p>
@@ -233,7 +233,7 @@ export const DeploymentTerminal = ({ system, sshKeys, onClose, onComplete }: Dep
                         </div>
                     </div>
                 ) : (
-                    <div className="flex-1 overflow-y-auto p-6 font-mono text-xs space-y-2 bg-black/40">
+                    <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 font-mono text-xs space-y-2 bg-black/40">
                         {logs.map((log, i) => (
                             <div key={i} className={getLogColor(log.type)}>
                                 <span className="text-slate-700 mr-2 opacity-50">[{log.timestamp.toLocaleTimeString([], { hour12: false })}]</span>

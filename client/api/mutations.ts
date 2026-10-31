@@ -81,7 +81,13 @@ export function useDeleteSystem() {
 export function useCreateLocation() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: (location: Location) => API.createLocation(location).then(res => res.data),
+        mutationFn: async (location: Omit<Location, 'id'>) => {
+            const response = await API.createLocation(location);
+            if (response.error || !response.data) {
+                throw new Error(response.error || 'The server did not return the saved location');
+            }
+            return response.data;
+        },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: queryKeys.locations });
         },
@@ -91,7 +97,13 @@ export function useCreateLocation() {
 export function useUpdateLocation() {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: (location: Location) => API.updateLocation(location.id, location).then(res => res.data),
+        mutationFn: async (location: Location) => {
+            const response = await API.updateLocation(location.id, location);
+            if (response.error || !response.data) {
+                throw new Error(response.error || 'The server did not return the saved location');
+            }
+            return response.data;
+        },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: queryKeys.locations });
         },

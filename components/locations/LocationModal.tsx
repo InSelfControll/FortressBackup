@@ -21,7 +21,8 @@ const LOCATION_TYPES = [
     { id: 'onedrive', name: 'OneDrive (Rclone)', icon: Cloud, color: 'bg-blue-600/10 text-blue-300 border-blue-500/20' },
 ];
 
-type LocationPayload = Omit<Location, 'accessKey' | 'secretKey'> & {
+type LocationPayload = Omit<Location, 'id' | 'accessKey' | 'secretKey'> & {
+    id?: string;
     access_key?: string;
     secret_key?: string;
     host_public_key?: string;
@@ -76,9 +77,9 @@ export const canSubmitLocation = (location: Partial<Location>): boolean => Boole
 export const buildLocationData = (
     newLocation: Partial<Location>,
     isCustomS3: boolean,
-    id: string
+    id?: string
 ): LocationPayload => ({
-    id,
+    ...(id ? { id } : {}),
     name: newLocation.name as string,
     type: newLocation.type as Location['type'],
     path: newLocation.type === 'sftp' ? buildSftpTarget(newLocation) : newLocation.path as string,
@@ -92,6 +93,8 @@ export const buildLocationData = (
 export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, onClose }) => {
     const createLocationMutation = useCreateLocation();
     const updateLocationMutation = useUpdateLocation();
+    const [saveError, setSaveError] = useState('');
+    const isSaving = createLocationMutation.isPending || updateLocationMutation.isPending;
 
     const [newLocation, setNewLocation] = useState<Partial<Location>>(() => getLocationFormState(location));
     const [isCustomS3, setIsCustomS3] = useState(
@@ -99,21 +102,24 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
     );
 
     useEffect(() => {
+        setSaveError('');
         setNewLocation(getLocationFormState(location));
         setIsCustomS3(!!location?.endpoint && location.endpoint !== 'https://s3.amazonaws.com');
     }, [location, isOpen]);
 
     const handleSubmit = () => {
-        if (!canSubmitLocation(newLocation)) return;
+        if (!canSubmitLocation(newLocation) || isSaving) return;
+        setSaveError('');
 
-        const locationData = buildLocationData(newLocation, isCustomS3, location?.id || crypto.randomUUID());
+        // The API assigns IDs. Client-side UUID generation is unavailable on HTTP LAN addresses.
+        const locationData = buildLocationData(newLocation, isCustomS3, location?.id);
         if (location) {
-            updateLocationMutation.mutate(locationData, {
+            updateLocationMutation.mutate({ ...locationData, id: location.id }, {
                 onSuccess: () => {
                     onClose();
                     toast.success('Location updated successfully');
                 },
-                onError: () => toast.error('Failed to update location')
+                onError: error => setSaveError(error.message || 'Failed to update location')
             });
         } else {
             createLocationMutation.mutate(locationData, {
@@ -121,7 +127,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                     onClose();
                     toast.success('Location added successfully');
                 },
-                onError: () => toast.error('Failed to add location')
+                onError: error => setSaveError(error.message || 'Failed to add location')
             });
         }
     };
@@ -137,7 +143,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                             <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Bucket Name</label>
                             <input type="text" value={newLocation.path || ''} onChange={e => setNewLocation({ ...newLocation, path: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="my-backup-bucket" />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Region</label>
                                 <select value={newLocation.region || 'us-east-1'} onChange={e => setNewLocation({ ...newLocation, region: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none">
@@ -157,7 +163,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                                 )}
                             </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Access Key ID</label>
                                 <input type="text" value={newLocation.accessKey || ''} onChange={e => setNewLocation({ ...newLocation, accessKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="AKIAIOSFODNN7EXAMPLE" />
@@ -173,7 +179,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
             case 'sftp':
                 return (
                     <>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Host</label>
                                 <input type="text" value={newLocation.endpoint || ''} onChange={e => setNewLocation({ ...newLocation, endpoint: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="backup.example.com" />
@@ -186,12 +192,13 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                         <div className="space-y-2">
                             <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Host Public Key</label>
                             <textarea required rows={3} value={newLocation.hostPublicKey || ''} onChange={e => setNewLocation({ ...newLocation, hostPublicKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..." />
+                            <p className="text-xs text-slate-400">Paste the server's public key starting with ssh-ed25519 or ssh-rsa, rather than its SHA256 fingerprint.</p>
                         </div>
                         <div className="space-y-2">
                             <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Remote Path</label>
                             <input type="text" value={newLocation.path || ''} onChange={e => setNewLocation({ ...newLocation, path: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono outline-none focus:ring-2 focus:ring-indigo-500" placeholder="/backups/production" />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Username</label>
                                 <input type="text" value={newLocation.accessKey || ''} onChange={e => setNewLocation({ ...newLocation, accessKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="backup_user" />
@@ -220,7 +227,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                             <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Bucket Name</label>
                             <input type="text" value={newLocation.path || ''} onChange={e => setNewLocation({ ...newLocation, path: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="my-b2-bucket" />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Application Key ID</label>
                                 <input type="text" value={newLocation.accessKey || ''} onChange={e => setNewLocation({ ...newLocation, accessKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0012345678abcdef" />
@@ -263,21 +270,21 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
 
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-xl flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-[2rem] w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom-8 duration-300">
-                <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+            <div role="dialog" aria-modal="true" aria-label="Storage location" className="bg-slate-900 border border-slate-700 rounded-[2rem] w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col animate-in slide-in-from-bottom-8 duration-300">
+                <div className="p-4 sm:p-6 shrink-0 border-b border-slate-800 flex justify-between items-center">
                     <h3 className="text-xl font-black text-white">
                         {location ? 'Edit Location' : 'Add Storage Location'}
                     </h3>
-                    <button onClick={onClose} className="p-2 text-slate-400 hover:text-white transition-colors">
+                    <button onClick={onClose} aria-label="Close dialog" className="p-3 shrink-0 text-slate-400 hover:text-white transition-colors">
                         <X size={24} />
                     </button>
                 </div>
 
-                <div className="p-6 overflow-y-auto flex-1 space-y-6">
+                <div className="p-4 sm:p-6 min-h-0 min-w-0 overflow-y-auto flex-1 space-y-6">
                     {/* Location Type Selection */}
                     <div>
                         <label className="text-[10px] font-black uppercase text-slate-500 ml-2 block mb-3">Storage Type</label>
-                        <div className="grid grid-cols-4 gap-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             {LOCATION_TYPES.slice(0, 4).map(type => {
                                 const TypeIcon = type.icon;
                                 return (
@@ -292,7 +299,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                                 );
                             })}
                         </div>
-                        <div className="grid grid-cols-4 gap-2 mt-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
                             {LOCATION_TYPES.slice(4).map(type => {
                                 const TypeIcon = type.icon;
                                 return (
@@ -319,14 +326,15 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                     {renderTypeSpecificFields()}
                 </div>
 
-                <div className="p-6 border-t border-slate-800 flex justify-end gap-4 bg-slate-800/20">
-                    <button onClick={onClose} className="px-6 py-3 text-slate-400 hover:text-white font-bold transition-colors">Cancel</button>
+                <div className="p-4 sm:p-6 shrink-0 border-t border-slate-800 flex flex-wrap justify-end gap-4 bg-slate-800/20">
+                    {saveError && <p role="alert" className="basis-full break-words text-sm text-rose-400">{saveError}</p>}
+                    <button onClick={onClose} disabled={isSaving} className="px-6 py-3 text-slate-400 hover:text-white font-bold transition-colors disabled:opacity-50">Cancel</button>
                     <button
                         onClick={handleSubmit}
-                        disabled={!canSubmitLocation(newLocation)}
+                        disabled={!canSubmitLocation(newLocation) || isSaving}
                         className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50"
                     >
-                        {location ? 'Update Location' : 'Add Location'}
+                        {isSaving ? 'Saving...' : location ? 'Update Location' : 'Add Location'}
                     </button>
                 </div>
             </div>

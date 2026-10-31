@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, User, BackupJob, BackupTool, JobStatus, System, JobPriority, SSHKey, Location, AIConfig, AIProvider, DatabaseConfig, SSOConfig } from './types.ts';
 import { Login } from './components/Login.tsx';
 import { Setup } from './components/Setup.tsx';
@@ -10,6 +10,7 @@ import { Locations } from './components/Locations.tsx';
 import { Settings as SettingsComponent } from './components/Settings.tsx';
 import { Sidebar } from './components/layout/Sidebar.tsx';
 import { Header } from './components/layout/Header.tsx';
+import { MobileNavigation } from './components/layout/MobileNavigation.tsx';
 import { Loader2 } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import * as API from './client/api/index.js';
@@ -47,7 +48,13 @@ function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
   const [isFirstRun, setIsFirstRun] = useState(false);
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [currentView, setCurrentViewState] = useState<View>('dashboard');
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const closeNavigation = useCallback(() => setNavigationOpen(false), []);
+  const setCurrentView = (view: View) => {
+    closeNavigation();
+    setCurrentViewState(view);
+  };
   const [searchQuery, setSearchQuery] = useState('');
 
   const queryClient = useQueryClient();
@@ -296,26 +303,32 @@ function App() {
   }
 
   return (
-    <div className="flex min-h-screen" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
-      <Sidebar
+    <div className="flex h-dvh overflow-hidden" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
+      <div className="hidden lg:block shrink-0">
+        <Sidebar
         currentView={currentView}
         setCurrentView={setCurrentView}
         currentUser={currentUser}
         onLogout={handleLogout}
-      />
+        />
+      </div>
+      <MobileNavigation open={navigationOpen} onClose={closeNavigation} currentView={currentView} setCurrentView={setCurrentView} currentUser={currentUser} onLogout={handleLogout} />
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="min-w-0 min-h-0 flex-1 flex flex-col overflow-hidden">
         <Header
           currentView={currentView}
           setCurrentView={setCurrentView}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
+          onOpenNavigation={() => setNavigationOpen(true)}
+          navigationOpen={navigationOpen}
+          showSettings={currentUser.role === 'admin'}
         />
 
         {/* Page Content */}
-        <div className="flex-1 overflow-auto p-6" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
-          <div className="max-w-7xl mx-auto">
+        <div data-app-content className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
+          <div className="min-w-0 w-full max-w-7xl mx-auto">
             {currentView === 'dashboard' && <Dashboard />}
             {currentView === 'jobs' && <Jobs aiConfig={aiConfig} />}
             {currentView === 'systems' && <Systems />}

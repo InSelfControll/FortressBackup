@@ -49,22 +49,22 @@ export const Systems: React.FC<SystemsProps> = () => {
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-white tracking-tight">System Infrastructure</h2>
           <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">Managed Nodes Cluster</p>
         </div>
-        <div className="flex gap-4">
-          <button onClick={() => setIsKeyManagerOpen(true)} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-6 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 shadow-sm">
+        <div className="flex flex-wrap gap-3">
+          <button onClick={() => setIsKeyManagerOpen(true)} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-4 sm:px-6 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 shadow-sm">
             <Key size={18} /> Identity Vault ({sshKeys.length})
           </button>
-          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-black text-sm shadow-lg shadow-indigo-500/20 transition-all active:scale-95">
+          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 sm:px-6 py-3 rounded-xl font-black text-sm shadow-lg shadow-indigo-500/20 transition-all active:scale-95">
             <Plus size={18} /> Register Node
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
         {systems.length === 0 && (
           <div className="col-span-full py-16 text-center border-2 border-dashed border-slate-800 rounded-[2rem] bg-slate-800/20">
             <Server size={48} className="mx-auto text-slate-700 mb-4" />

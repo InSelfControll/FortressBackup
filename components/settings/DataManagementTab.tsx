@@ -20,7 +20,7 @@ export const DataManagementTab: React.FC<DataManagementTabProps> = ({ onExport, 
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      <div className="flex items-center gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
         <div className="p-4 bg-slate-600/10 rounded-2xl border border-slate-500/20">
           <SettingsIcon className="text-slate-400" size={28} />
         </div>
@@ -32,7 +32,7 @@ export const DataManagementTab: React.FC<DataManagementTabProps> = ({ onExport, 
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Export */}
-        <div className="p-8 bg-slate-800/20 rounded-3xl border border-slate-800 space-y-4">
+        <div className="p-4 sm:p-8 bg-slate-800/20 rounded-3xl border border-slate-800 space-y-4">
           <div className="flex items-center gap-3 text-emerald-400">
             <Download size={20} />
             <h4 className="text-sm font-bold uppercase tracking-widest">Export Configuration</h4>
@@ -47,7 +47,7 @@ export const DataManagementTab: React.FC<DataManagementTabProps> = ({ onExport, 
         </div>
 
         {/* Import */}
-        <div className="p-8 bg-slate-800/20 rounded-3xl border border-slate-800 space-y-4">
+        <div className="p-4 sm:p-8 bg-slate-800/20 rounded-3xl border border-slate-800 space-y-4">
           <div className="flex items-center gap-3 text-blue-400">
             <Upload size={20} />
             <h4 className="text-sm font-bold uppercase tracking-widest">Import Configuration</h4>
@@ -69,7 +69,7 @@ export const DataManagementTab: React.FC<DataManagementTabProps> = ({ onExport, 
       </div>
 
       {/* Reset */}
-      <div className="p-8 bg-rose-500/5 rounded-3xl border border-rose-500/10 space-y-4">
+      <div className="p-4 sm:p-8 bg-rose-500/5 rounded-3xl border border-rose-500/10 space-y-4">
         <div className="flex items-center gap-3 text-rose-400">
           <Trash2 size={20} />
           <h4 className="text-sm font-bold uppercase tracking-widest">Danger Zone</h4>
@@ -84,7 +84,7 @@ export const DataManagementTab: React.FC<DataManagementTabProps> = ({ onExport, 
             Reset Application
           </button>
         ) : (
-          <div className="flex items-center gap-4 animate-in slide-in-from-left duration-300">
+          <div className="flex flex-wrap items-center gap-4 animate-in slide-in-from-left duration-300">
             <button
               onClick={() => { onReset(); setShowResetConfirm(false); }}
               className="py-4 px-8 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-xl shadow-rose-600/20 transition-all"

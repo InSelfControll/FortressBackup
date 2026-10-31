@@ -76,6 +76,21 @@ test('maps SFTP connection fields and credentials into the server payload', () =
   });
 });
 
+test('new location payloads leave ID generation to the server on HTTP origins', () => {
+  const payload = modal.buildLocationData({
+    name: 'Storage Box',
+    type: 'sftp',
+    path: 'backups/server1',
+    endpoint: 'u123456.your-storagebox.de',
+    region: '23',
+    accessKey: 'u123456',
+    hostPublicKey: HOST_PUBLIC_KEY,
+  }, false);
+
+  expect(payload).not.toHaveProperty('id');
+  expect(payload.path).toBe('sftp://u123456@u123456.your-storagebox.de:23/backups/server1');
+});
+
 test('loads a persisted SFTP target as editable connection fields', () => {
   const state = modal.getLocationFormState({
     id: 'dummy-sftp-id',

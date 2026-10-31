@@ -166,8 +166,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
   const providerName = ssoConfig?.provider === 'google' ? 'Google' : ssoConfig?.provider === 'github' ? 'GitHub' : 'Enterprise SSO';
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
-      <div className="w-full max-w-sm animate-fade-in">
+    <div className="h-dvh overflow-y-auto flex px-4 py-8" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
+      <div className="w-full max-w-sm m-auto shrink-0 animate-fade-in">
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: 'var(--color-accent-primary)' }}>

@@ -54,7 +54,7 @@ export const Settings: React.FC<SettingsProps> = ({
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-2 p-2 bg-slate-900/40 rounded-2xl border border-slate-800/50">
+            <div aria-label="Settings sections" className="flex overflow-x-auto gap-2 p-2 bg-slate-900/40 rounded-2xl border border-slate-800/50">
                 {tabs.map((tab) => {
                     const Icon = tab.icon;
                     const isActive = activeTab === tab.id;
@@ -62,7 +62,7 @@ export const Settings: React.FC<SettingsProps> = ({
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id as SettingsTab)}
-                            className={`flex items-center gap-3 px-5 py-3 rounded-xl transition-all ${isActive
+                            className={`flex shrink-0 items-center gap-3 px-4 sm:px-5 py-3 rounded-xl transition-all ${isActive
                                 ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20'
                                 : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/40'
                                 }`}
@@ -75,7 +75,7 @@ export const Settings: React.FC<SettingsProps> = ({
             </div>
 
             {/* Tab Content */}
-            <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/60 rounded-[2.5rem] p-10">
+            <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/60 rounded-2xl sm:rounded-[2.5rem] min-w-0 p-4 sm:p-10">
                 {activeTab === 'ai' && (
                     <AIConfigTab config={aiConfig} onUpdate={onUpdateAIConfig} />
                 )}

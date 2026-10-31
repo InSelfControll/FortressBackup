@@ -28,7 +28,7 @@ export const SSOConfigTab: React.FC<SSOConfigTabProps> = ({ config, onUpdate }) 
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      <div className="flex items-center gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
         <div className="p-4 bg-emerald-600/10 rounded-2xl border border-emerald-500/20">
           <Shield className="text-emerald-400" size={28} />
         </div>
@@ -47,7 +47,7 @@ export const SSOConfigTab: React.FC<SSOConfigTabProps> = ({ config, onUpdate }) 
           <button
             key={prov.id}
             onClick={() => setLocalConfig({ ...localConfig, provider: prov.id as any })}
-            className={`relative p-6 rounded-2xl border flex flex-col items-center gap-4 transition-all ${localConfig.provider === prov.id
+            className={`relative p-4 sm:p-6 rounded-2xl border flex flex-col items-center gap-4 transition-all ${localConfig.provider === prov.id
               ? 'bg-indigo-600/10 border-indigo-500 shadow-xl'
               : 'bg-slate-800/40 border-slate-800 hover:border-slate-700'
               }`}
@@ -59,7 +59,7 @@ export const SSOConfigTab: React.FC<SSOConfigTabProps> = ({ config, onUpdate }) 
       </div>
 
       {localConfig.provider && (
-        <div className="space-y-6 p-8 bg-slate-800/20 rounded-3xl border border-slate-800 animate-in slide-in-from-top-4 duration-300">
+        <div className="space-y-6 p-4 sm:p-8 bg-slate-800/20 rounded-3xl border border-slate-800 animate-in slide-in-from-top-4 duration-300">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Client ID</label>
@@ -90,7 +90,7 @@ export const SSOConfigTab: React.FC<SSOConfigTabProps> = ({ config, onUpdate }) 
               </div>
             </div>
             {localConfig.provider === 'oidc' && (
-              <div className="space-y-2 col-span-2">
+              <div className="space-y-2 md:col-span-2">
                 <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Discovery URL</label>
                 <input
                   type="text"

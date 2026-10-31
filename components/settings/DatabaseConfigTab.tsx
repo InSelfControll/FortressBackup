@@ -30,7 +30,7 @@ export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, on
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      <div className="flex items-center gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
         <div className="p-4 bg-blue-600/10 rounded-2xl border border-blue-500/20">
           <Database className="text-blue-400" size={28} />
         </div>
@@ -43,7 +43,7 @@ export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, on
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <button
           onClick={() => setLocalConfig({ type: DatabaseType.SQLITE })}
-          className={`relative p-8 rounded-2xl border flex flex-col items-center gap-5 transition-all ${localConfig.type === DatabaseType.SQLITE
+          className={`relative p-4 sm:p-8 rounded-2xl border flex flex-col items-center gap-5 transition-all ${localConfig.type === DatabaseType.SQLITE
             ? 'bg-indigo-600/10 border-indigo-500 shadow-xl'
             : 'bg-slate-800/40 border-slate-800 hover:border-slate-700'
             }`}
@@ -56,7 +56,7 @@ export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, on
 
         <button
           onClick={() => setLocalConfig({ type: DatabaseType.POSTGRES, host: 'localhost', port: 5432, database: 'fortress' })}
-          className={`relative p-8 rounded-2xl border flex flex-col items-center gap-5 transition-all ${localConfig.type === DatabaseType.POSTGRES
+          className={`relative p-4 sm:p-8 rounded-2xl border flex flex-col items-center gap-5 transition-all ${localConfig.type === DatabaseType.POSTGRES
             ? 'bg-indigo-600/10 border-indigo-500 shadow-xl'
             : 'bg-slate-800/40 border-slate-800 hover:border-slate-700'
             }`}
@@ -69,7 +69,7 @@ export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, on
       </div>
 
       {localConfig.type === DatabaseType.POSTGRES && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6 bg-slate-800/20 rounded-3xl border border-slate-800 animate-in slide-in-from-top-4 duration-300">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 sm:p-6 bg-slate-800/20 rounded-3xl border border-slate-800 animate-in slide-in-from-top-4 duration-300">
           <div className="space-y-1 col-span-2">
             <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Host</label>
             <input type="text" value={localConfig.host} onChange={e => setLocalConfig({ ...localConfig, host: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="db.internal.io" />
@@ -82,7 +82,7 @@ export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, on
             <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Database</label>
             <input type="text" value={localConfig.database} onChange={e => setLocalConfig({ ...localConfig, database: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="fortress" />
           </div>
-          <div className="flex items-end col-span-4">
+          <div className="flex items-end col-span-full">
             <button onClick={testDbConnection} className="text-[10px] font-black uppercase text-indigo-400 flex items-center gap-2 bg-indigo-500/5 px-4 py-2 rounded-lg border border-indigo-500/10 hover:bg-indigo-500/10 transition-colors">
               {isDbTesting ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
               {isDbTesting ? 'Testing...' : 'Test Connection'}

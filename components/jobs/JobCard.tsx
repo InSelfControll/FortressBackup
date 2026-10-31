@@ -73,12 +73,12 @@ export const JobCard: React.FC<JobCardProps> = ({
     };
 
     return (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 flex flex-col md:flex-row items-center justify-between gap-4 hover:border-indigo-500/30 transition-all group">
-            <div className="flex items-center gap-4 flex-1">
-                <div className="p-3 bg-slate-700/50 rounded-lg text-indigo-400 group-hover:bg-indigo-600/10 group-hover:text-indigo-300">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 sm:p-5 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 hover:border-indigo-500/30 transition-all group">
+            <div className="flex min-w-0 items-start sm:items-center gap-3 sm:gap-4 flex-1">
+                <div className="p-3 shrink-0 bg-slate-700/50 rounded-lg text-indigo-400 group-hover:bg-indigo-600/10 group-hover:text-indigo-300">
                     <Archive size={24} />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0 break-words">
                     <div className="flex items-center gap-3 mb-1 flex-wrap">
                         <h3 className="text-lg font-bold text-slate-100">{job.name}</h3>
                         {getStatusBadge(job.status)}
@@ -92,12 +92,12 @@ export const JobCard: React.FC<JobCardProps> = ({
                     </div>
                 </div>
             </div>
-            <div className="flex items-center gap-2">
-                <button onClick={() => onEdit(job)} className="p-2 text-slate-400 hover:text-indigo-400 hover:bg-slate-700 rounded-lg transition-colors" title="Edit Job"><Edit3 size={20} /></button>
-                <button onClick={() => onViewLogs(job.id)} className="p-2 text-slate-400 hover:text-indigo-400 hover:bg-slate-700 rounded-lg transition-colors" title="View Logs"><FileText size={20} /></button>
-                <button onClick={() => onRestore(job)} className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors" title="Restore"><RotateCcw size={20} /></button>
-                <button onClick={() => onRun(job.id)} disabled={isRunning || isRunPending} className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50" title="Run Now"><Play size={20} /></button>
-                <button onClick={() => onDelete(job.id)} className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors" title="Delete"><Trash2 size={20} /></button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+                <button onClick={() => onEdit(job)} className="p-3 text-slate-400 hover:text-indigo-400 hover:bg-slate-700 rounded-lg transition-colors" title="Edit Job"><Edit3 size={20} /></button>
+                <button onClick={() => onViewLogs(job.id)} className="p-3 text-slate-400 hover:text-indigo-400 hover:bg-slate-700 rounded-lg transition-colors" title="View Logs"><FileText size={20} /></button>
+                <button onClick={() => onRestore(job)} className="p-3 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors" title="Restore"><RotateCcw size={20} /></button>
+                <button onClick={() => onRun(job.id)} disabled={isRunning || isRunPending} className="p-3 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50" title="Run Now"><Play size={20} /></button>
+                <button onClick={() => onDelete(job.id)} className="p-3 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors" title="Delete"><Trash2 size={20} /></button>
             </div>
         </div>
     );

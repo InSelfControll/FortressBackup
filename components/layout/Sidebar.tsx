@@ -7,15 +7,16 @@ interface SidebarProps {
     setCurrentView: (view: View) => void;
     currentUser: User | null;
     onLogout: () => void;
+    className?: string;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, currentUser, onLogout }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, currentUser, onLogout, className = '' }) => {
     if (!currentUser) return null;
 
     return (
-        <aside className="w-64 flex flex-col" style={{ backgroundColor: 'var(--color-bg-secondary)', borderRight: '1px solid var(--color-border-subtle)' }}>
+        <aside className={`w-64 h-full shrink-0 flex flex-col ${className}`} style={{ backgroundColor: 'var(--color-bg-secondary)', borderRight: '1px solid var(--color-border-subtle)' }}>
             {/* Logo */}
-            <div className="p-5 flex items-center gap-3" style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
+            <div className="p-5 shrink-0 flex items-center gap-3" style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
                 <div className="p-2 rounded-lg" style={{ backgroundColor: 'var(--color-accent-primary)' }}>
                     <ShieldCheck size={22} className="text-white" />
                 </div>
@@ -26,7 +27,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, c
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 p-4 space-y-1">
+            <nav aria-label="Main navigation" className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1">
                 {[
                     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
                     { id: 'jobs', label: 'Backup Jobs', icon: Layout },
@@ -41,6 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, c
                         <button
                             key={item.id}
                             onClick={() => setCurrentView(item.id as View)}
+                            aria-current={active ? 'page' : undefined}
                             className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm transition-colors`}
                             style={{
                                 backgroundColor: active ? 'var(--color-accent-subtle)' : 'transparent',
@@ -56,7 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, c
             </nav>
 
             {/* User Profile */}
-            <div className="p-4" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
+            <div className="p-4 shrink-0" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
                 <div className="flex items-center gap-3 mb-3">
                     <img src={currentUser.avatar} alt="User" className="w-9 h-9 rounded-full" style={{ border: '2px solid var(--color-border-default)' }} />
                     <div className="flex-1 overflow-hidden">

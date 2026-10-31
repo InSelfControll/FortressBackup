@@ -128,14 +128,14 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
   const getStepIndex = (id: string) => steps.findIndex(s => s.id === id);
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+    <div className="h-dvh bg-slate-950 flex flex-col items-center p-4 sm:p-6 relative overflow-x-hidden overflow-y-auto">
       <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.03]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")` }}></div>
-      <div className="absolute top-0 left-0 w-full h-full z-0 pointer-events-none">
+      <div className="absolute top-0 left-0 w-full h-full z-0 pointer-events-none overflow-hidden">
         <div className="absolute top-[-20%] left-[-10%] w-[70%] h-[70%] bg-indigo-600/10 rounded-full blur-[140px]" />
         <div className="absolute bottom-[-20%] right-[-10%] w-[70%] h-[70%] bg-blue-600/10 rounded-full blur-[140px]" />
       </div>
 
-      <div className="relative z-10 w-full max-w-5xl flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
+      <div className="relative z-10 w-full max-w-5xl flex shrink-0 flex-col gap-8 my-auto animate-in fade-in slide-in-from-bottom-6 duration-700">
         <div className="text-center space-y-2">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-widest mb-2 shadow-sm">
             <Zap size={14} className="fill-current" /> Production Orchestration Setup
@@ -145,13 +145,13 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
               className="block w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2 mt-2 text-white"
               placeholder="FORTRESS_BOOTSTRAP_TOKEN" />
           </label>
-          <h1 className="text-5xl font-black text-white tracking-tighter leading-tight">Fortress Core</h1>
+          <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tighter leading-tight">Fortress Core</h1>
           <p className="text-slate-400 max-w-lg mx-auto text-base leading-relaxed">
             Configure the backbone of your backup infrastructure.
           </p>
         </div>
 
-        <div className="flex items-center justify-center gap-4 px-6 py-4 bg-slate-900/30 backdrop-blur-md rounded-[2rem] border border-slate-800/50 w-fit mx-auto shadow-2xl">
+        <div className="flex w-full sm:w-fit items-center justify-between sm:justify-center gap-1 sm:gap-4 px-2 sm:px-6 py-4 bg-slate-900/30 backdrop-blur-md rounded-[2rem] border border-slate-800/50 mx-auto shadow-2xl">
           {steps.map((step, idx) => {
             const Icon = step.icon;
             const isActive = currentStep === step.id;
@@ -160,25 +160,25 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
             return (
               <React.Fragment key={step.id}>
                 <div className="flex flex-col items-center gap-2 transition-all duration-300">
-                  <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center transition-all duration-500 relative group ${isActive ? 'bg-indigo-600 border-indigo-400 text-white scale-110 shadow-[0_0_20px_rgba(79,70,229,0.3)]' :
+                  <div className={`w-8 h-8 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl border flex items-center justify-center transition-all duration-500 relative group ${isActive ? 'bg-indigo-600 border-indigo-400 text-white scale-110 shadow-[0_0_20px_rgba(79,70,229,0.3)]' :
                     isPast ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
                       'bg-slate-800/50 border-slate-700/50 text-slate-500'
                     }`}>
-                    {isPast ? <CheckCircle2 size={24} /> : <Icon size={24} />}
+                    {isPast ? <CheckCircle2 className="w-4 h-4 sm:w-6 sm:h-6" /> : <Icon className="w-4 h-4 sm:w-6 sm:h-6" />}
                   </div>
-                  <span className={`text-[8px] font-black uppercase tracking-[0.2em] transition-colors ${isActive ? 'text-indigo-400' : 'text-slate-600'}`}>
+                  <span className={`text-[7px] sm:text-[8px] font-black uppercase sm:tracking-[0.2em] transition-colors ${isActive ? 'text-indigo-400' : 'text-slate-600'}`}>
                     {step.label}
                   </span>
                 </div>
                 {idx < steps.length - 1 && (
-                  <div className={`h-[1px] w-12 transition-all duration-700 ${isPast ? 'bg-emerald-500/30' : 'bg-slate-800/50'}`} />
+                  <div className={`hidden sm:block h-[1px] w-6 lg:w-12 transition-all duration-700 ${isPast ? 'bg-emerald-500/30' : 'bg-slate-800/50'}`} />
                 )}
               </React.Fragment>
             );
           })}
         </div>
 
-        <div className="bg-slate-900/60 backdrop-blur-2xl border border-slate-800/80 rounded-[3rem] p-8 md:p-12 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)] relative overflow-hidden min-h-[600px] flex flex-col transition-all duration-500">
+        <div className="bg-slate-900/60 backdrop-blur-2xl border border-slate-800/80 rounded-2xl sm:rounded-[3rem] p-4 sm:p-8 md:p-12 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)] relative overflow-hidden sm:min-h-[600px] min-w-0 flex flex-col transition-all duration-500">
 
           {/* STEP 1: DATABASE */}
           {currentStep === 'db' && (
@@ -235,7 +235,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                     <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Database</label>
                     <input type="text" value={dbConfig.database} onChange={e => setDbConfig({ ...dbConfig, database: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="fortress" />
                   </div>
-                  <div className="flex items-end col-span-4">
+                  <div className="flex items-end col-span-full">
                     <button onClick={testDbConnection} className="text-[10px] font-black uppercase text-indigo-400 flex items-center gap-2 bg-indigo-500/5 px-4 py-2 rounded-lg border border-indigo-500/10 hover:bg-indigo-500/10 transition-colors">
                       {isDbTesting ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
                       {isDbTesting ? 'Verifying TCP Handshake...' : 'Test Connection'}
@@ -247,7 +247,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
               <div className="mt-auto flex justify-center pt-8 border-t border-slate-800/50">
                 <button
                   onClick={() => setCurrentStep('auth')}
-                  className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 text-white px-12 py-5 rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
+                  className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 text-white w-full sm:w-auto justify-center px-4 sm:px-12 py-4 sm:py-5 rounded-2xl text-xs sm:text-base font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
                 >
                   Configure Identity <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
                 </button>
@@ -314,7 +314,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                       </div>
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Password</label>
-                        <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Min 8 characters" />
+                        <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="Min 12 characters" />
                       </div>
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Confirm Password</label>
@@ -365,7 +365,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                           <input type="password" value={ssoConfig.clientSecret || ''} onChange={e => setSsoConfig({ ...ssoConfig, clientSecret: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none font-mono" placeholder="••••••••" />
                         </div>
                         {ssoConfig.provider === 'oidc' && (
-                          <div className="space-y-2 col-span-2">
+                        <div className="space-y-2 md:col-span-2">
                             <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Discovery URL</label>
                             <input type="text" value={ssoConfig.discoveryUrl || ''} onChange={e => setSsoConfig({ ...ssoConfig, discoveryUrl: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none font-mono" placeholder="https://auth.company.com/.well-known/openid-configuration" />
                           </div>
@@ -380,12 +380,12 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                 </div>
               )}
 
-              <div className="mt-auto flex justify-between items-center pt-8 border-t border-slate-800/50">
+              <div className="mt-auto flex flex-col-reverse sm:flex-row gap-4 justify-between items-center pt-6 sm:pt-8 border-t border-slate-800/50">
                 <button onClick={() => setCurrentStep('db')} className="text-slate-600 hover:text-white font-black text-[11px] uppercase tracking-[0.2em]">Back</button>
                 <button
-                  disabled={!authMode || (authMode === 'local' && (!adminEmail || !adminPassword || adminPassword !== adminConfirmPassword || adminPassword.length < 8)) || (authMode === 'sso' && (!ssoConfig.provider || !ssoConfig.clientId))}
+                  disabled={!authMode || (authMode === 'local' && (!adminEmail || !adminPassword || adminPassword !== adminConfirmPassword || adminPassword.length < 12)) || (authMode === 'sso' && (!ssoConfig.provider || !ssoConfig.clientId))}
                   onClick={() => setCurrentStep('welcome')}
-                  className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-12 py-5 rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
+                  className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white w-full sm:w-auto justify-center px-4 sm:px-12 py-4 sm:py-5 rounded-2xl text-xs sm:text-base font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
                 >
                   Configure Systems <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
                 </button>
@@ -425,12 +425,12 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                 ))}
               </div>
 
-              <div className="mt-auto flex justify-between items-center pt-8 border-t border-slate-800/50">
+              <div className="mt-auto flex flex-col-reverse sm:flex-row gap-4 justify-between items-center pt-6 sm:pt-8 border-t border-slate-800/50">
                 <button onClick={() => setCurrentStep('auth')} className="text-slate-600 hover:text-white font-black text-[11px] uppercase tracking-[0.2em]">Back</button>
                 <button
                   disabled={selectedTools.length === 0}
                   onClick={() => setCurrentStep('vault')}
-                  className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-12 py-5 rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
+                  className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white w-full sm:w-auto justify-center px-4 sm:px-12 py-4 sm:py-5 rounded-2xl text-xs sm:text-base font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
                 >
                   Setup Vault <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
                 </button>
@@ -466,12 +466,12 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                   />
                 </div>
               </div>
-              <div className="mt-auto flex justify-between items-center pt-8 border-t border-slate-800/50">
+              <div className="mt-auto flex flex-col-reverse sm:flex-row gap-4 justify-between items-center pt-6 sm:pt-8 border-t border-slate-800/50">
                 <button onClick={() => setCurrentStep('welcome')} className="text-slate-600 hover:text-white font-black text-[11px] uppercase tracking-[0.2em]">Back</button>
                 <button
                   disabled={!masterPassword || masterPassword !== confirmPassword || masterPassword.length < 8}
                   onClick={() => setCurrentStep('ai')}
-                  className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-12 py-5 rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
+                  className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white w-full sm:w-auto justify-center px-4 sm:px-12 py-4 sm:py-5 rounded-2xl text-xs sm:text-base font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
                 >
                   Configure AI <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
                 </button>
@@ -508,11 +508,11 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                 ))}
               </div>
 
-              <div className="mt-auto flex justify-between items-center pt-8 border-t border-slate-800/50">
+              <div className="mt-auto flex flex-col-reverse sm:flex-row gap-4 justify-between items-center pt-6 sm:pt-8 border-t border-slate-800/50">
                 <button onClick={() => setCurrentStep('vault')} className="text-slate-600 hover:text-white font-black text-[11px] uppercase tracking-[0.2em]">Back</button>
                 <button
                   onClick={() => setCurrentStep('guide')}
-                  className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 text-white px-12 py-5 rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
+                  className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 text-white w-full sm:w-auto justify-center px-4 sm:px-12 py-4 sm:py-5 rounded-2xl text-xs sm:text-base font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
                 >
                   Final Preparation <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
                 </button>
@@ -557,11 +557,11 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                   </div>
                 </div>
               </div>
-              <div className="mt-auto flex justify-between items-center pt-8 border-t border-slate-800/50">
+              <div className="mt-auto flex flex-col-reverse sm:flex-row gap-4 justify-between items-center pt-6 sm:pt-8 border-t border-slate-800/50">
                 <button onClick={() => setCurrentStep('ai')} className="text-slate-600 hover:text-white font-black text-[11px] uppercase tracking-[0.2em]">Back</button>
                 <button
                   onClick={handleFinish}
-                  className="group flex items-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white px-14 py-5 rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl shadow-emerald-600/30 transition-all active:scale-95"
+                  className="group flex items-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white w-full sm:w-auto justify-center px-4 sm:px-14 py-4 sm:py-5 rounded-2xl text-xs sm:text-base font-black uppercase tracking-[0.2em] shadow-2xl shadow-emerald-600/30 transition-all active:scale-95"
                 >
                   Enter Command Center <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
                 </button>

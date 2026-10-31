@@ -41,14 +41,14 @@ export const AddSystemModal: React.FC<AddSystemModalProps> = ({ isOpen, onClose,
 
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-xl flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-[2.5rem] w-full max-w-xl p-8 animate-in slide-in-from-bottom-8 duration-500">
+            <div role="dialog" aria-modal="true" aria-label="Register managed node" className="bg-slate-900 border border-slate-700 rounded-[2.5rem] w-full max-w-xl max-h-[calc(100dvh-2rem)] overflow-y-auto min-w-0 p-4 sm:p-8 animate-in slide-in-from-bottom-8 duration-500">
                 <h3 className="text-2xl font-black text-white mb-6">Register Managed Node</h3>
                 <div className="space-y-4">
                     <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Node Name</label>
                         <input type="text" value={newSystem.name} onChange={e => setNewSystem({ ...newSystem, name: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Web Server Alpha" />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1">
                             <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Hostname / IP</label>
                             <input type="text" value={newSystem.host} onChange={e => setNewSystem({ ...newSystem, host: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="10.0.0.5" />
@@ -80,7 +80,7 @@ export const AddSystemModal: React.FC<AddSystemModalProps> = ({ isOpen, onClose,
                         <textarea rows={3} value={newSystem.hostPublicKey || ''} onChange={e => setNewSystem({ ...newSystem, hostPublicKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..." />
                     </div>
                 </div>
-                <div className="flex justify-end gap-4 mt-10">
+                <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-6 sm:mt-10">
                     <button onClick={onClose} className="px-6 py-4 text-slate-500 hover:text-white font-black uppercase text-[10px]">Cancel</button>
                     <button onClick={handleAddSystem} className="px-10 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-indigo-600/20 transition-all">Enroll System</button>
                 </div>

@@ -18,7 +18,7 @@ const StatCard = ({ title, value, subtext, icon: Icon, color }: any) => (
       </div>
     </div>
     <p className="text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>{title}</p>
-    <div className="flex items-baseline gap-2">
+    <div className="flex flex-wrap items-baseline gap-2">
       <h2 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>{value}</h2>
       <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{subtext}</span>
     </div>
@@ -199,9 +199,9 @@ export const Dashboard: React.FC<DashboardProps> = () => {
             <p className="text-center py-8" style={{ color: 'var(--color-text-muted)' }}>No backup jobs yet. Create your first job to get started.</p>
           ) : (
             jobs.slice(0, 5).map((job) => (
-              <div key={job.id} className="flex items-center justify-between p-3 rounded-lg transition-colors" style={{ backgroundColor: 'var(--color-bg-tertiary)' }}>
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${job.status === JobStatus.RUNNING ? 'animate-pulse' : ''}`}
+              <div key={job.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg transition-colors" style={{ backgroundColor: 'var(--color-bg-tertiary)' }}>
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className={`w-2 h-2 shrink-0 rounded-full ${job.status === JobStatus.RUNNING ? 'animate-pulse' : ''}`}
                     style={{ backgroundColor: job.status === JobStatus.SUCCESS ? 'var(--color-success)' : job.status === JobStatus.FAILED ? 'var(--color-error)' : job.status === JobStatus.RUNNING ? 'var(--color-info)' : 'var(--color-text-muted)' }} />
                   <div>
                     <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{job.name}</p>

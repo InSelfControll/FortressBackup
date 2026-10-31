@@ -35,7 +35,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({
     const Icon = config.icon;
 
     return (
-        <div className="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 hover:border-indigo-500/40 transition-all group">
+        <div className="bg-slate-800/40 border border-slate-700/50 rounded-2xl min-w-0 p-4 sm:p-6 hover:border-indigo-500/40 transition-all group">
             <div className="flex justify-between items-start mb-4">
                 <div className={`p-3 rounded-xl ${config.color} border`}>
                     <Icon size={24} />
@@ -51,14 +51,14 @@ export const LocationCard: React.FC<LocationCardProps> = ({
                 </div>
             </div>
 
-            <h3 className="text-lg font-bold text-white mb-1">{location.name}</h3>
+            <h3 className="text-lg break-words font-bold text-white mb-1">{location.name}</h3>
             <p className="text-xs text-slate-500 font-mono truncate mb-4" title={location.path}>{location.path}</p>
 
             {location.region && (
                 <p className="text-[10px] text-slate-600 mb-4">Region: {location.region}</p>
             )}
 
-            <div className="flex justify-between items-center pt-4 border-t border-slate-700/50">
+            <div className="flex flex-wrap gap-3 justify-between items-center pt-4 border-t border-slate-700/50">
                 <button
                     onClick={() => onTestConnection(location)}
                     disabled={isTesting}
@@ -68,7 +68,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({
                     Test Connection
                 </button>
                 <div className="flex gap-2">
-                    <button onClick={() => onEdit(location)} className="p-2 text-slate-400 hover:text-indigo-400 hover:bg-slate-700 rounded-lg transition-colors" title="Edit">
+                    <button onClick={() => onEdit(location)} className="p-3 text-slate-400 hover:text-indigo-400 hover:bg-slate-700 rounded-lg transition-colors" title="Edit">
                         <Edit3 size={16} />
                     </button>
                     {isDeleteConfirm ? (
@@ -76,7 +76,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({
                             Confirm
                         </button>
                     ) : (
-                        <button onClick={() => setDeleteConfirm(location.id)} className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors" title="Delete">
+                        <button onClick={() => setDeleteConfirm(location.id)} className="p-3 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors" title="Delete">
                             <Trash2 size={16} />
                         </button>
                     )}

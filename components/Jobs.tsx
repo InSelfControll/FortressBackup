@@ -74,12 +74,12 @@ export const Jobs: React.FC<JobsProps> = ({ aiConfig }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-white tracking-tight">Backup Streams</h2>
           <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">Orchestrated backup jobs</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${showFilters ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:border-slate-600'}`}
@@ -95,7 +95,7 @@ export const Jobs: React.FC<JobsProps> = ({ aiConfig }) => {
       {/* Filter Bar */}
       {showFilters && (
         <div className="flex flex-wrap gap-4 p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50 animate-in slide-in-from-top-2 duration-200">
-          <div className="flex-1 min-w-[200px]">
+          <div className="flex-1 min-w-0 basis-full sm:basis-auto">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
               <input

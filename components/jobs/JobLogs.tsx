@@ -87,34 +87,34 @@ export const JobLogs: React.FC<JobLogsProps> = ({ job, onClose, systemName, loca
     return (
         <div className="fixed inset-0 z-50 flex justify-end">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-xl bg-slate-900 border-l border-slate-800 shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-300">
-                <div className="p-6 border-b border-slate-800 flex justify-between items-start">
+            <div role="dialog" aria-modal="true" aria-label="Job details" className="relative w-full max-w-xl bg-slate-900 border-l border-slate-800 shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-300">
+                <div className="p-4 sm:p-6 shrink-0 border-b border-slate-800 flex justify-between items-start">
                     <div>
                         <div className="flex items-center gap-2 mb-1">
                             <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Job Details</span>
                             {getStatusBadge(job.status)}
                         </div>
-                        <h2 className="text-2xl font-bold text-white">{job.name}</h2>
+                        <h2 className="text-2xl break-words font-bold text-white">{job.name}</h2>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-lg"><X size={20} /></button>
+                    <button onClick={onClose} aria-label="Close job details" className="p-3 shrink-0 hover:bg-slate-800 rounded-lg"><X size={20} /></button>
                 </div>
-                <div className="p-6 space-y-8 overflow-y-auto flex-1">
+                <div className="p-4 sm:p-6 min-h-0 space-y-8 overflow-y-auto flex-1">
                     <div className="grid grid-cols-2 gap-4">
                         <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
                             <div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Source</div>
-                            <div className="text-lg font-bold text-white">{systemName}</div>
+                            <div className="text-lg break-words font-bold text-white">{systemName}</div>
                         </div>
                         <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
                             <div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Destination</div>
-                            <div className="text-lg font-bold text-white">{locationName}</div>
+                            <div className="text-lg break-words font-bold text-white">{locationName}</div>
                         </div>
                         <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
                             <div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Avg Speed</div>
-                            <div className="text-2xl font-bold text-white">{job.stats?.speed || 48.2} <span className="text-sm font-normal text-slate-500">MB/s</span></div>
+                            <div className="text-2xl break-words font-bold text-white">{job.stats?.speed || 48.2} <span className="text-sm font-normal text-slate-500">MB/s</span></div>
                         </div>
                         <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
                             <div className="text-[10px] text-slate-500 uppercase font-bold mb-1">Dedupe Ratio</div>
-                            <div className="text-2xl font-bold text-white">{job.stats?.dedupeRatio || 4.2}<span className="text-sm font-normal text-slate-500">x</span></div>
+                            <div className="text-2xl break-words font-bold text-white">{job.stats?.dedupeRatio || 4.2}<span className="text-sm font-normal text-slate-500">x</span></div>
                         </div>
                     </div>
                     <div>

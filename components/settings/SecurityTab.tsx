@@ -8,7 +8,7 @@ export const SecurityTab: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      <div className="flex items-center gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
         <div className="p-4 bg-rose-600/10 rounded-2xl border border-rose-500/20">
           <Lock className="text-rose-400" size={28} />
         </div>
@@ -18,7 +18,7 @@ export const SecurityTab: React.FC = () => {
         </div>
       </div>
 
-      <div className="max-w-md mx-auto space-y-6 p-8 bg-slate-800/20 rounded-3xl border border-slate-800">
+      <div className="max-w-md mx-auto space-y-6 p-4 sm:p-8 bg-slate-800/20 rounded-3xl border border-slate-800">
         <div className="space-y-2">
           <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Current Password</label>
           <input
@@ -64,7 +64,7 @@ export const SecurityTab: React.FC = () => {
         </button>
       </div>
 
-      <div className="p-6 bg-amber-500/5 rounded-2xl border border-amber-500/10">
+      <div className="p-4 sm:p-6 bg-amber-500/5 rounded-2xl border border-amber-500/10">
         <div className="flex items-start gap-3">
           <AlertTriangle className="text-amber-400 mt-0.5" size={18} />
           <div>
