@@ -27,6 +27,7 @@ on:
       - 'package.json'
       - 'bun.lock'
       - '.github/workflows/windows-agent.yml'
+      - '.github/workflows/release.yml'
       - '.github/workflows/fortress-controller.yml'
   pull_request:
     paths: *controller-paths

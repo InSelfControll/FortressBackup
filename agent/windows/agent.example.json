@@ -1,0 +1,16 @@
+{
+  "resticPath": "C:\\FortressSetup\\restic.exe",
+  "repository": "sftp://BACKUP_USER@YOUR_STORAGE_HOST:23/backups/windows-laptop",
+  "passwordFile": "C:\\FortressSetup\\repository-password.txt",
+  "sources": [
+    "C:\\Users\\YOUR_WINDOWS_USER\\Documents",
+    "C:\\Users\\YOUR_WINDOWS_USER\\Desktop"
+  ],
+  "excludes": [],
+  "host": "YOUR_LAPTOP_NAME",
+  "timeoutMinutes": 240,
+  "useVSS": true,
+  "controllerUrl": "https://YOUR_FORTRESS_CONTROLLER",
+  "agentId": "PASTE_ENROLLMENT_ID",
+  "agentTokenFile": "C:\\FortressSetup\\agent-token.txt"
+}

@@ -1,5 +1,13 @@
 # Managed Windows clients (PR #20, pre-production)
 
+## Downloads and first installation
+
+Get the Windows x64 bundle from [GitHub Releases](https://github.com/InSelfControll/FortressBackup/releases)
+and follow [INSTALL.md](INSTALL.md). The bundle includes both executables, the
+installer, a complete configuration example, and checksums. Enrollment only creates
+an identity and token; install and configure the agent on the laptop separately.
+Choose source folders using the local configuration's `sources` list.
+
 ## Trust model
 - Windows clients initiate HTTPS connections to the Fortress controller. No inbound Windows firewall rules needed.
 - The controller stores a SHA-256 hash of each randomly generated bearer token; enrollment returns the secret **once**.
@@ -34,7 +42,7 @@ These three fields must be merged into the agent's backup configuration, which m
 Run PowerShell as administrator:
 
 ```powershell
-.\\install-task.ps1 -AgentPath 'C:\ProgramData\FortressBackup\fortress-agent.exe' -ConfigPath 'C:\ProgramData\FortressBackup\agent.json' -Managed
+.\\install-task.ps1 -AgentPath 'C:\FortressSetup\fortress-agent.exe' -ConfigPath 'C:\FortressSetup\agent.json' -AgentSha256 '<trusted-agent-SHA256>' -ResticSha256 '<trusted-restic-SHA256>' -Managed
 ```
 
 The task uses SYSTEM for VSS and polls every minute. SYSTEM has its own OpenSSH identity/known_hosts files; provision a **pinned trusted Hetzner host key** and dedicated SSH key for that identity before enabling the task. Protect the controller with a trusted TLS certificate and private network or Cloudflare Access if needed.

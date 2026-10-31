@@ -105,9 +105,24 @@ test('controller CI triggers cover all tested and built source paths', () => {
     'postcss.config.js',
     'Dockerfile',
     '.github/workflows/windows-agent.yml',
+    '.github/workflows/release.yml',
   ];
 
   for (const event of ['push', 'pull_request']) {
     expect(controllerWorkflow.on[event].paths).toEqual(expect.arrayContaining(required));
   }
+});
+
+test('release publication waits for validation and verifies bundled executables', () => {
+  const release = Bun.YAML.parse(readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8')) as any;
+  expect(windowsWorkflow.on).toHaveProperty('workflow_call');
+  expect(release.jobs.windows.uses).toBe('./.github/workflows/windows-agent.yml');
+  expect(release.jobs['package-windows'].needs).toBe('windows');
+  expect(release.jobs.publish.needs).toEqual(['controller', 'package-windows']);
+  const packaging = step(release.jobs['package-windows'], 'Assemble Windows x64 download');
+  expect(packaging.env.RESTIC_ZIP_SHA256).toMatch(/^[a-f0-9]{64}$/);
+  expect(packaging.run.indexOf('Restic download checksum mismatch')).toBeLessThan(packaging.run.indexOf('Expand-Archive'));
+  expect(packaging.run).toContain('Agent artifact checksum mismatch');
+  expect(packaging.run).toContain('RESTIC-LICENSE.txt');
+  expect(step(release.jobs.controller, 'Require a version tag on main').run).toContain('git merge-base --is-ancestor HEAD origin/main');
 });

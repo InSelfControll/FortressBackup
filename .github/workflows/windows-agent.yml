@@ -1,5 +1,6 @@
 name: Windows backup agent
 on:
+  workflow_call:
   push:
     paths:
       - 'agent/windows/**'
