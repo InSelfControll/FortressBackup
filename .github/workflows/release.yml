@@ -79,7 +79,7 @@ jobs:
           New-Item -ItemType Directory -Path $bundle,downloads -Force | Out-Null
           Copy-Item agent-artifact/fortress-agent.exe (Join-Path $bundle 'fortress-agent.exe')
           Copy-Item (Join-Path $upstream "restic_$($env:RESTIC_VERSION)_windows_amd64.exe") (Join-Path $bundle 'restic.exe')
-          foreach ($name in @('Install FortressBackup.cmd','setup.ps1','install-task.ps1','agent.example.json','MANAGED.md','RESTIC-LICENSE.txt')) {
+          foreach ($name in @('Install FortressBackup.cmd','setup.ps1','install-task.ps1','agent.example.json','INSTALL.md','MANAGED.md','RESTIC-LICENSE.txt')) {
             Copy-Item "agent/windows/$name" (Join-Path $bundle $name)
           }
           Copy-Item agent/windows/INSTALL.md (Join-Path $bundle 'README.md')

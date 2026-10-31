@@ -81,6 +81,11 @@ try {
     if($log -notmatch 'plain HTTPS origin'){throw 'Setup error was not recorded for the user'}
     if(@(Get-ScheduledTask | Where-Object {$_.TaskName -like 'FortressBackup-SetupCheck-*'}).Count){throw 'Temporary verification task leaked'}
     Write-Output 'PowerShell 5.1 config, SYSTEM preflight failure, diagnostics, and rollback verified'
+}catch{
+    $checkLog=Join-Path $installed 'setup-check.log'
+    if(Test-Path -LiteralPath $checkLog){Get-Content -LiteralPath $checkLog | Write-Output}
+    if($serverJob){Receive-Job $serverJob -ErrorAction Continue}
+    throw
 }finally{
     if($serverJob){Stop-Job $serverJob -ErrorAction SilentlyContinue;Remove-Job $serverJob -Force -ErrorAction SilentlyContinue}
     if($port){& netsh http delete sslcert "ipport=0.0.0.0:$port" | Out-Null}

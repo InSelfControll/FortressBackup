@@ -119,7 +119,7 @@ try{
             try{
                 $checkAction=New-ScheduledTaskAction -Execute $agent -Argument ('-config "{0}" -operation preflight -log "{1}"' -f $configuration,$checkLog)
                 $checkPrincipal=New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest
-                Register-ScheduledTask -TaskName $checkName -Action $checkAction -Principal $checkPrincipal -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2)) | Out-Null
+                Register-ScheduledTask -TaskName $checkName -Action $checkAction -Principal $checkPrincipal -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries) | Out-Null
                 $started=Get-Date
                 Start-ScheduledTask -TaskName $checkName
                 $finished=$false
@@ -129,7 +129,7 @@ try{
                     $state=(Get-ScheduledTask -TaskName $checkName).State
                     $finished=$info.LastRunTime -ge $started.AddSeconds(-1) -and $state -notin @('Running','Queued')
                 }while(!$finished -and (Get-Date) -lt $started.AddSeconds(100))
-                if(!$finished -or $info.LastTaskResult -ne 0){throw "Setup verification failed as SYSTEM. Read $checkLog for the storage, HTTPS or enrollment error. No queued backup was claimed."}
+                if(!$finished -or $info.LastTaskResult -ne 0){throw "Setup verification failed as SYSTEM (state=$state, result=$($info.LastTaskResult), last run=$($info.LastRunTime)). Read $checkLog for the storage, HTTPS or enrollment error. No queued backup was claimed."}
             }finally{
                 Stop-ScheduledTask -TaskName $checkName -ErrorAction SilentlyContinue
                 Unregister-ScheduledTask -TaskName $checkName -Confirm:$false -ErrorAction SilentlyContinue
@@ -137,7 +137,7 @@ try{
         }
         $mode=if($Managed){'managed'}else{'backup'}
         $args='-config "{0}" -operation {1} -log "{2}"' -f $configuration,$mode,(Join-Path $root 'agent.log')
-        $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 5) -StartWhenAvailable
+        $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 5) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
         if($Managed){
             $command='"{0}" {1}' -f $agent,$args
             & schtasks.exe /Create /SC MINUTE /MO 1 /TN $TaskName /TR $command /RU SYSTEM /RL HIGHEST /F | Out-Null
