@@ -49,6 +49,7 @@ export const createTables = () => {
       role TEXT DEFAULT 'viewer',
       auth_type TEXT DEFAULT 'local',
       github_id TEXT,
+      auth_epoch INTEGER NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     
@@ -134,6 +135,8 @@ export const createTables = () => {
     const userColumns = sqliteDb.prepare("PRAGMA table_info(users)").all() as any[];
     if (!userColumns.some(col => col.name === 'github_id'))
       sqliteDb.prepare('ALTER TABLE users ADD COLUMN github_id TEXT').run();
+    if (!userColumns.some(col => col.name === 'auth_epoch'))
+      sqliteDb.prepare('ALTER TABLE users ADD COLUMN auth_epoch INTEGER NOT NULL DEFAULT 0').run();
     sqliteDb.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_github_id ON users(github_id) WHERE github_id IS NOT NULL').run();
     const columns = sqliteDb.prepare("PRAGMA table_info(systems)").all() as any[];
     const managedColumns=sqliteDb.prepare('PRAGMA table_info(managed_jobs)').all() as any[];
@@ -167,6 +170,7 @@ export const createTablesPostgres = async () => {
       role TEXT DEFAULT 'viewer',
       auth_type TEXT DEFAULT 'local',
       github_id TEXT,
+      auth_epoch INTEGER NOT NULL DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     
@@ -244,6 +248,7 @@ export const createTablesPostgres = async () => {
   `);
   await pgPool.query(managedTablesDDL);
   await pgPool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS github_id TEXT');
+  await pgPool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_epoch INTEGER NOT NULL DEFAULT 0');
   await pgPool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_github_id ON users(github_id) WHERE github_id IS NOT NULL');
   await pgPool.query('ALTER TABLE systems ADD COLUMN IF NOT EXISTS host_fingerprint TEXT');
   await pgPool.query('ALTER TABLE managed_jobs ADD COLUMN IF NOT EXISTS schedule_slot TEXT');

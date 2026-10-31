@@ -15,10 +15,11 @@ export interface User {
     role: 'admin' | 'viewer';
     auth_type: 'local' | 'sso';
     github_id?: string;
+    auth_epoch: number;
     created_at?: string;
 }
 
-export const createUser = async (user: Omit<User, 'id' | 'created_at'>, password?: string): Promise<User> => {
+export const createUser = async (user: Omit<User, 'id' | 'created_at' | 'auth_epoch'>, password?: string): Promise<User> => {
     const id = crypto.randomUUID();
     const passwordHash = password ? await bcrypt.hash(password, 10) : null;
 
@@ -27,7 +28,7 @@ export const createUser = async (user: Omit<User, 'id' | 'created_at'>, password
         [id, user.email, user.name, passwordHash, user.avatar || '', user.role, user.auth_type, user.github_id || null]
     );
 
-    return { ...user, id };
+    return { ...user, id, auth_epoch: 0 };
 };
 
 export const validateUser = async (email: string, password: string): Promise<User | null> => {
@@ -42,15 +43,19 @@ export const validateUser = async (email: string, password: string): Promise<Use
 };
 
 export const getUserById = async (id: string): Promise<User | null> => {
-    return getOne<User>(`SELECT id, email, name, avatar, role, auth_type, github_id FROM users WHERE id = ?`, [id]);
+    return getOne<User>(`SELECT id, email, name, avatar, role, auth_type, github_id, auth_epoch FROM users WHERE id = ?`, [id]);
 };
 
 export const getUserByEmail = async (email: string): Promise<User | null> => {
-    return getOne<User>(`SELECT id, email, name, avatar, role, auth_type, github_id FROM users WHERE email = ?`, [email]);
+    return getOne<User>(`SELECT id, email, name, avatar, role, auth_type, github_id, auth_epoch FROM users WHERE email = ?`, [email]);
 };
 
 export const getUserByGitHubId = async (githubId: string): Promise<User | null> =>
-    getOne<User>(`SELECT id, email, name, avatar, role, auth_type, github_id FROM users WHERE github_id = ?`, [githubId]);
+    getOne<User>(`SELECT id, email, name, avatar, role, auth_type, github_id, auth_epoch FROM users WHERE github_id = ?`, [githubId]);
+
+export const bumpAuthEpoch = async (id: string): Promise<void> => {
+  await run(`UPDATE users SET auth_epoch = auth_epoch + 1 WHERE id = ?`, [id]);
+};
 
 export const linkGitHubIdentity = async (userId: string, githubId: string): Promise<boolean> => {
     await run(

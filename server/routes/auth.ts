@@ -41,7 +41,7 @@ router.post('/register', authenticateToken, requireAdmin, async (req, res) => {
         }, authType === 'local' ? password : undefined);
 
         // Generate token
-        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, getJwtSecret(), { expiresIn: '7d' });
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role, authEpoch: user.auth_epoch }, getJwtSecret(), { expiresIn: '7d' });
 
         res.json({
             user: { id: user.id, email: user.email, name: user.name, avatar: user.avatar, role: user.role },
@@ -69,7 +69,7 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, getJwtSecret(), { expiresIn: '7d' });
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role, authEpoch: user.auth_epoch }, getJwtSecret(), { expiresIn: '7d' });
 
         res.json({
             user: { id: user.id, email: user.email, name: user.name, avatar: user.avatar, role: user.role },
@@ -172,7 +172,7 @@ router.post('/github/callback', async (req, res) => {
             });
         }
 
-        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, getJwtSecret(), { expiresIn: '7d' });
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role, authEpoch: user.auth_epoch }, getJwtSecret(), { expiresIn: '7d' });
         res.json({
             user: { id: user.id, email: user.email, name: user.name, avatar: user.avatar, role: user.role },
             token
@@ -204,6 +204,15 @@ router.post('/github/link', authenticateToken, async (req, res) => {
             return res.status(409).json({ error: 'Account linking conflict' });
         }
         console.error('[GitHub Link Error]', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/logout', authenticateToken, async (req, res) => {
+    try {
+        await db.bumpAuthEpoch((req as any).user.id);
+        res.json({ success: true });
+    } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
 });

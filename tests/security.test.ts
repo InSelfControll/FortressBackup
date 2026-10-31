@@ -40,9 +40,9 @@ test('privileged APIs deny viewers and never echo stored credentials', async()=>
  try{
   const a=server.address();if(!a||typeof a==='string')throw Error('bind failed');
   const base='http://127.0.0.1:'+a.port+'/api';
-  const viewer=jwt.sign({id:'viewer',role:'viewer'},process.env.JWT_SECRET);
-  const admin=jwt.sign({id:'admin',role:'admin'},process.env.JWT_SECRET);
-  const staleRole=jwt.sign({id:'viewer',role:'admin'},process.env.JWT_SECRET);
+  const viewer=jwt.sign({id:'viewer',role:'viewer',authEpoch:0},process.env.JWT_SECRET);
+  const admin=jwt.sign({id:'admin',role:'admin',authEpoch:0},process.env.JWT_SECRET);
+  const staleRole=jwt.sign({id:'viewer',role:'admin',authEpoch:0},process.env.JWT_SECRET);
   const request=(route:string,token:string,method='GET',body?:unknown)=>fetch(base+route,{
    method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:body===undefined?undefined:JSON.stringify(body)
@@ -314,7 +314,7 @@ test('GitHub subject binding requires authenticated linking and rejects duplicat
       method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:'dummy-code'})
     });
     const githubLink=(userId:string)=>fetch(base+'/github/link',{
-      method:'POST',headers:{Authorization:'Bearer '+jwt.sign({id:userId,role:'viewer'},process.env.JWT_SECRET),'Content-Type':'application/json'},
+      method:'POST',headers:{Authorization:'Bearer '+jwt.sign({id:userId,role:'viewer',authEpoch:0},process.env.JWT_SECRET),'Content-Type':'application/json'},
       body:JSON.stringify({code:'dummy-code'})
     });
     const unlinkedCallback=await githubCallback();
@@ -338,5 +338,31 @@ test('GitHub subject binding requires authenticated linking and rejects duplicat
     await closeDatabase();fs.rmSync(dir,{recursive:true,force:true});
     if(previousJwtSecret===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=previousJwtSecret;
     if(previousCredentialKey===undefined)delete process.env.FORTRESS_CREDENTIAL_KEY;else process.env.FORTRESS_CREDENTIAL_KEY=previousCredentialKey;
+  }
+},30000);
+
+test('logout revokes bearer tokens',async()=>{
+  const previousJwtSecret=process.env.JWT_SECRET;
+  process.env.JWT_SECRET=crypto.randomBytes(48).toString('hex');
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'fortress-token-revocation-'));
+  await initDatabase({type:'sqlite',filePath:path.join(dir,'db.sqlite')});
+  await run('INSERT INTO users(id,email,name,role,auth_type) VALUES(?,?,?,?,?)',['admin','admin@example.invalid','Admin','admin','local']);
+  const app=express();app.use(express.json());app.use('/api/systems',systems);app.use('/api/auth',auth);
+  const server=app.listen(0,'127.0.0.1');
+  try{
+    const address=server.address();
+    if(!address||typeof address==='string')throw new Error('Unable to bind test server');
+    const base='http://127.0.0.1:'+address.port+'/api';
+    const token=jwt.sign({id:'admin',role:'admin',authEpoch:0},process.env.JWT_SECRET);
+    const incorrectEpoch=jwt.sign({id:'admin',role:'admin',authEpoch:1},process.env.JWT_SECRET);
+    const authorizedRequest=(token:string)=>fetch(base+'/systems',{headers:{Authorization:'Bearer '+token}});
+    expect((await authorizedRequest(token)).status).toBe(200);
+    expect((await authorizedRequest(incorrectEpoch)).status).toBe(403);
+    expect((await fetch(`${base}/auth/logout`,{method:'POST',headers:{Authorization:`Bearer ${token}`}})).status).toBe(200);
+    expect((await authorizedRequest(token)).status).toBe(403);
+  }finally{
+    await new Promise<void>(resolve=>server.close(()=>resolve()));
+    await closeDatabase();fs.rmSync(dir,{recursive:true,force:true});
+    if(previousJwtSecret===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=previousJwtSecret;
   }
 },30000);

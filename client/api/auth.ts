@@ -2,7 +2,7 @@
  * Authentication API endpoints
  */
 
-import { apiFetch, setToken } from './client.js';
+import { API_BASE, apiFetch, getToken, setToken } from './client.js';
 
 export interface AuthUser {
     id: string;
@@ -65,7 +65,15 @@ export const getMe = async () => {
     return apiFetch<{ user: AuthUser }>('/auth/me');
 };
 
-export const logout = () => {
-    setToken(null);
-    localStorage.removeItem('fortress_user_session');
+export const logout = async () => {
+    try {
+        const token = getToken();
+        await fetch(`${API_BASE}/auth/logout`, {
+            method: 'POST',
+            headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+    } finally {
+        setToken(null);
+        localStorage.removeItem('fortress_user_session');
+    }
 };

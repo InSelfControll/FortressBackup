@@ -13,7 +13,7 @@ export const getJwtSecret = () => {
     return secret;
 };
 
-export const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
+export const authenticateToken = async (req: Request, res: Response, next: NextFunction) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
@@ -21,11 +21,23 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
         return res.status(401).json({ error: 'Access token required' });
     }
 
-    jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] }, (err: any, user: any) => {
-        if (err) return res.status(403).json({ error: 'Invalid token' });
+    let payload: jwt.JwtPayload;
+    try {
+        payload = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] }) as jwt.JwtPayload;
+    } catch {
+        return res.status(403).json({ error: 'Invalid token' });
+    }
+
+    try {
+        const user = typeof payload.id === 'string' ? await getUserById(payload.id) : null;
+        if (!user || payload.authEpoch !== user.auth_epoch) {
+            return res.status(403).json({ error: 'Invalid token' });
+        }
         (req as any).user = user;
         next();
-    });
+    } catch (error) {
+        next(error);
+    }
 };
 
 export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
