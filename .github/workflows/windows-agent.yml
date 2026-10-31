@@ -128,6 +128,13 @@ jobs:
       - name: Verify setup with Windows PowerShell 5.1
         shell: powershell
         run: ./agent/windows/test-install.ps1
+      - name: Save graphical setup verification
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: windows-setup-gui-verification
+          path: ${{ runner.temp }}/fortress-setup-gui.png
+          if-no-files-found: ignore
       - name: Verify Windows VSS snapshot and full Restic restore
         shell: pwsh
         run: |

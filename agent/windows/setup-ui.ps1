@@ -51,8 +51,10 @@ function New-SetupWindow([string]$SetupRoot){
     $add=Add-SetupControl Button addFolder 'Add folder...' 490 337 140 33
     $remove=Add-SetupControl Button removeFolder 'Remove' 490 378 140 33
     $progress=Add-SetupControl ProgressBar progress '' 20 469 610 15
-    $status=Add-SetupControl Label status 'Connect, choose folders, then click Install.' 20 492 610 57
-    $status.AutoEllipsis=$true
+    $status=Add-SetupControl TextBox status 'Connect, choose folders, then click Install.' 20 492 610 57
+    $status.Multiline=$true;$status.ReadOnly=$true;$status.ScrollBars='Vertical'
+    $status.BorderStyle='None';$status.BackColor=[Drawing.SystemColors]::Control
+    $status.AccessibleName='Setup status'
     $install=Add-SetupControl Button install 'Install' 340 558 140 33
     $close=Add-SetupControl Button close 'Cancel' 490 558 140 33
     $install.Enabled=$false;$add.Enabled=$false;$remove.Enabled=$false
@@ -125,7 +127,7 @@ function New-SetupWindow([string]$SetupRoot){
         $failed=$false
         try {
             $result=$state.Worker.EndInvoke($state.Pending)
-            if($state.Worker.HadErrors){throw 'Setup verification failed. Read C:\ProgramData\FortressBackup\setup-check.log for details.'}
+            if($state.Worker.HadErrors){throw $state.Worker.Streams.Error[0].Exception}
             if($state.Stage -eq 'connect'){
                 $state.Profile=$result[0]
                 $form.AcceptButton=$install
@@ -142,7 +144,11 @@ function New-SetupWindow([string]$SetupRoot){
             if($state.Stage -eq 'connect'){
                 $repository.Text='Saved repository: could not connect.'
                 $status.Text='Connection failed. Check HTTPS/DNS, enrollment credentials, and the assigned repository in Managed Clients.'
-            }else{$status.Text='Installation failed. Check the setup files and C:\ProgramData\FortressBackup\setup-check.log. No backup completion is implied.'}
+            }else{
+                $errorDetail=$_.Exception
+                while($errorDetail.InnerException){$errorDetail=$errorDetail.InnerException}
+                $status.Text='Installation failed: '+$errorDetail.Message+' Check C:\ProgramData\FortressBackup\setup-check.log for verification details.'
+            }
         }finally{
             $state.Worker.Dispose();$state.Worker=$null;$state.Pending=$null
             $progress.Style='Blocks';$progress.Value=0;$close.Enabled=$true

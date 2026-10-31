@@ -89,6 +89,11 @@ try {
         if(!$window.Tag.Profile){throw ('GUI connection failed: '+$window.Controls['status'].Text)}
         if($window.Controls['repository'].Text -notmatch 'Saved storage / Saved repository'){throw 'GUI did not display the saved repository'}
         if($window.Controls['install'].Enabled -or !$window.Controls['addFolder'].Enabled){throw 'GUI allowed installation without folders'}
+        $image=New-Object Drawing.Bitmap($window.Width,$window.Height)
+        try {
+            $window.DrawToBitmap($image,(New-Object Drawing.Rectangle(0,0,$window.Width,$window.Height)))
+            $image.Save((Join-Path $env:RUNNER_TEMP 'fortress-setup-gui.png'),[Drawing.Imaging.ImageFormat]::Png)
+        }finally{$image.Dispose()}
         [void]$window.Controls['folders'].Items.Add($root)
         $window.Controls['folders'].SelectedIndex=0
         $window.Controls['removeFolder'].PerformClick()
