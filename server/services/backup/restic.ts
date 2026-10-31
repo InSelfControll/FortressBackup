@@ -52,11 +52,12 @@ const resticPrefix = (config: ResticConfig): string => {
     if(config.destinationType!=='sftp')return `${env ? env + ' ' : ''}restic -r ${sh(repository)}`;
     const peer=sftpPeer(repository);
     const publicKey=validateHostPublicKey(config.destinationHostPublicKey);
-    if(!config.destinationSecretKey?.startsWith('-----'))
+    const privateKey = config.destinationSecretKey?.replace(/\r\n/g, '\n');
+    if(!privateKey?.startsWith('-----'))
         throw new Error('Restic SFTP requires an SSH private key; password-only authentication is not supported');
-    if(/[\u0000-\u0009\u000b-\u001f\u007f]/.test(config.destinationSecretKey))
+    if(/[\u0000-\u0009\u000b-\u001f\u007f]/.test(privateKey))
         throw new Error('Invalid Restic SFTP private key');
-    const privateKeyLiteral=`'${config.destinationSecretKey.replace(/'/g, `'\\''`)}'`;
+    const privateKeyLiteral=`'${privateKey.replace(/'/g, `'\\''`)}'`;
     const sshCommandStart=[
         `sftp.command=ssh ${peer.target}`,'-p '+peer.port,'-o BatchMode=yes','-o StrictHostKeyChecking=yes',
         '-o IdentitiesOnly=yes','-o GlobalKnownHostsFile=/dev/null','-o'
@@ -82,7 +83,7 @@ export const buildResticCommand = (config: BackupJobConfig): string => {
     // Repository initialization is an explicit, separately verified operation.
     // In particular, NEVER swallow failures with restic init || true.
     const source = config.sourcePaths.map(sh).join(' ');
-    return `${resticPrefix(config)} backup --one-file-system --exclude-caches --exclude=/proc --exclude=/sys --exclude=/dev -- ${source}`;
+    return `${resticPrefix(config)} backup --json --one-file-system --exclude-caches --exclude=/proc --exclude=/sys --exclude=/dev -- ${source}`;
 };
 
 export const buildResticSnapshotListCommand = (config: BackupJobConfig): string =>

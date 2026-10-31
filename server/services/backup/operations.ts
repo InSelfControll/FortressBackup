@@ -3,6 +3,7 @@
  */
 
 import fs from 'fs';
+import { parseBackupStats } from './stats.js';
 import os from 'os';
 import path from 'path';
 import { BackupExecutor } from './core.js';
@@ -88,11 +89,8 @@ export async function executeBackup(
 
     try {
         let effectiveDestPath = config.destinationPath;
-        if (config.destinationType === 'sftp' && config.tool !== 'restic') {
-            sftpMountPoint = await mountSshfs(executor, config);
-            effectiveDestPath = sftpMountPoint;
-            executor.log('info', `Using mounted path: ${effectiveDestPath}`);
-        }
+        // SSH destinations are handled natively by each builder with the saved identity and host pin.
+
 
         const effectiveConfig = { ...config, destinationPath: effectiveDestPath };
         let command: string;
@@ -163,24 +161,7 @@ export async function executeBackup(
         // Happy Path: Success
         executor.log('success', `Backup completed successfully!`);
 
-        let bytesProcessed = 0;
-        let filesProcessed = 0;
-
-        const sizeMatch = stdout.match(/(\d+\.?\d*)\s*(GB|MB|KB|bytes)/i);
-        if (sizeMatch) {
-            const value = parseFloat(sizeMatch[1]);
-            const unit = sizeMatch[2].toUpperCase();
-            bytesProcessed = unit === 'GB' ? value * 1e9 :
-                unit === 'MB' ? value * 1e6 :
-                    unit === 'KB' ? value * 1e3 : value;
-        }
-
-        const filesMatch = stdout.match(/(\d+)\s*files?/i);
-        if (filesMatch) {
-            filesProcessed = parseInt(filesMatch[1]);
-        }
-
-        executor.log('stats', `Processed ${filesProcessed} files, ${(bytesProcessed / 1e6).toFixed(2)} MB`);
+        const {bytesProcessed,filesProcessed} = parseBackupStats(stdout+'\n'+stderr);
 
         if (sftpMountPoint) {
             await unmountSshfs(executor, sftpMountPoint);

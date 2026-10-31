@@ -35,7 +35,7 @@ export const canStartRestore = (
     restorePath: string,
     fileSelectionMode: 'all' | 'specific',
     selectedFiles: string[]
-) => Boolean(restorePath) && restorePath !== '/' && (fileSelectionMode === 'all' || selectedFiles.length > 0);
+) => restorePath.startsWith('/') && restorePath !== '/' && !restorePath.split('/').includes('..') && (fileSelectionMode === 'all' || selectedFiles.length > 0);
 
 export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen, onClose }) => {
     const [step, setStep] = useState<'snapshots' | 'config' | 'restoring' | 'result'>('snapshots');
@@ -121,6 +121,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
     };
 
     const handleSnapshotSelect = (snap: Snapshot) => {
+        setError(null);
         setSelectedSnapshot(snap);
         setStep('config');
         setRestorePath(`/tmp/restore_${snap.shortId}`);
@@ -148,6 +149,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
     const handleRestore = async () => {
         if (!selectedSnapshot || !canStartRestore(restorePath, fileSelectionMode, selectedFiles)) return;
 
+        if (step === 'restoring') return;
         setStep('restoring');
         setError(null);
         setRestoreLogs(['Initiating restore process...']);
@@ -177,12 +179,9 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
 
             if (!res.ok) {
                 const text = await res.text();
-                try {
-                    const errJson = JSON.parse(text);
-                    throw new Error(errJson.error || 'Restore failed');
-                } catch (e) {
-                    throw new Error(`Restore failed: ${res.status} ${text.substring(0, 100)}`);
-                }
+                let message = `Restore failed (HTTP ${res.status})`;
+                try { message = JSON.parse(text).error || message; } catch { /* Preserve a bounded status message. */ }
+                throw new Error(message);
             }
 
             const data = await res.json();
@@ -211,9 +210,9 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div role="dialog" aria-modal="true" aria-label="Restore backup" className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden">
                 {/* Header */}
-                <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
+                <div className="p-4 shrink-0 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
                     <div className="flex items-center gap-3">
                         <div className={`p-2 rounded-lg ${step === 'result' ? (restoreSuccess ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400') : 'bg-indigo-500/10 text-indigo-400'}`}>
                             <RotateCcw size={20} />
@@ -223,11 +222,11 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                             <p className="text-xs text-slate-500 font-mono uppercase tracking-wider">{job.name}</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
+                    <button onClick={onClose} aria-label="Close dialog" className="p-3 shrink-0 text-slate-400 hover:text-white"><X size={20} /></button>
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-6">
+                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
                     {step === 'snapshots' && (
                         <div className="space-y-4">
                             <h4 className="text-sm font-medium text-slate-400 uppercase tracking-widest">Select a Snapshot</h4>
@@ -237,7 +236,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                                 </div>
                             ) : error ? (
                                 <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-sm flex gap-3 items-center">
-                                    <AlertTriangle size={20} /> {error}
+                                    <AlertTriangle size={20} /> <span role="alert">{error}</span><button onClick={() => void fetchSnapshots()} className="underline">Retry snapshots</button>
                                 </div>
                             ) : snapshots.length === 0 ? (
                                 <div className="text-center py-12 text-slate-500 italic">No snapshots found for this job.</div>
@@ -338,6 +337,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
 
                                     {fileSelectionMode === 'specific' && (
                                         <div className="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden flex flex-col">
+                                            {error && <p role="alert" className="p-3 text-sm text-rose-400">{error}<button onClick={() => void fetchFiles(selectedSnapshot.id)} className="ml-2 underline">Retry files</button></p>}
                                             {/* Search Input */}
                                             <div className="p-2 border-b border-slate-800">
                                                 <div className="relative">
@@ -426,7 +426,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 border-t border-slate-800 flex justify-between items-center bg-slate-800/30">
+                <div className="p-4 shrink-0 border-t border-slate-800 flex flex-wrap gap-3 justify-between items-center bg-slate-800/30">
                     {step === 'snapshots' && (
                         <div className="text-xs text-slate-500">Select a snapshot to continue</div>
                     )}

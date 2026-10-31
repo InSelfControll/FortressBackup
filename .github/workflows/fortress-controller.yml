@@ -4,6 +4,8 @@ on:
     paths: &controller-paths
       - 'server/**'
       - 'tests/**'
+      - 'e2e/**'
+      - 'playwright.config.ts'
       - 'scripts/**'
       - 'components/**'
       - 'client/**'
@@ -48,6 +50,10 @@ jobs:
         run: bun run build
       - name: Type-check generated route tree
         run: bunx tsc --noEmit
+      - name: Install browser for interface checks
+        run: bunx playwright install --with-deps chromium
+      - name: Browser workflow regression tests
+        run: bunx playwright test
 
   container:
     runs-on: ubuntu-24.04

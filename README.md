@@ -78,7 +78,26 @@ Run the controller CI-equivalent checks before submitting changes:
 ```bash
 bun install --frozen-lockfile
 bun audit --audit-level=high
-bun test tests/managed-agents.test.ts tests/security.test.ts
+bun test
 bun run build
 bunx tsc --noEmit
+bunx playwright install chromium
+bun run test:ui
 ```
+
+
+## SSH backup operation
+
+Register a source in **Systems**, import an SSH identity in **Identity Vault**, and assign it to the source. Saving a source records its configuration. **Check Connection** verifies SSH authentication against its enrolled host key; **Deploy Toolset** installs only the selected supported engines.
+
+For a Hetzner Storage Box, choose **SFTP Server** in **Storage Locations**. Enter the Storage Box hostname, SSH port (normally `23`), account name, repository directory, verified SSH host public key, and an unencrypted dedicated SSH private key. Install the matching public key on the Storage Box. A directory such as `backups/source` is relative to the account's home; `//backups/source` in an SFTP URL denotes an absolute path. Connection testing logs in and checks the directory without creating or changing a repository.
+
+Initialize an encrypted Borg or Restic repository separately before its first backup, using the same repository passphrase you save in the job. Each backup engine uses the saved destination identity and host key. Borg and Rsync use native SSH transport; SSHFS is not required by these job workflows. NFS/local paths must be mounted and accessible where the selected engine runs. Snapshot browsing and restore are available for Borg and Restic.
+
+SSH jobs run manually unless **Run automatically on this UTC schedule** is enabled. The controller checks five-field cron schedules once per minute and prevents overlapping runs of the same job. Existing jobs migrate with automatic scheduling disabled. Scheduling requires a saved source SSH identity, verified host key, and repository credentials. Retention fields record the intended policy; ordinary backup runs do not automatically prune or delete archives.
+
+Settings save only after the controller accepts the change. **Security** changes the signed-in account password and revokes older sessions. Database preferences do not migrate or switch the active database; **Check Active Database** probes the controller's running connection. GitHub is the implemented SSO provider. Unsupported storage engines and providers are shown as unavailable.
+
+Configuration exports contain metadata without private credentials. Imports persist through the controller API, preserve credentials on matching existing records, and leave newly imported jobs on manual runs. For recovery or migration to a new controller, preserve the protected database and runtime encryption material separately; a metadata export does not contain SSH keys or repository passphrases.
+
+See [`docs/interface-qa.md`](docs/interface-qa.md) for browser coverage and remaining external integration checks.

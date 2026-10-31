@@ -29,6 +29,7 @@ export interface BackupJobConfig {
     destinationRegion?: string;
     destinationAccessKey?: string;
     destinationSecretKey?: string;
+    destinationHostPublicKey?: string;
     repoPassword?: string; // For borg/restic encryption
     retention?: {
         keepHourly: number;

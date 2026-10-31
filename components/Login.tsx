@@ -89,12 +89,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
       sessionStorage.setItem('fortress_github_oauth_state',
         JSON.stringify({state,expiresAt:Date.now()+10*60*1000,purpose,linkToken}));
       window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
-    } else if (ssoConfig.provider === 'google') {
-      const clientId = ssoConfig.clientId;
-      const redirectUri = encodeURIComponent(window.location.origin + '/login');
-      const scope = encodeURIComponent('email profile');
-      const state = 'google_oauth';
-      window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code&state=${state}`;
     } else {
       setError('SSO provider not supported');
       setIsRedirecting(false);
@@ -166,8 +160,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
   const providerName = ssoConfig?.provider === 'google' ? 'Google' : ssoConfig?.provider === 'github' ? 'GitHub' : 'Enterprise SSO';
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
-      <div className="w-full max-w-sm animate-fade-in">
+    <div className="h-dvh overflow-y-auto flex px-4 py-8" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
+      <div className="w-full max-w-sm m-auto shrink-0 animate-fade-in">
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: 'var(--color-accent-primary)' }}>

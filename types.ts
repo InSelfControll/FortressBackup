@@ -11,6 +11,7 @@ export enum JobStatus {
   RUNNING = 'Running',
   SUCCESS = 'Success',
   FAILED = 'Failed',
+  REVIEW_REQUIRED = 'ReviewRequired',
   WARNING = 'Warning'
 }
 
@@ -91,6 +92,7 @@ export interface System {
   installedTools?: BackupTool[];
   sshKeyId?: string;
   hostPublicKey?: string;
+  hostFingerprint?: string;
 }
 
 export interface Location {
@@ -113,6 +115,7 @@ export interface BackupJob {
   sourcePaths: string[];
   destinationId: string;
   schedule: string;
+  scheduleEnabled?: boolean;
   retention: RetentionPolicy;
   priority: JobPriority;
   repoPassword?: string;

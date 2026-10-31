@@ -3,6 +3,7 @@
  */
 
 import { Router } from 'express';
+import { checkSSH } from '../services/connectionChecks.js';
 import crypto from 'crypto';
 import * as db from '../db/index.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
@@ -52,8 +53,9 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
         if (!validSystem(req.body))
             return res.status(400).json({error:'Invalid system host, user or fingerprint'});
+        if (req.body.sshKeyId && (typeof req.body.sshKeyId !== 'string' || !await db.getOne('SELECT id FROM ssh_keys WHERE id=?',[req.body.sshKeyId]))) return res.status(400).json({error:'Select an existing SSH identity'});
         const systemId = crypto.randomUUID();
-        const system = withHostFingerprint({ ...req.body, id: systemId });
+        const system = withHostFingerprint({ ...req.body, id: systemId, status:'offline',health:0,lastSeen:undefined,installedTools:[] });
         const dbSystem = toDBSystem(system);
         await saveSystem(dbSystem);
         res.json(toAPISystem(dbSystem));
@@ -67,6 +69,8 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         if (!validSystem(req.body))
             return res.status(400).json({error:'Invalid system host, user or fingerprint'});
+        if (req.body.sshKeyId && (typeof req.body.sshKeyId !== 'string' || !await db.getOne('SELECT id FROM ssh_keys WHERE id=?',[req.body.sshKeyId]))) return res.status(400).json({error:'Select an existing SSH identity'});
+        if (!await db.getSystem(req.params.id)) return res.status(404).json({ error: 'System not found' });
         const system = withHostFingerprint({ ...req.body, id: req.params.id });
         const dbSystem = toDBSystem(system);
         await saveSystem(dbSystem);
@@ -79,10 +83,26 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
 // Delete system
 router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
+        if (await db.getOne('SELECT id FROM jobs WHERE source_id=?',[req.params.id])) return res.status(409).json({error:'This system is used by a backup job. Update or remove that job first.'});
         await db.deleteSystem(req.params.id);
         res.json({ success: true });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/:id/check', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const system = await db.getSystem(req.params.id);
+        if (!system) return res.status(404).json({ error: 'System not found' });
+        const credentials = await resolveSSHCredentialsFromRequest(req.body || {}, system.ssh_key_id);
+        await checkSSH({ host: system.host, port: system.port || 22, username: system.username || 'root',
+            hostFingerprint: system.host_fingerprint || '', ...credentials });
+        await db.run("UPDATE systems SET status='online',health=100,last_seen=? WHERE id=?", [new Date().toISOString(), system.id]);
+        res.json({ success: true, message: 'SSH host identity and authentication verified' });
+    } catch (error) {
+        await db.run("UPDATE systems SET status='offline',health=0 WHERE id=?", [req.params.id]);
+        res.status(400).json({ error: error instanceof Error ? error.message : 'SSH health check failed' });
     }
 });
 

@@ -1,3 +1,6 @@
+import { checkSystem } from '../client/api/resources';
+import { requireData } from '../client/api/client';
+import { QueryStatus } from './QueryStatus';
 import React, { useState } from 'react';
 import { System } from '../types';
 import { useSystems, useJobs, useSSHKeys } from '../client/api/queries';
@@ -10,11 +13,13 @@ import { AddSystemModal } from './systems/AddSystemModal';
 import { EditSystemModal } from './systems/EditSystemModal';
 import { SSHKeyManager } from './systems/SSHKeyManager';
 
-interface SystemsProps { }
+interface SystemsProps { searchQuery?: string }
 
-export const Systems: React.FC<SystemsProps> = () => {
-  const { data: systems = [] } = useSystems();
-  const { data: sshKeys = [] } = useSSHKeys();
+export const Systems: React.FC<SystemsProps> = ({ searchQuery = '' }) => {
+  const systemsQuery = useSystems();
+  const { data: systems = [] } = systemsQuery;
+  const sshKeysQuery = useSSHKeys();
+  const { data: sshKeys = [] } = sshKeysQuery;
   const deleteSystemMutation = useDeleteSystem();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -22,12 +27,21 @@ export const Systems: React.FC<SystemsProps> = () => {
   const [editingSystem, setEditingSystem] = useState<System | null>(null);
   const [isKeyManagerOpen, setIsKeyManagerOpen] = useState(false);
   const [deployingSystem, setDeployingSystem] = useState<System | null>(null);
+  const [checking, setChecking] = useState<string | null>(null);
+  const checkConnection = async (system: System) => {
+    if (checking) return;
+    setChecking(system.id);
+    try { toast.success(requireData(await checkSystem(system.id)).message); }
+    catch(error) { toast.error(error instanceof Error ? error.message : 'Connection check failed'); }
+    finally { setChecking(null); void systemsQuery.refetch(); }
+  };
 
   const handleDeploy = (system: System) => {
     setDeployingSystem(system);
   };
 
   const finalizeDeployment = () => {
+    void systemsQuery.refetch();
     toast.success('System updated with installed tools');
   };
 
@@ -49,36 +63,40 @@ export const Systems: React.FC<SystemsProps> = () => {
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center">
+      <QueryStatus pending={systemsQuery.isPending} error={systemsQuery.error} retry={() => void systemsQuery.refetch()} />
+      <QueryStatus pending={sshKeysQuery.isPending} error={sshKeysQuery.error} retry={() => void sshKeysQuery.refetch()} />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-white tracking-tight">System Infrastructure</h2>
           <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">Managed Nodes Cluster</p>
         </div>
-        <div className="flex gap-4">
-          <button onClick={() => setIsKeyManagerOpen(true)} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-6 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 shadow-sm">
+        <div className="flex flex-wrap gap-3">
+          <button onClick={() => setIsKeyManagerOpen(true)} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-4 sm:px-6 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 shadow-sm">
             <Key size={18} /> Identity Vault ({sshKeys.length})
           </button>
-          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-black text-sm shadow-lg shadow-indigo-500/20 transition-all active:scale-95">
+          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 sm:px-6 py-3 rounded-xl font-black text-sm shadow-lg shadow-indigo-500/20 transition-all active:scale-95">
             <Plus size={18} /> Register Node
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {systems.length === 0 && (
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+        {!systemsQuery.isPending && !systemsQuery.error && systems.length === 0 && (
           <div className="col-span-full py-16 text-center border-2 border-dashed border-slate-800 rounded-[2rem] bg-slate-800/20">
             <Server size={48} className="mx-auto text-slate-700 mb-4" />
             <h3 className="text-lg font-bold text-slate-400">No Systems Registered</h3>
             <p className="text-slate-500 text-sm mt-2">Add your first managed node to begin orchestration.</p>
           </div>
         )}
-        {systems.map((system) => (
+        {systems.filter(system => `${system.name} ${system.host}`.toLowerCase().includes(searchQuery.toLowerCase())).map((system) => (
           <SystemCard
             key={system.id}
             system={system}
             onEdit={handleEditSystem}
             onDelete={handleDeleteSystem}
             onDeploy={handleDeploy}
+            onCheck={system => void checkConnection(system)}
+            isChecking={checking === system.id}
           />
         ))}
       </div>

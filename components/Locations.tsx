@@ -1,3 +1,6 @@
+import { testLocation } from '../client/api/resources';
+import { requireData } from '../client/api/client';
+import { QueryStatus } from './QueryStatus';
 import React, { useState } from 'react';
 import { Location } from '../types';
 import { HardDrive, Plus } from 'lucide-react';
@@ -7,10 +10,11 @@ import { toast } from 'react-hot-toast';
 import { LocationCard } from './locations/LocationCard';
 import { LocationModal } from './locations/LocationModal';
 
-interface LocationsProps { }
+interface LocationsProps { searchQuery?: string }
 
-export const Locations: React.FC<LocationsProps> = () => {
-  const { data: locations = [] } = useLocations();
+export const Locations: React.FC<LocationsProps> = ({ searchQuery = '' }) => {
+  const locationsQuery = useLocations();
+  const { data: locations = [] } = locationsQuery;
   const deleteLocationMutation = useDeleteLocation();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -37,17 +41,22 @@ export const Locations: React.FC<LocationsProps> = () => {
   };
 
   const testConnection = async (loc: Location) => {
+    if (testingConnection) return;
     setTestingConnection(loc.id);
-    // Simulate connection test
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    const success = Math.random() > 0.3; // 70% success rate for demo
-    setConnectionResults(prev => ({ ...prev, [loc.id]: success ? 'success' : 'failed' }));
-    setTestingConnection(null);
+    try {
+      const result = requireData(await testLocation(loc.id));
+      setConnectionResults(prev => ({ ...prev, [loc.id]: 'success' }));
+      toast.success(result.message);
+    } catch (error) {
+      setConnectionResults(prev => ({ ...prev, [loc.id]: 'failed' }));
+      toast.error(error instanceof Error ? error.message : 'Connection check failed');
+    } finally { setTestingConnection(null); }
   };
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center">
+      <QueryStatus pending={locationsQuery.isPending} error={locationsQuery.error} retry={() => void locationsQuery.refetch()} />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-white tracking-tight">Storage Registry</h2>
           <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">Backup Destination Endpoints</p>
@@ -57,15 +66,15 @@ export const Locations: React.FC<LocationsProps> = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {locations.length === 0 && (
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+        {!locationsQuery.isPending && !locationsQuery.error && locations.length === 0 && (
           <div className="col-span-full py-16 text-center border-2 border-dashed border-slate-800 rounded-[2rem] bg-slate-800/20">
             <HardDrive size={48} className="mx-auto text-slate-700 mb-4" />
             <h3 className="text-lg font-bold text-slate-400">No Storage Locations</h3>
             <p className="text-slate-500 text-sm mt-2 max-w-md mx-auto">Add your first backup destination to start protecting your data.</p>
           </div>
         )}
-        {locations.map((loc) => (
+        {locations.filter(location => `${location.name} ${location.path}`.toLowerCase().includes(searchQuery.toLowerCase())).map((loc) => (
           <LocationCard
             key={loc.id}
             location={loc}

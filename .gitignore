@@ -35,3 +35,13 @@ dist/*
 .git
 REDDIT_POST.md
 .agent*
+
+# Browser test artifacts
+test-results/
+playwright-report/
+
+# Local controller database and recovery copies
+data/*.db
+data/*.db-*
+data/*.sqlite
+data/*.sqlite-*

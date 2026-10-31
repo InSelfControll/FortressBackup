@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import { apiFetch, requireData } from '../../client/api/client';
+import React, { useEffect, useState } from 'react';
 import { DatabaseConfig, DatabaseType } from '../../types';
 import { Database, Loader2, RefreshCw, Save, CheckCircle2 } from 'lucide-react';
 
 interface DatabaseConfigTabProps {
   config: DatabaseConfig | null;
-  onUpdate: (config: DatabaseConfig) => void;
+  onUpdate: (config: DatabaseConfig) => void | Promise<void>;
 }
 
 export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, onUpdate }) => {
@@ -12,25 +13,38 @@ export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, on
   const [isDbTesting, setIsDbTesting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  useEffect(() => setSaveSuccess(false), [localConfig]);
 
-  const testDbConnection = () => {
-    setIsDbTesting(true);
-    setTimeout(() => setIsDbTesting(false), 1500);
+  const [healthMessage, setHealthMessage] = useState('');
+  const testDbConnection = async () => {
+    if (isDbTesting) return;
+    setIsDbTesting(true); setSaveError(''); setHealthMessage('');
+    try {
+      const result = requireData(await apiFetch<{ success: boolean; type: string }>('/config/database-health'));
+      setHealthMessage(`The active ${result.type} database answered its health query.`);
+    } catch (error) { setSaveError(error instanceof Error ? error.message : 'Database check failed'); }
+    finally { setIsDbTesting(false); }
   };
 
   const handleSave = async () => {
+    if (isSaving) return;
     setIsSaving(true);
     setSaveSuccess(false);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    onUpdate(localConfig);
-    setIsSaving(false);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2000);
+    setSaveError('');
+    try {
+      await onUpdate(localConfig);
+      setSaveSuccess(true);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Failed to save settings');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      <div className="flex items-center gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
         <div className="p-4 bg-blue-600/10 rounded-2xl border border-blue-500/20">
           <Database className="text-blue-400" size={28} />
         </div>
@@ -43,7 +57,7 @@ export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, on
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <button
           onClick={() => setLocalConfig({ type: DatabaseType.SQLITE })}
-          className={`relative p-8 rounded-2xl border flex flex-col items-center gap-5 transition-all ${localConfig.type === DatabaseType.SQLITE
+          className={`relative p-4 sm:p-8 rounded-2xl border flex flex-col items-center gap-5 transition-all ${localConfig.type === DatabaseType.SQLITE
             ? 'bg-indigo-600/10 border-indigo-500 shadow-xl'
             : 'bg-slate-800/40 border-slate-800 hover:border-slate-700'
             }`}
@@ -56,7 +70,7 @@ export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, on
 
         <button
           onClick={() => setLocalConfig({ type: DatabaseType.POSTGRES, host: 'localhost', port: 5432, database: 'fortress' })}
-          className={`relative p-8 rounded-2xl border flex flex-col items-center gap-5 transition-all ${localConfig.type === DatabaseType.POSTGRES
+          className={`relative p-4 sm:p-8 rounded-2xl border flex flex-col items-center gap-5 transition-all ${localConfig.type === DatabaseType.POSTGRES
             ? 'bg-indigo-600/10 border-indigo-500 shadow-xl'
             : 'bg-slate-800/40 border-slate-800 hover:border-slate-700'
             }`}
@@ -68,8 +82,11 @@ export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, on
         </button>
       </div>
 
+      <p className="text-sm text-slate-400">These preferences do not migrate data or reconnect the running database. Configure the controller environment separately before switching databases.</p>
+      <button disabled={isDbTesting} onClick={() => void testDbConnection()} className="rounded-xl px-4 py-3 bg-slate-800 text-indigo-300">{isDbTesting ? 'Checking...' : 'Check Active Database'}</button>
+      {healthMessage && <p role="status" className="text-sm text-emerald-400">{healthMessage}</p>}
       {localConfig.type === DatabaseType.POSTGRES && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6 bg-slate-800/20 rounded-3xl border border-slate-800 animate-in slide-in-from-top-4 duration-300">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 sm:p-6 bg-slate-800/20 rounded-3xl border border-slate-800 animate-in slide-in-from-top-4 duration-300">
           <div className="space-y-1 col-span-2">
             <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Host</label>
             <input type="text" value={localConfig.host} onChange={e => setLocalConfig({ ...localConfig, host: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="db.internal.io" />
@@ -82,15 +99,12 @@ export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, on
             <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Database</label>
             <input type="text" value={localConfig.database} onChange={e => setLocalConfig({ ...localConfig, database: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="fortress" />
           </div>
-          <div className="flex items-end col-span-4">
-            <button onClick={testDbConnection} className="text-[10px] font-black uppercase text-indigo-400 flex items-center gap-2 bg-indigo-500/5 px-4 py-2 rounded-lg border border-indigo-500/10 hover:bg-indigo-500/10 transition-colors">
-              {isDbTesting ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-              {isDbTesting ? 'Testing...' : 'Test Connection'}
-            </button>
-          </div>
+
         </div>
       )}
 
+      {saveError && <p role="alert" className="text-sm text-rose-400">{saveError}</p>}
+      {saveSuccess && <p role="status" className="text-sm text-emerald-400">Settings saved.</p>}
       <div className="flex justify-end">
         <button
           onClick={handleSave}

@@ -32,7 +32,7 @@ export async function buildJobExecutionContext(job:db.Job, credentialsInput:Reco
     privateKey:credentials.privateKey,passphrase:credentials.passphrase,password:credentials.password
   };
   const jobConfig:BackupJobConfig & {destinationHostPublicKey?:string}={
-    jobId:apiJob.id,jobName:String(apiJob.name).replace(/\s+/g,'_'),
+    jobId:apiJob.id,jobName:String(apiJob.name).replace(/[^A-Za-z0-9_-]+/g,'_').replace(/^[^A-Za-z0-9]+/,'').slice(0,90)||'backup',
     tool,sourcePaths:apiJob.sourcePaths,
     destinationType:destination.type as BackupJobConfig['destinationType'],
     destinationPath:destination.path,

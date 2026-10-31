@@ -110,3 +110,11 @@ export const logout = async () => {
         await clearClientSession();
     }
 };
+
+export async function changePassword(currentPassword: string, newPassword: string) {
+    const response = await apiFetch<{ success: boolean; token: string }>('/auth/password', {
+        method: 'POST', body: JSON.stringify({ currentPassword, newPassword })
+    });
+    if (response.data?.token) setToken(response.data.token);
+    return response;
+}

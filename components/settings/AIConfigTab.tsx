@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AIConfig, AIProvider } from '../../types';
 import { Brain, XCircle, Sparkles, Globe, EyeOff, Eye, Loader2, CheckCircle2, Save } from 'lucide-react';
 
 interface AIConfigTabProps {
   config: AIConfig;
-  onUpdate: (config: AIConfig) => void;
+  onUpdate: (config: AIConfig) => void | Promise<void>;
 }
 
 export const AIConfigTab: React.FC<AIConfigTabProps> = ({ config, onUpdate }) => {
@@ -12,20 +12,27 @@ export const AIConfigTab: React.FC<AIConfigTabProps> = ({ config, onUpdate }) =>
   const [showApiKey, setShowApiKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  useEffect(() => setSaveSuccess(false), [localConfig]);
 
   const handleSave = async () => {
+    if (isSaving) return;
     setIsSaving(true);
     setSaveSuccess(false);
-    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate save
-    onUpdate(localConfig);
-    setIsSaving(false);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2000);
+    setSaveError('');
+    try {
+      await onUpdate(localConfig);
+      setSaveSuccess(true);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Failed to save settings');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      <div className="flex items-center gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
         <div className="p-4 bg-indigo-600/10 rounded-2xl border border-indigo-500/20">
           <Brain className="text-indigo-400" size={28} />
         </div>
@@ -44,7 +51,7 @@ export const AIConfigTab: React.FC<AIConfigTabProps> = ({ config, onUpdate }) =>
           <button
             key={prov.id}
             onClick={() => setLocalConfig({ ...localConfig, provider: prov.id })}
-            className={`relative p-6 rounded-2xl border flex flex-col items-center gap-4 transition-all ${localConfig.provider === prov.id
+            className={`relative p-4 sm:p-6 rounded-2xl border flex flex-col items-center gap-4 transition-all ${localConfig.provider === prov.id
               ? 'bg-indigo-600/10 border-indigo-500 shadow-xl'
               : 'bg-slate-800/40 border-slate-800 hover:border-slate-700'
               }`}
@@ -64,7 +71,7 @@ export const AIConfigTab: React.FC<AIConfigTabProps> = ({ config, onUpdate }) =>
       </div>
 
       {localConfig.provider !== AIProvider.NONE && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-8 bg-slate-800/20 rounded-3xl border border-slate-800 animate-in slide-in-from-top-4 duration-300">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:p-6 p-4 sm:p-8 bg-slate-800/20 rounded-3xl border border-slate-800 animate-in slide-in-from-top-4 duration-300">
           <div className="space-y-2">
             <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">API Key</label>
             <div className="relative">
@@ -96,7 +103,7 @@ export const AIConfigTab: React.FC<AIConfigTabProps> = ({ config, onUpdate }) =>
           </div>
 
           {localConfig.provider === AIProvider.OPENAI && (
-            <div className="space-y-2 col-span-2">
+            <div className="space-y-2 md:col-span-2">
               <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Base URL (Optional)</label>
               <input
                 type="text"
@@ -110,6 +117,8 @@ export const AIConfigTab: React.FC<AIConfigTabProps> = ({ config, onUpdate }) =>
         </div>
       )}
 
+      {saveError && <p role="alert" className="text-sm text-rose-400">{saveError}</p>}
+      {saveSuccess && <p role="status" className="text-sm text-emerald-400">Settings saved.</p>}
       <div className="flex justify-end">
         <button
           onClick={handleSave}

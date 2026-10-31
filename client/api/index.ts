@@ -3,12 +3,12 @@
  */
 
 // Client core
-export { apiFetch, setToken, getToken, API_BASE } from './client.js';
+export { apiFetch, requireData, setToken, getToken, API_BASE } from './client.js';
 export type { ApiResponse } from './client.js';
 
 // Auth
 export {
-    register, login, githubAuth, githubLink, getMe, logout,
+    register, login, githubAuth, githubLink, getMe, logout, changePassword,
     clearClientSession, subscribeToSessionTeardown
 } from './auth.js';
 export type { AuthUser, AuthResponse } from './auth.js';
@@ -22,5 +22,5 @@ export {
     getSystems, createSystem, updateSystem, deleteSystem,
     getSSHKeys, createSSHKey, deleteSSHKey,
     getLocations, createLocation, updateLocation, deleteLocation,
-    getJobs, runJob, createJob, updateJob, deleteJob
+    getJobs, runJob, createJob, updateJob, deleteJob, testLocation, checkSystem
 } from './resources.js';

@@ -17,7 +17,7 @@ import authRouter from './routes/auth.js';
 import configRouter from './routes/config.js';
 import systemsRouter from './routes/systems.js';
 import locationsRouter from './routes/locations.js';
-import jobsRouter, { recoverInterruptedRuns } from './routes/jobs.js';
+import jobsRouter, { recoverInterruptedRuns, dispatchScheduledJobs } from './routes/jobs.js';
 import managedAgentsRouter, { dispatchScheduledManagedJobs } from './routes/managedAgents.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import sshKeysRouter from './routes/sshKeys.js';
@@ -131,6 +131,7 @@ const initialize = async () => {
         });
         await recoverInterruptedRuns();
         console.log(`[Fortress API] Database: ${dbType}`);
+        setInterval(() => void dispatchScheduledJobs().catch(error => console.error('[SSH Jobs] Scheduler failed:', error)), 60_000);
         setInterval(() => void dispatchScheduledManagedJobs().catch(error => console.error('[Managed Agents] Scheduler failed:', error)), 60_000);
     } catch (error: any) {
         console.warn(`[Fortress API] Database not initialized: ${error.message}`);

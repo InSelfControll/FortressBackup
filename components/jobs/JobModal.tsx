@@ -32,10 +32,10 @@ const parseCron = (cron: string): string => {
     if (parts.length !== 5) return cron;
     const [min, hour, day, month, weekday] = parts;
 
-    if (day === '*' && month === '*' && weekday === '*') {
+    if (/^\d+$/.test(min) && /^\d+$/.test(hour) && day === '*' && month === '*' && weekday === '*') {
         return `Daily at ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`;
     }
-    if (weekday !== '*' && day === '*') {
+    if (/^\d+$/.test(min) && /^\d+$/.test(hour) && /^\d+$/.test(weekday) && day === '*') {
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         return `${days[parseInt(weekday)] || weekday} at ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`;
     }
@@ -45,13 +45,15 @@ const parseCron = (cron: string): string => {
 export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, systems, locations, aiConfig }) => {
     const createJobMutation = useCreateJob();
     const updateJobMutation = useUpdateJob();
+    const [saveError, setSaveError] = useState('');
+    const isSaving = createJobMutation.isPending || updateJobMutation.isPending;
 
     const [formData, setFormData] = useState<{
-        name: string; tool: BackupTool; schedule: string; priority: JobPriority;
+        name: string; tool: BackupTool; schedule: string; scheduleEnabled?: boolean; priority: JobPriority;
         retention: RetentionPolicy; sourceId: string; sourcePaths: string[]; destinationId: string;
         repoPassword: string;
     }>({
-        name: '', tool: BackupTool.BORG, schedule: '0 2 * * *', priority: JobPriority.MEDIUM,
+        name: '', tool: BackupTool.BORG, schedule: '0 2 * * *', scheduleEnabled: false, priority: JobPriority.MEDIUM,
         retention: { keepHourly: 0, keepDaily: 7, keepWeekly: 4, keepMonthly: 6, keepYearly: 1 },
         sourceId: '', sourcePaths: ['/home'], destinationId: '', repoPassword: ''
     });
@@ -66,8 +68,9 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                 name: job.name,
                 tool: job.tool,
                 schedule: job.schedule,
+                scheduleEnabled: Boolean(job.scheduleEnabled),
                 priority: job.priority,
-                retention: job.retention,
+                retention: job.retention || {keepHourly:0,keepDaily:7,keepWeekly:4,keepMonthly:6,keepYearly:1},
                 sourceId: job.sourceId,
                 sourcePaths: job.sourcePaths || ['/home'],
                 destinationId: job.destinationId,
@@ -75,7 +78,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
             });
         } else {
             setFormData({
-                name: '', tool: BackupTool.BORG, schedule: '0 2 * * *', priority: JobPriority.MEDIUM,
+                name: '', tool: BackupTool.BORG, schedule: '0 2 * * *', scheduleEnabled: false, priority: JobPriority.MEDIUM,
                 retention: { keepHourly: 0, keepDaily: 7, keepWeekly: 4, keepMonthly: 6, keepYearly: 1 },
                 sourceId: '', sourcePaths: ['/home'], destinationId: '', repoPassword: ''
             });
@@ -88,7 +91,8 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
         setAiError(null);
         try {
             const cfg = await generateBackupConfig(aiPrompt);
-            if (cfg.tool) setFormData(prev => ({ ...prev, ...cfg, name: cfg.jobName || prev.name }));
+            if (!Object.values(BackupTool).includes(cfg.tool) || cfg.tool === BackupTool.RCLONE || typeof cfg.schedule !== 'string' || !cfg.retention) throw new Error('The AI response did not contain a supported backup configuration');
+            setFormData(prev => ({ ...prev, tool: cfg.tool, schedule: cfg.schedule, retention: cfg.retention, name: cfg.jobName || prev.name }));
         } catch (e: any) {
             setAiError(e.message || "Failed to generate config.");
         } finally {
@@ -96,7 +100,11 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
         }
     };
 
+    const supportedTypes: Record<string,string[]> = {BorgBackup:['nfs','sftp'],Restic:['nfs','sftp','s3','b2'],Rsync:['nfs','sftp']};
+    const destinationSupported = supportedTypes[formData.tool]?.includes(locations.find(location=>location.id===formData.destinationId)?.type || '');
     const handleSubmit = () => {
+        if (isSaving) return;
+        setSaveError('');
         if (job) {
             updateJobMutation.mutate({
                 ...job,
@@ -106,7 +114,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                     onClose();
                     toast.success('Job updated successfully');
                 },
-                onError: () => toast.error('Failed to update job')
+                onError: error => setSaveError(error.message)
             });
         } else {
             createJobMutation.mutate({
@@ -118,7 +126,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                     onClose();
                     toast.success('Job created successfully');
                 },
-                onError: () => toast.error('Failed to create job')
+                onError: error => setSaveError(error.message)
             });
         }
     };
@@ -127,13 +135,13 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
-                <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+            <div role="dialog" aria-modal="true" aria-label="Backup job" className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl shadow-2xl max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
+                <div className="p-4 sm:p-6 shrink-0 border-b border-slate-800 flex justify-between items-center">
                     <h3 className="text-xl font-bold text-white">{job ? 'Edit Job' : 'Configure New Job'}</h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
+                    <button onClick={onClose} aria-label="Close dialog" className="p-3 shrink-0 text-slate-400 hover:text-white"><X size={24} /></button>
                 </div>
 
-                <div className="p-6 overflow-y-auto flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="p-4 sm:p-6 min-h-0 min-w-0 overflow-y-auto flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div className="space-y-6">
                         <div>
                             <label className="block text-sm font-medium text-slate-400 mb-2">Job Name</label>
@@ -172,7 +180,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                                                     newPaths[idx] = e.target.value;
                                                     setFormData({ ...formData, sourcePaths: newPaths });
                                                 }}
-                                                className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs"
+                                                className="min-w-0 flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs"
                                                 placeholder="/home/user/data"
                                             />
                                             {formData.sourcePaths.length > 1 && (
@@ -202,7 +210,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                             >
                                 <option value="">Select a location...</option>
                                 {locations.map(loc => (
-                                    <option key={loc.id} value={loc.id}>{loc.name} ({loc.type})</option>
+                                    <option key={loc.id} value={loc.id} disabled={!supportedTypes[formData.tool]?.includes(loc.type)}>{loc.name} ({loc.type})</option>
                                 ))}
                             </select>
                             {locations.length === 0 && (
@@ -251,7 +259,9 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-2">Schedule (Cron)</label>
+                                <label className="block text-sm font-medium text-slate-400 mb-2">Schedule (UTC cron)</label>
+                                <label className="flex items-center gap-2 text-sm text-slate-300 mb-2"><input type="checkbox" checked={Boolean(formData.scheduleEnabled)} onChange={e=>setFormData({...formData,scheduleEnabled:e.target.checked})}/>Run automatically on this UTC schedule</label>
+                                <p className="text-xs text-slate-500 mb-2">Automatic runs use the source's saved SSH identity. Leave this off for manual runs.</p>
                                 <input type="text" value={formData.schedule} onChange={e => setFormData({ ...formData, schedule: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono text-sm outline-none" />
                                 <p className="text-[10px] text-slate-500 mt-1">{parseCron(formData.schedule)}</p>
                             </div>
@@ -268,7 +278,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                                     type="password"
                                     value={formData.repoPassword}
                                     onChange={e => setFormData({ ...formData, repoPassword: e.target.value })}
-                                    placeholder={formData.tool === BackupTool.BORG ? "Required - Enter passphrase for encrypted repository" : "Enter passphrase for encrypted repository"}
+                                    placeholder={job ? "Leave blank to keep the saved passphrase" : formData.tool === BackupTool.BORG ? "Required - Enter passphrase for encrypted repository" : "Enter passphrase for encrypted repository"}
                                     className={`w-full bg-slate-800 border rounded-lg px-3 py-2 text-white outline-none focus:ring-1 focus:ring-indigo-500 ${formData.tool === BackupTool.BORG && !formData.repoPassword ? 'border-rose-500/50' : 'border-slate-700'}`}
                                 />
                                 <p className="text-[10px] text-slate-500 mt-1">
@@ -284,11 +294,11 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                         <div>
                             <label className="block text-sm font-medium text-slate-400 mb-2">Backup Tool</label>
                             <div className="grid grid-cols-2 gap-3">
-                                {Object.values(BackupTool).map(t => (
-                                    <div key={t} onClick={() => setFormData({ ...formData, tool: t })} className={`p-3 rounded-xl border cursor-pointer transition-all ${formData.tool === t ? 'bg-indigo-600/10 border-indigo-500' : 'bg-slate-800 border-slate-700 hover:border-slate-600'}`}>
+                                {Object.values(BackupTool).filter(tool=>tool !== BackupTool.RCLONE).map(t => (
+                                    <button type="button" key={t} onClick={() => setFormData({ ...formData, tool: t })} className={`p-3 rounded-xl border cursor-pointer transition-all ${formData.tool === t ? 'bg-indigo-600/10 border-indigo-500' : 'bg-slate-800 border-slate-700 hover:border-slate-600'}`}>
                                         <p className="font-bold text-sm text-white mb-1">{t}</p>
                                         <p className="text-[10px] text-slate-500 leading-tight">{TOOL_DESCRIPTIONS[t]}</p>
-                                    </div>
+                                    </button>
                                 ))}
                             </div>
                         </div>
@@ -302,6 +312,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                                     ))}
                                 </div>
                             </div>
+                            <p className="text-xs text-amber-400 mb-2">Retention preferences are stored with the job. This controller does not automatically prune existing backups.</p>
                             <div className="grid grid-cols-3 gap-3">
                                 {['Hourly', 'Daily', 'Weekly', 'Monthly', 'Yearly'].map(k => (
                                     <div key={k}>
@@ -337,21 +348,18 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
                     </div>
                 </div>
 
-                <div className="p-6 border-t border-slate-800 flex justify-end gap-3 bg-slate-800/20">
+                <div className="p-4 sm:p-6 shrink-0 border-t border-slate-800 flex flex-wrap justify-end gap-3 bg-slate-800/20">
+                    {saveError && <p role="alert" className="basis-full text-sm text-rose-400">{saveError}</p>}
                     <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white transition-colors">Cancel</button>
                     <button
                         onClick={handleSubmit}
-                        disabled={!formData.name || (formData.tool === BackupTool.BORG && !formData.repoPassword) || (() => {
-                            const src = systems.find(s => s.id === formData.sourceId);
-                            const dst = locations.find(l => l.id === formData.destinationId);
-                            if (src?.type === 'remote' && dst?.type === 'nfs') {
-                                return formData.tool !== BackupTool.RSYNC;
-                            }
-                            return false;
-                        })()}
+                        disabled={isSaving || !formData.name.trim() || !formData.sourceId || !formData.destinationId ||
+                            !formData.sourcePaths.length || formData.sourcePaths.some(path=>!path.startsWith('/')) ||
+                            !formData.schedule.trim() || !destinationSupported || formData.tool === BackupTool.RCLONE ||
+                            (!job && [BackupTool.BORG,BackupTool.RESTIC].includes(formData.tool) && !formData.repoPassword)}
                         className="px-8 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {job ? 'Update Job' : 'Create Backup Plan'}
+                        {isSaving ? 'Saving...' : job ? 'Update Job' : 'Create Backup Plan'}
                     </button>
                 </div>
             </div>

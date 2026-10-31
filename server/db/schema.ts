@@ -94,6 +94,8 @@ export const createTables = () => {
       priority TEXT DEFAULT 'Medium',
       status TEXT DEFAULT 'Idle',
       run_epoch INTEGER NOT NULL DEFAULT 0,
+      schedule_enabled INTEGER NOT NULL DEFAULT 0,
+      last_scheduled_for TEXT,
       next_run TEXT,
       last_run TEXT,
       size TEXT,
@@ -143,6 +145,8 @@ export const createTables = () => {
     sqliteDb.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_github_id ON users(github_id) WHERE github_id IS NOT NULL').run();
     const columns = sqliteDb.prepare("PRAGMA table_info(systems)").all() as any[];
     const jobColumns = sqliteDb.prepare('PRAGMA table_info(jobs)').all() as any[];
+    if (!jobColumns.some(col => col.name === 'schedule_enabled')) sqliteDb.prepare('ALTER TABLE jobs ADD COLUMN schedule_enabled INTEGER NOT NULL DEFAULT 0').run();
+    if (!jobColumns.some(col => col.name === 'last_scheduled_for')) sqliteDb.prepare('ALTER TABLE jobs ADD COLUMN last_scheduled_for TEXT').run();
     if (!jobColumns.some(col => col.name === 'run_epoch'))
       sqliteDb.prepare('ALTER TABLE jobs ADD COLUMN run_epoch INTEGER NOT NULL DEFAULT 0').run();
     const locationColumns = sqliteDb.prepare('PRAGMA table_info(locations)').all() as any[];
@@ -224,6 +228,8 @@ export const createTablesPostgres = async () => {
       priority TEXT DEFAULT 'Medium',
       status TEXT DEFAULT 'Idle',
       run_epoch INTEGER NOT NULL DEFAULT 0,
+      schedule_enabled INTEGER NOT NULL DEFAULT 0,
+      last_scheduled_for TEXT,
       next_run TEXT,
       last_run TEXT,
       size TEXT,
@@ -263,6 +269,8 @@ export const createTablesPostgres = async () => {
   await pgPool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_epoch INTEGER NOT NULL DEFAULT 0');
   await pgPool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_github_id ON users(github_id) WHERE github_id IS NOT NULL');
   await pgPool.query('ALTER TABLE jobs ADD COLUMN IF NOT EXISTS run_epoch INTEGER NOT NULL DEFAULT 0');
+  await pgPool.query('ALTER TABLE jobs ADD COLUMN IF NOT EXISTS schedule_enabled INTEGER NOT NULL DEFAULT 0');
+  await pgPool.query('ALTER TABLE jobs ADD COLUMN IF NOT EXISTS last_scheduled_for TEXT');
   await pgPool.query('ALTER TABLE systems ADD COLUMN IF NOT EXISTS host_fingerprint TEXT');
   await pgPool.query('ALTER TABLE systems ADD COLUMN IF NOT EXISTS host_public_key TEXT');
   await pgPool.query('ALTER TABLE locations ADD COLUMN IF NOT EXISTS host_public_key TEXT');

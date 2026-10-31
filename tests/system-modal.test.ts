@@ -83,9 +83,9 @@ test('add system submission carries the host key with the existing enrollment fi
     username: 'backup',
     sshKeyId: 'identity-id',
     hostPublicKey: HOST_PUBLIC_KEY,
-    status: 'online',
+    status: 'offline',
     lastSeen: 'Now',
-    health: 100,
+    health: 0,
     installedTools: [],
   });
 });
@@ -135,4 +135,13 @@ test('edit system submission preserves the fingerprint when the host key is unch
     ...system,
     name: 'Renamed source',
   });
+});
+
+
+test('HTTP system enrollment uses server IDs and omits an empty optional host key', () => {
+  const payload = addModal.buildSystemData({name:'Unverified source',host:'host.example.invalid',hostPublicKey:''});
+  expect(payload).not.toHaveProperty('id');
+  expect(payload.hostPublicKey).toBeUndefined();
+  expect(payload.status).toBe('offline');
+  expect(payload.health).toBe(0);
 });

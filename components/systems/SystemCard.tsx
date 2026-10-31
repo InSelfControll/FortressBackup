@@ -7,13 +7,15 @@ interface SystemCardProps {
     onEdit: (system: System) => void;
     onDelete: (id: string) => void;
     onDeploy: (system: System) => void;
+    onCheck?: (system: System) => void;
+    isChecking?: boolean;
 }
 
-export const SystemCard: React.FC<SystemCardProps> = ({ system, onEdit, onDelete, onDeploy }) => {
+export const SystemCard: React.FC<SystemCardProps> = ({ system, onEdit, onDelete, onDeploy, onCheck, isChecking }) => {
     const [deleteConfirm, setDeleteConfirm] = useState(false);
 
     return (
-        <div className="bg-slate-800/40 border border-slate-700/50 rounded-[2rem] p-8 hover:border-indigo-500/40 transition-all group hover:bg-slate-800/60 shadow-xl relative overflow-hidden flex flex-col min-h-[300px]">
+        <div className="bg-slate-800/40 border border-slate-700/50 rounded-[2rem] min-w-0 p-5 sm:p-8 hover:border-indigo-500/40 transition-all group hover:bg-slate-800/60 shadow-xl relative overflow-hidden flex flex-col min-h-[300px]">
             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full -translate-y-16 translate-x-16 group-hover:scale-150 transition-transform duration-1000" />
 
             <div className="flex justify-between items-start mb-6 relative z-10">
@@ -28,14 +30,14 @@ export const SystemCard: React.FC<SystemCardProps> = ({ system, onEdit, onDelete
             </div>
 
             <div className="relative z-10 mb-8 flex-1">
-                <h3 className="text-2xl font-black text-slate-100 tracking-tight mb-1.5">{system.name}</h3>
-                <p className="text-xs text-slate-500 font-mono flex items-center gap-2 bg-slate-900/50 w-fit px-3 py-1.5 rounded-xl border border-slate-700/30">
+                <h3 className="text-2xl break-words font-black text-slate-100 tracking-tight mb-1.5">{system.name}</h3>
+                <p className="text-xs text-slate-500 font-mono flex items-center gap-2 max-w-full break-all bg-slate-900/50 w-fit px-3 py-1.5 rounded-xl border border-slate-700/30">
                     <Terminal size={14} className="text-indigo-500/60" /> {system.username}@{system.host}
                 </p>
             </div>
 
             <div className="relative z-10 space-y-4">
-                <div className="flex justify-between items-end">
+                <div className="flex flex-wrap gap-3 justify-between items-end">
                     <div className="space-y-1">
                         <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Active Engines</span>
                         <div className="flex gap-2">
@@ -47,10 +49,11 @@ export const SystemCard: React.FC<SystemCardProps> = ({ system, onEdit, onDelete
                             {(!system.installedTools || system.installedTools.length === 0) && <span className="text-[10px] text-slate-700 font-bold uppercase italic">None Deployed</span>}
                         </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
+                        <button title="Check Connection" disabled={!onCheck || isChecking} onClick={() => onCheck?.(system)} className="p-3 bg-slate-700/50 text-slate-300 rounded-xl disabled:opacity-50"><Server size={14}/></button>
                         <button
                             onClick={(e) => { e.stopPropagation(); onEdit(system); }}
-                            className="p-2 bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-all"
+                            className="p-3 bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-all"
                             title="Edit System"
                         >
                             <Edit3 size={14} />
@@ -58,14 +61,14 @@ export const SystemCard: React.FC<SystemCardProps> = ({ system, onEdit, onDelete
                         {deleteConfirm ? (
                             <button
                                 onClick={(e) => { e.stopPropagation(); onDelete(system.id); }}
-                                className="p-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl transition-all text-[10px] font-bold"
+                                className="p-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl transition-all text-[10px] font-bold"
                             >
                                 Confirm
                             </button>
                         ) : (
                             <button
                                 onClick={(e) => { e.stopPropagation(); setDeleteConfirm(true); }}
-                                className="p-2 bg-slate-700/50 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-xl transition-all"
+                                className="p-3 bg-slate-700/50 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-xl transition-all"
                                 title="Delete System"
                                 onMouseLeave={() => setDeleteConfirm(false)}
                             >
