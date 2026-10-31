@@ -206,6 +206,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-slate-500 ml-2">SSH Private Key</label>
                                 <textarea rows={5} value={newLocation.secretKey || ''} onChange={e => setNewLocation({ ...newLocation, secretKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />
+                                {location?.hasSecretKey && <p role="status" className="text-xs text-emerald-400">SSH private key saved. Leave blank to keep it, or paste a new key to replace it.</p>}
                                 <p className="text-xs text-slate-400">Restic requires an SSH private key. Password-only authentication is not supported.</p>
                                 <p className="text-xs text-slate-400">Use a dedicated key without a key passphrase. When editing, leave this field untouched to keep the saved key.</p>
                             </div>

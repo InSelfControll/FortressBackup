@@ -19,12 +19,18 @@ const decryptCredential=(value?:string|null):string|undefined=>{
 };
 const rawLocation = (id:string) => getOne<Location>(
     'SELECT id,name,type,path,endpoint,region,access_key,secret_key,host_public_key FROM locations WHERE id=?',[id]);
+const toPublicLocation=({access_key,secret_key,...metadata}:Location):PublicLocation=>({
+    ...metadata,hasAccessKey:!!access_key,hasSecretKey:!!secret_key
+});
+
+export const getPublicLocation=async(id:string):Promise<PublicLocation|null>=>{
+    const stored=await rawLocation(id);
+    return stored?toPublicLocation(stored):null;
+};
 
 export const getAllLocations = async ():Promise<PublicLocation[]> => {
     const rows=await query<Location>('SELECT id,name,type,path,endpoint,region,access_key,secret_key,host_public_key FROM locations');
-    return rows.map(({access_key,secret_key,...metadata})=>({
-        ...metadata,hasAccessKey:!!access_key,hasSecretKey:!!secret_key
-    }));
+    return rows.map(toPublicLocation);
 };
 
 export const saveLocation = async (location:Location):Promise<void> => {

@@ -394,3 +394,28 @@ test('Rsync pushes to SSH storage using its own saved identity and host pin', as
     expect(()=>buildRsyncCommand({...config,destinationHostPublicKey:undefined})).toThrow();
     expect(()=>buildBorgCommand({...config,tool:'borg',jobName:'backup',repoPassword:'pass',destinationSecretKey:undefined})).toThrow();
 });
+
+test('SSH storage accepts pasted OpenSSH keys without a final newline', async () => {
+    const dir=makeTempDir('fortress-openssh-key-');
+    const keyFile=path.join(dir,'key');
+    expect(Bun.spawnSync(['ssh-keygen','-q','-t','ed25519','-N','','-f',keyFile]).exitCode).toBe(0);
+    const privateKey=fs.readFileSync(keyFile,'utf8');
+    for(const pastedKey of [privateKey.trimEnd(),privateKey.trimEnd().replace(/\n/g,'\r\n')]) {
+        for(const [tool,builder] of [
+            ['restic',buildResticCommand],['borg',buildBorgCommand],['rsync',buildRsyncCommand]
+        ] as const) {
+            const observed=await runWithFakeTool(tool,builder({
+                jobId:'11111111-1111-1111-1111-111111111111',jobName:'key-format',tool,
+                sourcePaths:['/home/docs'],destinationType:'sftp',
+                destinationPath:'sftp://backup@storage.example:23/backups',
+                destinationSecretKey:pastedKey,destinationHostPublicKey:HOST_PUBLIC_KEY,
+                repoPassword:'dummy-password'
+            }));
+            const generated=path.join(dir,'generated-key');
+            fs.writeFileSync(generated,observed.privateKey,{mode:0o600});
+            expect(Bun.spawnSync(['ssh-keygen','-y','-P','','-f',generated]).exitCode).toBe(0);
+            expect(observed.privateKey).toBe(privateKey);
+            expect(observed.identityMode).toBe('600');
+        }
+    }
+});

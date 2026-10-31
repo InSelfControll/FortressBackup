@@ -105,6 +105,29 @@ export interface Location {
   accessKey?: string;
   secretKey?: string;
   hostPublicKey?: string;
+  hasAccessKey?: boolean;
+  hasSecretKey?: boolean;
+}
+
+export interface ManagedAgentJob {
+  id: string;
+  operation: 'backup' | 'check' | 'snapshots';
+  state: 'pending' | 'running' | 'success' | 'failed';
+  createdAt: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  message?: string | null;
+}
+
+export interface ManagedAgent {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastSeen?: string | null;
+  disabled: boolean;
+  scheduleMinutes?: number;
+  nextRunAt?: string | null;
+  jobs: ManagedAgentJob[];
 }
 
 export interface BackupJob {
