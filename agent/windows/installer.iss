@@ -37,7 +37,7 @@ Name: "{commonprograms}\Fortress Backup"; Filename: "{app}\FortressBackup.exe"; 
 Name: "{commondesktop}\Fortress Backup"; Filename: "{app}\FortressBackup.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\FortressBackup.exe"; Description: "Open Fortress Backup to configure this laptop"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\FortressBackup.exe"; Description: "Open Fortress Backup to configure this laptop"; Flags: postinstall nowait skipifsilent runascurrentuser
 
 [Code]
 function InitializeUninstall(): Boolean;

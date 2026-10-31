@@ -55,7 +55,7 @@ try {
     $secret=[guid]::NewGuid().ToString('N')
     [IO.File]::WriteAllText($tokenPath,$secret)
     $configPath=Join-Path $dataRoot 'agent.json'
-    $config=@{controllerUrl='https://controller.example.invalid';agentId=[guid]::NewGuid().ToString();agentTokenFile=$tokenPath;sources=@($env:RUNNER_TEMP);excludes=@('*.tmp');useVSS=$false;timeoutMinutes=60}
+    $config=@{controllerUrl='https://controller.example.invalid';agentId=[guid]::NewGuid().ToString();agentTokenFile=$tokenPath;sources=@($env:RUNNER_TEMP);excludes=@('*.tmp');useVSS=$false;timeoutMinutes=60;host='saved-host'}
     [IO.File]::WriteAllText($configPath,($config|ConvertTo-Json))
     $before=(Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash
     $beforeKey=(Get-FileHash -LiteralPath $credentials.sftpKeyFile -Algorithm SHA256).Hash
@@ -73,6 +73,21 @@ try {
         if($window.Controls['folders'].Items.Count -ne 1 -or $window.Controls['folders'].Items[0] -ne $env:RUNNER_TEMP){throw 'Reopening the app did not load saved folders'}
         if(!$window.Controls['token'].UseSystemPasswordChar){throw 'Saved token is visible'}
     }finally{$window.Dispose()}
+    # Exercise the shared configuration writer without starting a backup task.
+    $writerFixture=Join-Path $env:RUNNER_TEMP ('configuration-writer-'+[guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($writerFixture) | Out-Null
+    try {
+        @'
+param($ConfigPath,[switch]$NonInteractive)
+$written=Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+if($written.excludes[0] -ne '*.tmp' -or $written.useVSS -ne $false -or $written.timeoutMinutes -ne 60 -or $written.host -ne 'saved-host'){throw 'Folder edit overwrote existing advanced settings'}
+if($written.sources.Count -ne 1 -or $written.sources[0] -ne $env:RUNNER_TEMP){throw 'Folder edit did not apply the selected sources'}
+[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'temporary-path'),$ConfigPath)
+'@ | Set-Content -LiteralPath (Join-Path $writerFixture 'setup.ps1') -Encoding UTF8
+        Install-ManagedSetup -SetupRoot $writerFixture -Profile $profile -Controller $config.controllerUrl -Id $config.agentId -Token $secret -Sources @($env:RUNNER_TEMP)
+        $temporaryConfig=[IO.File]::ReadAllText((Join-Path $writerFixture 'temporary-path'))
+        if(Test-Path -LiteralPath $temporaryConfig){throw 'Configuration writer left staged credentials behind'}
+    }finally{Remove-Item -LiteralPath $writerFixture -Recurse -Force}
     Invoke-TestInstaller (Join-Path $appRoot 'unins000.exe') 'fortress-uninstall.log'
     if(Get-ScheduledTask -TaskName FortressBackup-Windows -ErrorAction SilentlyContinue){throw 'Uninstall left the agent task enabled'}
     foreach($path in @($registration,$shortcut,(Join-Path $appRoot 'FortressBackup.exe'),(Join-Path $dataRoot 'fortress-agent.exe'),(Join-Path $dataRoot 'restic.exe'))){if(Test-Path -LiteralPath $path){throw 'Uninstall left an application registration, shortcut, or executable'}}
