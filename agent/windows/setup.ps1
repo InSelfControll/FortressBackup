@@ -56,10 +56,11 @@ try {
             }while((Read-Host 'Add another folder? [y/N]') -match '^(y|yes)$')
             # Protect the directory before writing any plaintext secrets, including on PowerShell 5.1.
             $temporary=Join-Path $env:TEMP ('FortressSetup-'+[guid]::NewGuid().ToString('N'))
-            New-Item -ItemType Directory -Path $temporary | Out-Null
-            $acl=Get-Acl -LiteralPath $temporary
+            $acl=New-Object Security.AccessControl.DirectorySecurity
             $acl.SetSecurityDescriptorSddlForm('O:BAG:BAD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)')
-            Set-Acl -LiteralPath $temporary -AclObject $acl
+            # The launcher uses Windows PowerShell 5.1/.NET Framework. Create with
+            # the final ACL atomically so another process cannot preplant files.
+            [IO.Directory]::CreateDirectory($temporary,$acl) | Out-Null
             $utf8=New-Object Text.UTF8Encoding($false)
             $tokenPath=Join-Path $temporary 'agent-token.txt'
             $passwordPath=Join-Path $temporary 'repo-password.txt'

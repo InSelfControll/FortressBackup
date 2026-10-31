@@ -120,15 +120,18 @@ try{
                 $checkAction=New-ScheduledTaskAction -Execute $agent -Argument ('-config "{0}" -operation preflight -log "{1}"' -f $configuration,$checkLog)
                 $checkPrincipal=New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest
                 Register-ScheduledTask -TaskName $checkName -Action $checkAction -Principal $checkPrincipal -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries) | Out-Null
-                $started=Get-Date
+                $previousRun=(Get-ScheduledTaskInfo -TaskName $checkName).LastRunTime
+                $timer=[Diagnostics.Stopwatch]::StartNew()
                 Start-ScheduledTask -TaskName $checkName
                 $finished=$false
                 do{
                     Start-Sleep -Seconds 1
                     $info=Get-ScheduledTaskInfo -TaskName $checkName
                     $state=(Get-ScheduledTask -TaskName $checkName).State
-                    $finished=$info.LastRunTime -ge $started.AddSeconds(-1) -and $state -notin @('Running','Queued')
-                }while(!$finished -and (Get-Date) -lt $started.AddSeconds(100))
+                    # Task Scheduler's reported wall time can lag the process clock.
+                    # This unique task has run when its baseline changes and it exits.
+                    $finished=$info.LastRunTime -ne $previousRun -and $state -notin @('Running','Queued')
+                }while(!$finished -and $timer.Elapsed.TotalSeconds -lt 100)
                 if(!$finished -or $info.LastTaskResult -ne 0){throw "Setup verification failed as SYSTEM (state=$state, result=$($info.LastTaskResult), last run=$($info.LastRunTime)). Read $checkLog for the storage, HTTPS or enrollment error. No queued backup was claimed."}
             }finally{
                 Stop-ScheduledTask -TaskName $checkName -ErrorAction SilentlyContinue
