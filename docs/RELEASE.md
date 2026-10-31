@@ -11,6 +11,8 @@
 
 ## Fixes
 
+- Editing an existing backup job now opens with saved values on the first render.
+  Standalone launcher download names match their published checksum entries.
 - Extract the complete Windows ZIP and double-click **Install FortressBackup.cmd**.
   Setup asks for enrollment and repository credentials and opens a folder picker.
   Storage authentication for SYSTEM and a trusted HTTPS controller are prerequisites.

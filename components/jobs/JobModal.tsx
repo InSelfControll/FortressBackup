@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { BackupJob, BackupTool, JobPriority, RetentionPolicy, System, Location, AIConfig, AIProvider, JobStatus } from '../../types';
 import { useCreateJob, useUpdateJob } from '../../client/api/mutations';
 import { generateBackupConfig } from '../../client/api/ai';
@@ -52,7 +52,18 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
         name: string; tool: BackupTool; schedule: string; scheduleEnabled?: boolean; priority: JobPriority;
         retention: RetentionPolicy; sourceId: string; sourcePaths: string[]; destinationId: string;
         repoPassword: string;
-    }>({
+    }>(() => job ? {
+        name: job.name,
+        tool: job.tool,
+        schedule: job.schedule,
+        scheduleEnabled: Boolean(job.scheduleEnabled),
+        priority: job.priority,
+        retention: job.retention || {keepHourly:0,keepDaily:7,keepWeekly:4,keepMonthly:6,keepYearly:1},
+        sourceId: job.sourceId,
+        sourcePaths: job.sourcePaths || ['/home'],
+        destinationId: job.destinationId,
+        repoPassword: job.repoPassword || ''
+    } : {
         name: '', tool: BackupTool.BORG, schedule: '0 2 * * *', scheduleEnabled: false, priority: JobPriority.MEDIUM,
         retention: { keepHourly: 0, keepDaily: 7, keepWeekly: 4, keepMonthly: 6, keepYearly: 1 },
         sourceId: '', sourcePaths: ['/home'], destinationId: '', repoPassword: ''
@@ -61,29 +72,6 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
     const [aiPrompt, setAiPrompt] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
     const [aiError, setAiError] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (job) {
-            setFormData({
-                name: job.name,
-                tool: job.tool,
-                schedule: job.schedule,
-                scheduleEnabled: Boolean(job.scheduleEnabled),
-                priority: job.priority,
-                retention: job.retention || {keepHourly:0,keepDaily:7,keepWeekly:4,keepMonthly:6,keepYearly:1},
-                sourceId: job.sourceId,
-                sourcePaths: job.sourcePaths || ['/home'],
-                destinationId: job.destinationId,
-                repoPassword: job.repoPassword || ''
-            });
-        } else {
-            setFormData({
-                name: '', tool: BackupTool.BORG, schedule: '0 2 * * *', scheduleEnabled: false, priority: JobPriority.MEDIUM,
-                retention: { keepHourly: 0, keepDaily: 7, keepWeekly: 4, keepMonthly: 6, keepYearly: 1 },
-                sourceId: '', sourcePaths: ['/home'], destinationId: '', repoPassword: ''
-            });
-        }
-    }, [job, isOpen]);
 
     const handleAiGeneration = async () => {
         if (!aiPrompt) return;

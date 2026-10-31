@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-rc.3] - 2026-10-31
+
+- Initialize an edited backup job with its saved values on the first render, removing the delayed empty form state.
+- Match standalone Windows launcher filenames to GitHub's normalized release asset names so checksum manifests verify.
+
 ## [0.1.0-rc.2] - 2026-10-31
 
 - Add a visible Windows setup launcher with enrollment prompts, folder selection, protected credentials, and immediate task startup.
