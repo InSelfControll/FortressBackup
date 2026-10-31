@@ -6,6 +6,7 @@ package main
 
 import (
  "context"
+ "encoding/csv"
  "encoding/json"
  "errors"
  "flag"
@@ -66,7 +67,14 @@ func execute(ctx context.Context,c Config,operation string) error {
  args:=[]string{"--repo",c.Repository,"--password-file",c.PasswordFile}
  transport,err:=sftpCommand(c)
  if err!=nil{return err}
- if transport!="" {args=append(args,"-o","sftp.command="+transport)}
+ if transport!="" {
+  // Restic's option flag parses CSV before parsing the SSH argv string.
+  var option strings.Builder
+  writer:=csv.NewWriter(&option)
+  if err:=writer.Write([]string{"sftp.command="+transport});err!=nil{return err}
+  writer.Flush()
+  args=append(args,"-o",strings.TrimSuffix(option.String(),"\n"))
+ }
  switch operation {
  case "backup":
   args=append(args,"backup","--json","--exclude-caches")
