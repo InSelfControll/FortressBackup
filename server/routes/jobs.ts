@@ -2,7 +2,9 @@
  * Jobs Routes - Backup job CRUD, execution, and log streaming
  */
 
+import {cronMatches} from '../services/cron.js';
 import { Router } from 'express';
+import { jobValidationError } from '../services/jobValidation.js';
 import crypto from 'crypto';
 import * as db from '../db/index.js';
 import { authenticateToken, requireAdmin, getJwtSecret } from '../middleware/auth.js';
@@ -24,13 +26,14 @@ export async function completeRunningJob(
     jobId: string,
     runEpoch: number,
     status: 'Success' | 'Failed',
-    size?: string
+    size?: string,
+    stats?: Record<string,number>
 ): Promise<boolean> {
     const lastRun = new Date().toISOString();
     if (status === 'Success') {
-        return Boolean(await db.getOne(`UPDATE jobs SET status='Success',last_run=?,size=?
+        return Boolean(await db.getOne(`UPDATE jobs SET status='Success',last_run=?,size=?,stats=COALESCE(?,stats)
             WHERE id=? AND status='Running' AND run_epoch=? RETURNING id`,
-            [lastRun, size ?? null, jobId, runEpoch]));
+            [lastRun, size ?? null, stats ? JSON.stringify(stats) : null, jobId, runEpoch]));
     }
     return Boolean(await db.getOne(`UPDATE jobs SET status='Failed',last_run=?
         WHERE id=? AND status='Running' AND run_epoch=? RETURNING id`, [lastRun, jobId, runEpoch]));
@@ -67,14 +70,12 @@ router.get('/', authenticateToken, requireAdmin, async (req, res) => {
 // Create job
 router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const jobId = req.body.id || crypto.randomUUID();
+        const jobId = crypto.randomUUID();
 
-        // Validation
-        if (!req.body.sourceId) {
-            return res.status(400).json({ error: 'Source System ID is required' });
-        }
+        const invalid = await jobValidationError(req.body);
+        if (invalid) return res.status(400).json({error:invalid});
 
-        const job = { ...normalizeRepoPassword(req.body), id: jobId };
+        const job = { ...normalizeRepoPassword(req.body), id: jobId, status:'Idle' };
         const dbJob = toDBJob(job);
 
         // Encrypt repo password if present
@@ -98,9 +99,13 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
         if (existing.status === 'Running') {
             return res.status(409).json({ error: 'Cannot edit a job while it is running' });
         }
+        const invalid = await jobValidationError({...req.body,scheduleEnabled:req.body.scheduleEnabled ?? Boolean(existing.schedule_enabled)},existing);
+        if (invalid) return res.status(400).json({error:invalid});
         const body = normalizeRepoPassword(req.body);
         const job = { ...body, id: req.params.id };
         const dbJob = toDBJob(job);
+        if (req.body.scheduleEnabled === undefined) dbJob.schedule_enabled = existing.schedule_enabled || 0;
+        dbJob.status = existing.status; dbJob.last_run = existing.last_run; dbJob.stats = existing.stats; dbJob.size = existing.size;
         if (!dbJob.repo_password) dbJob.repo_password = existing.repo_password;
 
         // Encrypt repo password if present and not already encrypted
@@ -111,11 +116,11 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
         const updated = await db.getOne<any>(`
             UPDATE jobs SET name=?,tool=?,source_id=?,destination_id=?,source_path=?,
-                repo_password=?,schedule=?,retention=?,priority=?,status=?,next_run=?,last_run=?,size=?,stats=?
+                repo_password=?,schedule=?,retention=?,priority=?,status=?,next_run=?,last_run=?,size=?,stats=?,schedule_enabled=?
             WHERE id=? AND COALESCE(status,'Idle')!='Running' RETURNING *`,
             [dbJob.name, dbJob.tool, dbJob.source_id, dbJob.destination_id, dbJob.source_path,
                 dbJob.repo_password, dbJob.schedule, dbJob.retention, dbJob.priority, dbJob.status,
-                dbJob.next_run, dbJob.last_run, dbJob.size, dbJob.stats, dbJob.id]);
+                dbJob.next_run, dbJob.last_run, dbJob.size, dbJob.stats, dbJob.schedule_enabled, dbJob.id]);
         if (!updated) return res.status(409).json({ error: 'Cannot edit a job while it is running' });
         res.json(toAPIJob(updated));
     } catch (error: any) {
@@ -136,6 +141,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
         if (existing && !deleted) {
             return res.status(409).json({ error: 'Cannot delete a job while it is running' });
         }
+        if (deleted) await db.run('DELETE FROM job_logs WHERE job_id=?',[req.params.id]);
         res.json({ success: true });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -143,24 +149,23 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
 });
 
 // Run a backup job via SSH on the source system
-router.post('/:id/run', authenticateToken, requireAdmin, async (req, res) => {
+export async function executeSavedJob(jobId:string, credentials:Record<string,unknown>={}):Promise<{status:number;body:any}> {
     let runEpoch: number | null = null;
     try {
-        const jobId = req.params.id;
 
         // Get job details
         const job = await db.getJob(jobId);
         if (!job) {
-            return res.status(404).json({ error: 'Job not found' });
+            return {status:404,body:{error:'Job not found'}};
         }
 
         const leased = await db.getOne<{run_epoch:number}>(`
             UPDATE jobs SET status='Running',run_epoch=COALESCE(run_epoch,0)+1
-            WHERE id=? AND COALESCE(status,'Idle') IN ('Idle','Success','Failed') RETURNING run_epoch`,[jobId]);
-        if (!leased) return res.status(409).json({ error: 'Backup is already running or requires operator review' });
+            WHERE id=? AND COALESCE(status,'Idle') IN ('Idle','Success','Failed','Warning') RETURNING run_epoch`,[jobId]);
+        if (!leased) return {status:409,body:{error:'Backup is already running or requires operator review'}};
         runEpoch = leased.run_epoch;
 
-        const { sshConfig, jobConfig } = await buildJobExecutionContext(job, req.body);
+        const { sshConfig, jobConfig } = await buildJobExecutionContext(job, credentials);
 
         // Collect logs
         const logs: BackupExecutionLog[] = [];
@@ -184,16 +189,18 @@ router.post('/:id/run', authenticateToken, requireAdmin, async (req, res) => {
             // Notify SSE subscribers that job failed
             if (completed) notifyJobComplete(jobId, false);
 
-            return res.status(500).json({
+            return {status:500,body:{
                 success: false,
                 error: result.errors.join(', '),
                 logs
-            });
+            }};
         }
 
         // Happy Path: Job Success
         const size = result.bytesProcessed ? `${(result.bytesProcessed / 1e6).toFixed(2)} MB` : undefined;
-        const completed = await completeRunningJob(jobId, runEpoch, 'Success', size);
+        const duration = (result.endTime.getTime() - result.startTime.getTime()) / 1000;
+        const stats = { filesProcessed: result.filesProcessed || 0, bytesProcessed: result.bytesProcessed || 0, duration, speed: duration > 0 ? (result.bytesProcessed || 0) / 1e6 / duration : 0 };
+        const completed = await completeRunningJob(jobId, runEpoch, 'Success', size, stats);
         const updatedJob = await db.getJob(jobId);
 
         // Save logs to database
@@ -203,25 +210,50 @@ router.post('/:id/run', authenticateToken, requireAdmin, async (req, res) => {
         // Notify SSE subscribers that job completed
         if (completed) notifyJobComplete(jobId, true);
 
-        res.json({
+        return {status:200,body:{
             success: true,
             job: toAPIJob(updatedJob),
-            stats: {
-                filesProcessed: result.filesProcessed,
-                bytesProcessed: result.bytesProcessed,
-                duration: (result.endTime.getTime() - result.startTime.getTime()) / 1000
-            },
+            stats,
+
             logs
-        });
+        }};
     } catch (error: any) {
         if (runEpoch !== null) {
-            try { await completeRunningJob(req.params.id, runEpoch, 'Failed'); }
+            try {
+                const completed = await completeRunningJob(jobId, runEpoch, 'Failed');
+                if (completed) {
+                    const message = 'Backup could not start. Check the saved source SSH identity, host key, and repository configuration.';
+                    await db.saveJobLogs(jobId,crypto.randomUUID(),[{type:'error',message,timestamp:new Date()}]);
+                    broadcastJobLog(jobId,'error',message); notifyJobComplete(jobId,false);
+                }
+            }
             catch { /* Keep original failure and surface error status. */ }
         }
         console.error('[Job] Error:', error instanceof Error ? error.message : 'Backup error');
-        res.status(500).json({ error: 'Backup operation failed' });
+        return {status:500,body:{error:'Backup operation failed'}};
     }
+}
+
+router.post('/:id/run', authenticateToken, requireAdmin, async (req,res)=>{
+    const result=await executeSavedJob(req.params.id,req.body || {});
+    res.status(result.status).json(result.body);
 });
+
+export async function dispatchScheduledJobs(now=new Date(), execute=executeSavedJob):Promise<string[]> {
+    const slot=new Date(Math.floor(now.getTime()/60000)*60000).toISOString();
+    const candidates=await db.query<db.Job>("SELECT * FROM jobs WHERE schedule_enabled=1 AND status IN ('Idle','Success','Failed','Warning')");
+    const claimed:string[]=[];const work:Promise<unknown>[]=[];
+    for(const job of candidates){
+        try { if(!job.schedule || !cronMatches(job.schedule,now))continue; }
+        catch { console.warn('[Job scheduler] Invalid saved cron expression for job',job.id);continue; }
+        const claim=await db.getOne(`UPDATE jobs SET last_scheduled_for=? WHERE id=? AND schedule_enabled=1
+            AND status IN ('Idle','Success','Failed','Warning') AND (last_scheduled_for IS NULL OR last_scheduled_for!=?) RETURNING id`,[slot,job.id,slot]);
+        if(!claim)continue;
+        claimed.push(job.id);work.push(execute(job.id).catch(error=>console.error('[Job scheduler] Execution failed:',error instanceof Error?error.message:'unknown error')));
+    }
+    await Promise.allSettled(work);
+    return claimed;
+}
 
 // Get job logs
 router.get('/:jobId/logs', authenticateToken, requireAdmin, async (req, res) => {

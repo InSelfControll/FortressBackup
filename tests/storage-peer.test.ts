@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import { buildBorgCommand, buildBorgSnapshotListCommand } from '../server/services/backup/borg.js';
 import { buildResticCommand } from '../server/services/backup/restic.js';
 import { buildRsyncCommand, hostKeyEntry, trustFileSetup } from '../server/services/backup/rsync.js';
 import { buildJobExecutionContext } from '../server/services/backup/jobContext.js';
@@ -34,11 +35,12 @@ if (entries.length !== 1) throw new Error('Expected one generated trust director
 const trustDir = path.join(process.env.TMPDIR, entries[0]);
 const trustFile = path.join(trustDir, 'known_hosts');
 const args = process.argv.slice(2);
-const nestedCommand = process.env.FAKE_TOOL === 'restic'
+const nestedCommand = process.env.FAKE_TOOL === 'borg' ? process.env.BORG_RSH : process.env.FAKE_TOOL === 'restic'
     ? args[args.indexOf('-o') + 1].slice('sftp.command='.length)
     : args[args.indexOf('-e') + 1];
 const [executable, ...sshArgs] = nestedCommand.split(' ').map(argument => argument.replaceAll('"', ''));
-const identityFile = process.env.FAKE_TOOL === 'restic' ? sshArgs[sshArgs.indexOf('-i') + 1] : undefined;
+const candidateIdentity = sshArgs[sshArgs.indexOf('-i') + 1];
+const identityFile = sshArgs.includes('-i') && fs.existsSync(candidateIdentity) ? candidateIdentity : undefined;
 const ssh = Bun.spawn({
     cmd: [path.join(process.env.FAKE_BIN, executable), ...sshArgs],
     stdout: 'pipe', stderr: 'pipe'
@@ -59,7 +61,7 @@ fs.writeFileSync(process.env.FAKE_CAPTURE, JSON.stringify({
 }));
 `;
 
-const runWithFakeTool = async (tool: 'restic' | 'rsync', command: string) => {
+const runWithFakeTool = async (tool: 'restic' | 'rsync' | 'borg', command: string) => {
     const dir = makeTempDir(`fortress-${tool}-peer-`);
     const bin = path.join(dir, 'bin');
     const tmp = path.join(dir, 'tmp');
@@ -364,4 +366,31 @@ test('Borg SSHFS normalizes the UI SFTP URL and preserves its port', async () =>
     expect(commands[0]).toContain('sshfs -p 2222 ');
     expect(commands[0]).toContain("'backup@storage.example:/srv/repo'");
     expect(commands[0]).not.toContain('sftp://');
+});
+
+
+test('Borg uses native Storage Box SSH transport with saved credentials for backup and listing', async () => {
+    const privateKey='-----BEGIN OPENSSH PRIVATE KEY-----\ndummy-private-key\n-----END OPENSSH PRIVATE KEY-----\n';
+    const config:any={jobName:'storagebox-backup',tool:'borg',sourcePaths:['/home/docs'],destinationType:'sftp',destinationPath:'sftp://backup@storage.example:23/backups/source',destinationSecretKey:privateKey,destinationHostPublicKey:HOST_PUBLIC_KEY,repoPassword:'dummy-repository-password'};
+    for(const command of [buildBorgCommand(config),buildBorgSnapshotListCommand(config)]) {
+        const observed=await runWithFakeTool('borg',command);
+        expect(observed.args.join(' ')).toContain('ssh://backup@storage.example:23/./backups/source');
+        expect(observed.sshArgs).toContain('StrictHostKeyChecking=yes');
+        expect(observed.sshArgs).toContain('23');
+        expect(observed.identityMode).toBe('600');
+        expect(observed.privateKey).toBe(privateKey);
+        expect(observed.hostKey).toBe(`[storage.example]:23 ${HOST_PUBLIC_KEY}\n`);
+        expect(command).not.toContain('sshfs');
+    }
+});
+
+test('Rsync pushes to SSH storage using its own saved identity and host pin', async () => {
+    const privateKey='-----BEGIN OPENSSH PRIVATE KEY-----\ndummy-private-key\n-----END OPENSSH PRIVATE KEY-----\n';
+    const config:any={tool:'rsync',sourcePaths:['/home/docs'],destinationType:'sftp',destinationPath:'sftp://backup@storage.example:23/backups/source',destinationSecretKey:privateKey,destinationHostPublicKey:HOST_PUBLIC_KEY};
+    const observed=await runWithFakeTool('rsync',buildRsyncCommand(config));
+    expect(observed.args).toContain('backup@storage.example:backups/source');
+    expect(observed.identityMode).toBe('600');expect(observed.privateKey).toBe(privateKey);
+    expect(observed.sshArgs).toContain('StrictHostKeyChecking=yes');expect(observed.sshArgs).toContain('23');
+    expect(()=>buildRsyncCommand({...config,destinationHostPublicKey:undefined})).toThrow();
+    expect(()=>buildBorgCommand({...config,tool:'borg',jobName:'backup',repoPassword:'pass',destinationSecretKey:undefined})).toThrow();
 });

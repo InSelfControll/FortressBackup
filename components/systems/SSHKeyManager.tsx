@@ -12,6 +12,7 @@ interface SSHKeyManagerProps {
 
 export const SSHKeyManager = ({ isOpen, onClose, sshKeys }: SSHKeyManagerProps) => {
     const [isAddingKey, setIsAddingKey] = useState(false);
+    const [keyError, setKeyError] = useState('');
     const [newKey, setNewKey] = useState({
         name: '',
         privateKey: '',
@@ -26,10 +27,10 @@ export const SSHKeyManager = ({ isOpen, onClose, sshKeys }: SSHKeyManagerProps) 
         if (!newKey.name || !newKey.privateKey) return;
 
         setIsAddingKey(true);
+        setKeyError('');
         createSSHKeyMutation.mutate({
             name: newKey.name,
-            privateKeyPath: newKey.privateKey,
-            isEncrypted: !!newKey.passphrase,
+            privateKey: newKey.privateKey,
             passphrase: newKey.passphrase
         } as any, {
             onSuccess: () => {
@@ -37,8 +38,8 @@ export const SSHKeyManager = ({ isOpen, onClose, sshKeys }: SSHKeyManagerProps) 
                 toast.success('SSH Key added successfully');
                 setIsAddingKey(false);
             },
-            onError: () => {
-                toast.error('Failed to add SSH key');
+            onError: error => {
+                setKeyError(error.message);
                 setIsAddingKey(false);
             }
         });
@@ -88,7 +89,7 @@ export const SSHKeyManager = ({ isOpen, onClose, sshKeys }: SSHKeyManagerProps) 
                                                 <span className="text-[10px] text-emerald-400 font-bold uppercase bg-emerald-500/10 px-2 py-1 rounded">Encrypted</span>
                                             )}
                                             <button
-                                                onClick={() => deleteSSHKeyMutation.mutate(key.id, { onSuccess: () => toast.success('Key deleted') })}
+                                                aria-label={`Delete identity ${key.name}`} onClick={() => deleteSSHKeyMutation.mutate(key.id, { onSuccess: () => toast.success('Key deleted') })}
                                                 className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors"
                                             >
                                                 <Trash2 size={16} />
@@ -112,7 +113,7 @@ export const SSHKeyManager = ({ isOpen, onClose, sshKeys }: SSHKeyManagerProps) 
                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Private Key Data</label>
                                 <div className="relative">
                                     <textarea value={newKey.privateKey} onChange={e => setNewKey({ ...newKey, privateKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500 h-32" placeholder="-----BEGIN OPENSSH..." />
-                                    <button onClick={() => fileInputRef.current?.click()} className="absolute right-3 top-3 p-2 bg-slate-800 rounded-xl text-indigo-400"><Upload size={18} /></button>
+                                    <button aria-label="Upload private key" onClick={() => fileInputRef.current?.click()} className="absolute right-3 top-3 p-2 bg-slate-800 rounded-xl text-indigo-400"><Upload size={18} /></button>
                                     <input type="file" ref={fileInputRef} className="hidden" onChange={(e) => {
                                         const f = e.target.files?.[0];
                                         if (f) {
@@ -128,6 +129,7 @@ export const SSHKeyManager = ({ isOpen, onClose, sshKeys }: SSHKeyManagerProps) 
                                 <input type="password" value={newKey.passphrase} onChange={e => setNewKey({ ...newKey, passphrase: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="••••••••" />
                             </div>
                         </div>
+                        {keyError && <p role="alert" className="mt-4 text-sm text-rose-400">{keyError}</p>}
                         <button onClick={handleAddSSHKey} disabled={!newKey.name || !newKey.privateKey || isAddingKey} className="w-full mt-8 py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/20 active:scale-[0.98] transition-all disabled:opacity-50">
                             {isAddingKey ? 'Encrypting & Storing...' : 'Securely Store Identity'}
                         </button>

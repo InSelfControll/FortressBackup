@@ -14,6 +14,8 @@ export interface Job {
     source_path?: string;
     repo_password?: string;
     schedule?: string;
+    schedule_enabled?: number;
+    last_scheduled_for?: string;
     retention?: string;
     priority: string;
     status: string;
@@ -30,19 +32,19 @@ export const getAllJobs = async (): Promise<Job[]> => {
 export const saveJob = async (job: Job): Promise<void> => {
     if (currentConfig?.type === 'sqlite') {
         await run(
-            `INSERT INTO jobs (id, name, tool, source_id, destination_id, source_path, repo_password, schedule, retention, priority, status, next_run, last_run, size, stats) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `INSERT INTO jobs (id, name, tool, source_id, destination_id, source_path, repo_password, schedule, retention, priority, status, next_run, last_run, size, stats, schedule_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
              name=excluded.name,tool=excluded.tool,source_id=excluded.source_id,
              destination_id=excluded.destination_id,source_path=excluded.source_path,
              repo_password=excluded.repo_password,schedule=excluded.schedule,
              retention=excluded.retention,priority=excluded.priority,status=excluded.status,
-             next_run=excluded.next_run,last_run=excluded.last_run,size=excluded.size,stats=excluded.stats`,
-            [job.id, job.name, job.tool, job.source_id, job.destination_id, job.source_path, job.repo_password, job.schedule, job.retention, job.priority, job.status, job.next_run, job.last_run, job.size, job.stats]
+             next_run=excluded.next_run,last_run=excluded.last_run,size=excluded.size,stats=excluded.stats,schedule_enabled=excluded.schedule_enabled`,
+            [job.id, job.name, job.tool, job.source_id, job.destination_id, job.source_path, job.repo_password, job.schedule, job.retention, job.priority, job.status, job.next_run, job.last_run, job.size, job.stats, job.schedule_enabled || 0]
         );
     } else {
         await run(
-            `INSERT INTO jobs (id, name, tool, source_id, destination_id, source_path, repo_password, schedule, retention, priority, status, next_run, last_run, size, stats) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, tool=EXCLUDED.tool, source_id=EXCLUDED.source_id, destination_id=EXCLUDED.destination_id, source_path=EXCLUDED.source_path, repo_password=EXCLUDED.repo_password, schedule=EXCLUDED.schedule, retention=EXCLUDED.retention, priority=EXCLUDED.priority, status=EXCLUDED.status, next_run=EXCLUDED.next_run, last_run=EXCLUDED.last_run, size=EXCLUDED.size, stats=EXCLUDED.stats`,
-            [job.id, job.name, job.tool, job.source_id, job.destination_id, job.source_path, job.repo_password, job.schedule, job.retention, job.priority, job.status, job.next_run, job.last_run, job.size, job.stats]
+            `INSERT INTO jobs (id, name, tool, source_id, destination_id, source_path, repo_password, schedule, retention, priority, status, next_run, last_run, size, stats, schedule_enabled) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, tool=EXCLUDED.tool, source_id=EXCLUDED.source_id, destination_id=EXCLUDED.destination_id, source_path=EXCLUDED.source_path, repo_password=EXCLUDED.repo_password, schedule=EXCLUDED.schedule, retention=EXCLUDED.retention, priority=EXCLUDED.priority, status=EXCLUDED.status, next_run=EXCLUDED.next_run, last_run=EXCLUDED.last_run, size=EXCLUDED.size, stats=EXCLUDED.stats, schedule_enabled=EXCLUDED.schedule_enabled`,
+            [job.id, job.name, job.tool, job.source_id, job.destination_id, job.source_path, job.repo_password, job.schedule, job.retention, job.priority, job.status, job.next_run, job.last_run, job.size, job.stats, job.schedule_enabled || 0]
         );
     }
 };

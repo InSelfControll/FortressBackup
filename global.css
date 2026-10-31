@@ -114,6 +114,11 @@ body {
   overflow: hidden;
 }
 
+/* Notifications contain text only and must never block form actions underneath. */
+[data-rht-toaster], [data-rht-toaster] * {
+  pointer-events: none !important;
+}
+
 /* The app owns its scroll regions so navigation and dialog actions stay visible. */
 .mobile-navigation {
   position: fixed;

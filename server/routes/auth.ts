@@ -4,6 +4,7 @@
 
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import * as db from '../db/index.js';
 import { getJwtSecret, authenticateToken, authenticateGitHubLink, requireAdmin } from '../middleware/auth.js';
 import { selectVerifiedGitHubEmail } from '../security/githubIdentity.js';
@@ -13,6 +14,7 @@ import { fetchJsonWithLimits } from '../utils/http.js';
 const router = Router();
 const loginAdmission = createAdmissionLimiter({ limit: 10, windowMs: 60_000 });
 const githubAdmission = createAdmissionLimiter({ limit: 30, windowMs: 60_000 });
+const passwordAdmission = createAdmissionLimiter({ limit: 5, windowMs: 60_000 });
 const validEmail=(value:unknown):value is string =>
     typeof value==='string' && value.length>=3 && value.length<=254 &&
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -250,6 +252,26 @@ router.post('/github/link', githubAdmission, authenticateGitHubLink, async (req,
         req.off('aborted', disconnect);
         res.off('close', disconnect);
     }
+});
+
+router.post('/password', passwordAdmission, authenticateToken, async (req, res) => {
+    try {
+        const user = (req as any).user as db.User;
+        const { currentPassword, newPassword } = req.body || {};
+        if (typeof currentPassword !== 'string' || !currentPassword || currentPassword.length > 256 ||
+            typeof newPassword !== 'string' || newPassword.length < 12 || newPassword.length > 256)
+            return res.status(400).json({ error: 'Enter your current password and a new password of 12–256 characters' });
+        if (await db.getConfig<string>('auth_mode') === 'sso')
+            return res.status(400).json({ error: 'Change your password through your identity provider' });
+        const verified = await db.validateUser(user.email, currentPassword);
+        if (!verified) return res.status(400).json({ error: 'Current password is incorrect' });
+        const hash = await bcrypt.hash(newPassword, 10);
+        const updated = await db.getOne<db.User>(
+            'UPDATE users SET password_hash=?,auth_epoch=auth_epoch+1 WHERE id=? AND auth_epoch=? RETURNING id,email,role,auth_epoch',
+            [hash, user.id, user.auth_epoch]);
+        if (!updated) return res.status(409).json({ error: 'Your session changed. Sign in again before updating your password.' });
+        res.json({ success: true, token: signSessionToken(updated) });
+    } catch { res.status(500).json({ error: 'Password update failed' }); }
 });
 
 router.post('/logout', authenticateToken, async (req, res) => {

@@ -11,8 +11,14 @@ export interface ApiResponse<T> {
     linkToken?: string;
 }
 
+export function requireData<T>(response: ApiResponse<T>): T {
+    if (response.error) throw new Error(response.error);
+    if (response.data === undefined) throw new Error('The server did not return a response');
+    return response.data;
+}
+
 // Token management
-let authToken: string | null = localStorage.getItem('fortress_token');
+let authToken: string | null = typeof localStorage === 'undefined' ? null : localStorage.getItem('fortress_token');
 
 export const setToken = (token: string | null) => {
     authToken = token;
@@ -47,10 +53,13 @@ export const apiFetch = async <T>(
             headers
         });
 
-        const data = await response.json();
+        const data = response.status === 204 ? { success: true } : await response.json().catch(() => ({
+            error: `The server returned an invalid response (HTTP ${response.status})`
+        }));
 
-        if (!response.ok) {
-            if (response.status === 401) {
+        if (!response.ok || data.error || data.success === false) {
+            const publicAuthRequest = endpoint === '/auth/login' || endpoint.startsWith('/auth/github/') || endpoint === '/config/setup';
+            if (response.status === 401 && !publicAuthRequest) {
                 // Session expired or invalid
                 console.warn(`[API] Auth error ${response.status}:`, data.error);
                 // Import dynamically to avoid circular dependency

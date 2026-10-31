@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import { apiFetch, requireData } from '../../client/api/client';
+import React, { useEffect, useState } from 'react';
 import { DatabaseConfig, DatabaseType } from '../../types';
 import { Database, Loader2, RefreshCw, Save, CheckCircle2 } from 'lucide-react';
 
 interface DatabaseConfigTabProps {
   config: DatabaseConfig | null;
-  onUpdate: (config: DatabaseConfig) => void;
+  onUpdate: (config: DatabaseConfig) => void | Promise<void>;
 }
 
 export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, onUpdate }) => {
@@ -12,20 +13,33 @@ export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, on
   const [isDbTesting, setIsDbTesting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  useEffect(() => setSaveSuccess(false), [localConfig]);
 
-  const testDbConnection = () => {
-    setIsDbTesting(true);
-    setTimeout(() => setIsDbTesting(false), 1500);
+  const [healthMessage, setHealthMessage] = useState('');
+  const testDbConnection = async () => {
+    if (isDbTesting) return;
+    setIsDbTesting(true); setSaveError(''); setHealthMessage('');
+    try {
+      const result = requireData(await apiFetch<{ success: boolean; type: string }>('/config/database-health'));
+      setHealthMessage(`The active ${result.type} database answered its health query.`);
+    } catch (error) { setSaveError(error instanceof Error ? error.message : 'Database check failed'); }
+    finally { setIsDbTesting(false); }
   };
 
   const handleSave = async () => {
+    if (isSaving) return;
     setIsSaving(true);
     setSaveSuccess(false);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    onUpdate(localConfig);
-    setIsSaving(false);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2000);
+    setSaveError('');
+    try {
+      await onUpdate(localConfig);
+      setSaveSuccess(true);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Failed to save settings');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -68,6 +82,9 @@ export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, on
         </button>
       </div>
 
+      <p className="text-sm text-slate-400">These preferences do not migrate data or reconnect the running database. Configure the controller environment separately before switching databases.</p>
+      <button disabled={isDbTesting} onClick={() => void testDbConnection()} className="rounded-xl px-4 py-3 bg-slate-800 text-indigo-300">{isDbTesting ? 'Checking...' : 'Check Active Database'}</button>
+      {healthMessage && <p role="status" className="text-sm text-emerald-400">{healthMessage}</p>}
       {localConfig.type === DatabaseType.POSTGRES && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 sm:p-6 bg-slate-800/20 rounded-3xl border border-slate-800 animate-in slide-in-from-top-4 duration-300">
           <div className="space-y-1 col-span-2">
@@ -82,15 +99,12 @@ export const DatabaseConfigTab: React.FC<DatabaseConfigTabProps> = ({ config, on
             <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Database</label>
             <input type="text" value={localConfig.database} onChange={e => setLocalConfig({ ...localConfig, database: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="fortress" />
           </div>
-          <div className="flex items-end col-span-full">
-            <button onClick={testDbConnection} className="text-[10px] font-black uppercase text-indigo-400 flex items-center gap-2 bg-indigo-500/5 px-4 py-2 rounded-lg border border-indigo-500/10 hover:bg-indigo-500/10 transition-colors">
-              {isDbTesting ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-              {isDbTesting ? 'Testing...' : 'Test Connection'}
-            </button>
-          </div>
+
         </div>
       )}
 
+      {saveError && <p role="alert" className="text-sm text-rose-400">{saveError}</p>}
+      {saveSuccess && <p role="status" className="text-sm text-emerald-400">Settings saved.</p>}
       <div className="flex justify-end">
         <button
           onClick={handleSave}

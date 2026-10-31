@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AIConfig, AIProvider } from '../../types';
 import { Brain, XCircle, Sparkles, Globe, EyeOff, Eye, Loader2, CheckCircle2, Save } from 'lucide-react';
 
 interface AIConfigTabProps {
   config: AIConfig;
-  onUpdate: (config: AIConfig) => void;
+  onUpdate: (config: AIConfig) => void | Promise<void>;
 }
 
 export const AIConfigTab: React.FC<AIConfigTabProps> = ({ config, onUpdate }) => {
@@ -12,15 +12,22 @@ export const AIConfigTab: React.FC<AIConfigTabProps> = ({ config, onUpdate }) =>
   const [showApiKey, setShowApiKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  useEffect(() => setSaveSuccess(false), [localConfig]);
 
   const handleSave = async () => {
+    if (isSaving) return;
     setIsSaving(true);
     setSaveSuccess(false);
-    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate save
-    onUpdate(localConfig);
-    setIsSaving(false);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2000);
+    setSaveError('');
+    try {
+      await onUpdate(localConfig);
+      setSaveSuccess(true);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Failed to save settings');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -110,6 +117,8 @@ export const AIConfigTab: React.FC<AIConfigTabProps> = ({ config, onUpdate }) =>
         </div>
       )}
 
+      {saveError && <p role="alert" className="text-sm text-rose-400">{saveError}</p>}
+      {saveSuccess && <p role="status" className="text-sm text-emerald-400">Settings saved.</p>}
       <div className="flex justify-end">
         <button
           onClick={handleSave}

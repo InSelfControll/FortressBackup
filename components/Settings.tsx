@@ -10,21 +10,25 @@ import { SecurityTab } from './settings/SecurityTab';
 import { DataManagementTab } from './settings/DataManagementTab';
 
 interface SettingsProps {
+    authMode?: 'local' | 'sso';
+    onUpdateAuthMode?: (mode: 'local' | 'sso') => void | Promise<void>;
     aiConfig: AIConfig;
     dbConfig: DatabaseConfig | null;
     ssoConfig: SSOConfig | null;
-    onUpdateAIConfig: (config: AIConfig) => void;
-    onUpdateDBConfig: (config: DatabaseConfig) => void;
-    onUpdateSSOConfig: (config: SSOConfig) => void;
-    onResetApp: () => void;
-    onExportData: () => void;
-    onImportData: (data: string) => void;
+    onUpdateAIConfig: (config: AIConfig) => void | Promise<void>;
+    onUpdateDBConfig: (config: DatabaseConfig) => void | Promise<void>;
+    onUpdateSSOConfig: (config: SSOConfig) => void | Promise<void>;
+    onResetApp: () => void | Promise<void>;
+    onExportData: () => void | Promise<void>;
+    onImportData: (data: string) => void | Promise<void>;
 }
 
 type SettingsTab = 'ai' | 'database' | 'sso' | 'security' | 'data';
 
 export const Settings: React.FC<SettingsProps> = ({
     aiConfig,
+    authMode,
+    onUpdateAuthMode,
     dbConfig,
     ssoConfig,
     onUpdateAIConfig,
@@ -85,7 +89,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 )}
 
                 {activeTab === 'sso' && (
-                    <SSOConfigTab config={ssoConfig} onUpdate={onUpdateSSOConfig} />
+                    <SSOConfigTab config={ssoConfig} onUpdate={onUpdateSSOConfig} authMode={authMode} onUpdateAuthMode={onUpdateAuthMode} />
                 )}
 
                 {activeTab === 'security' && (

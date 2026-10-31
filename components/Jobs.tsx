@@ -1,3 +1,4 @@
+import { QueryStatus } from './QueryStatus';
 import React, { useState, useMemo } from 'react';
 import { BackupJob, JobStatus, BackupTool, AIConfig } from '../types';
 import { Archive, Plus, Filter, Search } from 'lucide-react';
@@ -11,12 +12,16 @@ import { JobLogs } from './jobs/JobLogs';
 
 interface JobsProps {
   aiConfig: AIConfig;
+  searchQuery?: string;
 }
 
-export const Jobs: React.FC<JobsProps> = ({ aiConfig }) => {
-  const { data: jobs = [] } = useJobs();
-  const { data: systems = [] } = useSystems();
-  const { data: locations = [] } = useLocations();
+export const Jobs: React.FC<JobsProps> = ({ aiConfig, searchQuery: globalSearch = '' }) => {
+  const jobsQuery = useJobs();
+  const { data: jobs = [] } = jobsQuery;
+  const systemsQuery = useSystems();
+  const { data: systems = [] } = systemsQuery;
+  const locationsQuery = useLocations();
+  const { data: locations = [] } = locationsQuery;
 
   const deleteJobMutation = useDeleteJob();
   const runJobMutation = useRunJob();
@@ -37,12 +42,12 @@ export const Jobs: React.FC<JobsProps> = ({ aiConfig }) => {
 
   const filteredJobs = useMemo(() => {
     return jobs.filter(job => {
-      const matchesSearch = job.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = job.name.toLowerCase().includes(searchQuery.toLowerCase()) && job.name.toLowerCase().includes(globalSearch.toLowerCase());
       const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
       const matchesTool = toolFilter === 'all' || job.tool === toolFilter;
       return matchesSearch && matchesStatus && matchesTool;
     });
-  }, [jobs, searchQuery, statusFilter, toolFilter]);
+  }, [jobs, searchQuery, globalSearch, statusFilter, toolFilter]);
 
   const openCreateModal = () => {
     setEditingJob(null);
@@ -74,6 +79,9 @@ export const Jobs: React.FC<JobsProps> = ({ aiConfig }) => {
 
   return (
     <div className="space-y-6">
+      <QueryStatus pending={jobsQuery.isPending} error={jobsQuery.error} retry={() => void jobsQuery.refetch()} />
+      <QueryStatus pending={systemsQuery.isPending} error={systemsQuery.error} retry={() => void systemsQuery.refetch()} />
+      <QueryStatus pending={locationsQuery.isPending} error={locationsQuery.error} retry={() => void locationsQuery.refetch()} />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-white tracking-tight">Backup Streams</h2>
@@ -127,7 +135,7 @@ export const Jobs: React.FC<JobsProps> = ({ aiConfig }) => {
       )}
 
       <div className="grid grid-cols-1 gap-4">
-        {filteredJobs.length === 0 && (
+        {!jobsQuery.isPending && !jobsQuery.error && filteredJobs.length === 0 && (
           <div className="py-12 text-center border-2 border-dashed border-slate-800 rounded-xl bg-slate-800/20">
             <Archive size={48} className="mx-auto text-slate-700 mb-4" />
             <h3 className="text-lg font-medium text-slate-400">
@@ -177,7 +185,7 @@ export const Jobs: React.FC<JobsProps> = ({ aiConfig }) => {
 
       {selectedJob && (
         <JobLogs
-          job={selectedJob}
+          job={jobs.find(job => job.id === selectedJob.id) || selectedJob}
           onClose={() => setSelectedJob(null)}
           systemName={getSystemName(selectedJob.sourceId)}
           locationName={getLocationName(selectedJob.destinationId)}

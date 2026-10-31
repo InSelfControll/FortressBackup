@@ -14,19 +14,24 @@ export const buildSystemData = (
     system: System & { hostFingerprint?: string },
     newSystem: Partial<System>
 ): System & { hostFingerprint?: string } => ({
-    ...system,
+    id: system.id,
+    status: system.status,
+    health: system.health,
+    installedTools: system.installedTools,
+    lastSeen: system.lastSeen,
     name: newSystem.name,
     host: newSystem.host,
     type: newSystem.type as 'local' | 'remote',
     port: newSystem.port,
     username: newSystem.username,
     sshKeyId: newSystem.sshKeyId,
-    hostPublicKey: newSystem.hostPublicKey,
+    hostPublicKey: newSystem.hostPublicKey?.trim() || undefined,
     hostFingerprint: newSystem.hostPublicKey === system.hostPublicKey ? system.hostFingerprint : undefined
 });
 
 export const EditSystemModal: React.FC<EditSystemModalProps> = ({ isOpen, onClose, system, sshKeys }) => {
     const updateSystemMutation = useUpdateSystem();
+    const [saveError, setSaveError] = useState('');
 
     const [newSystem, setNewSystem] = useState<Partial<System> & { sshKeyId?: string }>({
         name: system.name,
@@ -40,6 +45,7 @@ export const EditSystemModal: React.FC<EditSystemModalProps> = ({ isOpen, onClos
 
     useEffect(() => {
         if (isOpen) {
+            setSaveError('');
             setNewSystem({
                 name: system.name,
                 host: system.host,
@@ -53,12 +59,14 @@ export const EditSystemModal: React.FC<EditSystemModalProps> = ({ isOpen, onClos
     }, [system, isOpen]);
 
     const handleUpdateSystem = () => {
-        if (newSystem.name && newSystem.host) {
+        if (newSystem.name?.trim() && newSystem.host?.trim() && !updateSystemMutation.isPending) {
+            setSaveError('');
             updateSystemMutation.mutate(buildSystemData(system, newSystem), {
                 onSuccess: () => {
                     onClose();
                     toast.success('System updated successfully');
-                }
+                },
+                onError: error => setSaveError(error.message)
             });
         }
     };
@@ -72,21 +80,21 @@ export const EditSystemModal: React.FC<EditSystemModalProps> = ({ isOpen, onClos
                 <div className="space-y-4">
                     <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Node Name</label>
-                        <input type="text" value={newSystem.name} onChange={e => setNewSystem({ ...newSystem, name: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <input type="text" aria-label="Node Name" value={newSystem.name} onChange={e => setNewSystem({ ...newSystem, name: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white outline-none focus:ring-2 focus:ring-indigo-500" />
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1">
                             <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Hostname / IP</label>
-                            <input type="text" value={newSystem.host} onChange={e => setNewSystem({ ...newSystem, host: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white outline-none focus:ring-2 focus:ring-indigo-500" />
+                            <input type="text" aria-label="Hostname / IP" value={newSystem.host} onChange={e => setNewSystem({ ...newSystem, host: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white outline-none focus:ring-2 focus:ring-indigo-500" />
                         </div>
                         <div className="space-y-1">
                             <label className="text-[10px] font-black uppercase text-slate-500 ml-2">SSH Port</label>
-                            <input type="number" value={newSystem.port} onChange={e => setNewSystem({ ...newSystem, port: parseInt(e.target.value) })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white outline-none focus:ring-2 focus:ring-indigo-500" />
+                            <input type="number" aria-label="SSH Port" value={newSystem.port} onChange={e => setNewSystem({ ...newSystem, port: parseInt(e.target.value) })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white outline-none focus:ring-2 focus:ring-indigo-500" />
                         </div>
                     </div>
                     <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Default User</label>
-                        <input type="text" value={newSystem.username} onChange={e => setNewSystem({ ...newSystem, username: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <input type="text" aria-label="Default User" value={newSystem.username} onChange={e => setNewSystem({ ...newSystem, username: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white outline-none focus:ring-2 focus:ring-indigo-500" />
                     </div>
                     <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-slate-500 ml-2">SSH Identity (Optional)</label>
@@ -106,9 +114,10 @@ export const EditSystemModal: React.FC<EditSystemModalProps> = ({ isOpen, onClos
                         <textarea rows={3} value={newSystem.hostPublicKey || ''} onChange={e => setNewSystem({ ...newSystem, hostPublicKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..." />
                     </div>
                 </div>
+                {saveError && <p role="alert" className="mt-4 text-sm text-rose-400">{saveError}</p>}
                 <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-6 sm:mt-10">
                     <button onClick={onClose} className="px-6 py-4 text-slate-500 hover:text-white font-black uppercase text-[10px]">Cancel</button>
-                    <button onClick={handleUpdateSystem} className="px-10 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-indigo-600/20 transition-all">Update System</button>
+                    <button disabled={!newSystem.name?.trim() || !newSystem.host?.trim() || updateSystemMutation.isPending} onClick={handleUpdateSystem} className="px-10 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-indigo-600/20 transition-all">{updateSystemMutation.isPending ? 'Saving...' : 'Update System'}</button>
                 </div>
             </div>
         </div>

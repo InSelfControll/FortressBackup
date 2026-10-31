@@ -6,6 +6,13 @@ export const toAPIJob = (job: any) => {
     if (!job) return null;
     return {
         ...(() => { const { repo_password, repoPassword, ...safe } = job; return safe; })(),
+        priority: job.priority || 'Medium',
+        status: job.status || 'Idle',
+        schedule: job.schedule || '0 2 * * *',
+        lastRun: job.last_run ?? job.lastRun,
+        nextRun: job.next_run ?? job.nextRun,
+        scheduleEnabled: Boolean(job.schedule_enabled),
+        hasRepoPassword: Boolean(job.repo_password || job.repoPassword),
         sourceId: job.source_id,
         destinationId: job.destination_id,
         // Map source_path (DB column) to sourcePaths (API array)
@@ -20,6 +27,12 @@ export const toAPIJob = (job: any) => {
 export const toDBJob = (job: any) => {
     return {
         ...job,
+        priority: job.priority || 'Medium',
+        status: job.status || 'Idle',
+        schedule: job.schedule || '0 2 * * *',
+        last_run: job.lastRun ?? job.last_run,
+        next_run: job.nextRun ?? job.next_run,
+        schedule_enabled: job.scheduleEnabled ? 1 : 0,
         source_id: job.sourceId || job.source_id,
         destination_id: job.destinationId || job.destination_id,
         // Map sourcePaths (API array) to source_path (DB column)
@@ -39,8 +52,8 @@ export const toAPISystem = (sys: any) => {
         installedTools: sys.installed_tools && typeof sys.installed_tools === 'string' ? JSON.parse(sys.installed_tools) : [],
         lastSeen: sys.last_seen,
         sshKeyId: sys.ssh_key_id,
-        hostFingerprint: sys.host_fingerprint,
-        hostPublicKey: sys.host_public_key
+        hostFingerprint: sys.host_fingerprint || undefined,
+        hostPublicKey: sys.host_public_key || undefined
     };
 };
 
@@ -49,8 +62,8 @@ export const toDBSystem = (sys: any) => {
         ...sys,
         installed_tools: Array.isArray(sys.installedTools) ? JSON.stringify(sys.installedTools) : sys.installed_tools,
         last_seen: sys.lastSeen || sys.last_seen,
-        ssh_key_id: sys.sshKeyId || sys.ssh_key_id,
+        ssh_key_id: sys.sshKeyId ?? sys.ssh_key_id,
         host_fingerprint: sys.hostFingerprint || sys.host_fingerprint,
-        host_public_key: sys.hostPublicKey || sys.host_public_key
+        host_public_key: sys.hostPublicKey ?? sys.host_public_key
     };
 };

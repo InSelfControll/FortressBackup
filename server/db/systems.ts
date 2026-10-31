@@ -18,6 +18,7 @@ export interface System {
     installed_tools?: string;
     ssh_key_id?: string;
     host_fingerprint?: string;
+    host_public_key?: string;
 }
 
 export const getAllSystems = async (): Promise<System[]> => {

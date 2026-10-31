@@ -344,6 +344,8 @@ test.skipIf(process.platform === 'win32')('startup recovery stops a recorded pro
 test('job updates encrypt the snake-case repository password alias', async () => {
     const fixture = await startJobApi();
     try {
+        await run("INSERT INTO systems(id,name,host,type,status,health) VALUES('source','Source','source.example.invalid','remote','offline',0)");
+        await run("INSERT INTO locations(id,name,type,path) VALUES('destination','Destination','nfs','/tmp/dummy-repo')");
         await insertJob('password-job');
         const response = await fetch(`${fixture.base}/password-job`, {
             method: 'PUT',
@@ -370,6 +372,8 @@ test('job updates encrypt the snake-case repository password alias', async () =>
 
 test('edit rejects a run that starts after its status check', async () => {
     const fixture = await startJobApi();
+    await run("INSERT INTO systems(id,name,host,type,status,health) VALUES('source','Source','source.example.invalid','remote','offline',0)");
+    await run("INSERT INTO locations(id,name,type,path) VALUES('destination','Destination','nfs','/tmp/dummy-repo')");
     await insertJob('edit-race-job');
     const restoreInterleaving = interleaveRunStartAfterJobRead('edit-race-job');
     try {

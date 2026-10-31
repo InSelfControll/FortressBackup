@@ -1,5 +1,7 @@
+import { copyText } from '../client/browser';
+import toast from 'react-hot-toast';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Shield, Key, Server, Check, ArrowRight, Github,
   ShieldCheck, Lock, Terminal, Info, Zap, Database, ExternalLink,
@@ -18,7 +20,7 @@ interface SetupProps {
     authMode: 'local' | 'sso';
     adminUser?: { name: string; email: string; password: string };
     selectedTools: string[];
-  }) => void;
+  }) => void | Promise<void>;
 }
 
 type SetupStep = 'db' | 'auth' | 'welcome' | 'vault' | 'ai' | 'guide';
@@ -29,6 +31,15 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
   // DB Config
   const [dbConfig, setDbConfig] = useState<DatabaseConfig>({ type: DatabaseType.SQLITE });
   const [isDbTesting, setIsDbTesting] = useState(false);
+  const [activeDbType, setActiveDbType] = useState(DatabaseType.SQLITE);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/status', {signal:controller.signal}).then(response=>response.json()).then(status=>{
+      const type = status.dbType === 'postgres' ? DatabaseType.POSTGRES : DatabaseType.SQLITE;
+      setActiveDbType(type); setDbConfig({type});
+    }).catch(()=>{});
+    return () => controller.abort();
+  }, []);
 
   // SSO Config
   const [ssoConfig, setSsoConfig] = useState<SSOConfig>({ provider: null });
@@ -42,6 +53,8 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
 
   // Other configs
   const [bootstrapToken, setBootstrapToken] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [masterPassword, setMasterPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [selectedTools, setSelectedTools] = useState<string[]>(['borg']);
@@ -64,8 +77,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
   ];
 
   const testDbConnection = () => {
-    setIsDbTesting(true);
-    setTimeout(() => setIsDbTesting(false), 1500);
+    window.alert('The database connection is configured when the controller starts. Complete setup, then verify the active database in Settings.');
   };
 
   const toggleTool = (tool: string) => {
@@ -75,11 +87,14 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
     setActiveGuideTool(tool);
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
+    if (saving) return;
+    setSaveError('');
     if (bootstrapToken.length < 32) { window.alert('Enter the one-time FORTRESS_BOOTSTRAP_TOKEN provisioned on the server'); return; }
-    onComplete({
+    setSaving(true);
+    try { await onComplete({
       masterPassword,
-      bootstrapToken,
+      bootstrapToken: bootstrapToken.trim(),
       aiConfig,
       dbConfig,
       ssoConfig,
@@ -90,10 +105,11 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
         password: adminPassword
       } : undefined,
       selectedTools
-    });
+    }); } catch(error) { setSaveError(error instanceof Error ? error.message : 'Setup failed'); }
+    finally { setSaving(false); }
   };
 
-  const redirectUri = window.location.origin + '/';
+  const redirectUri = window.location.origin + '/login';
 
   const guides: Record<string, any> = {
     borg: {
@@ -102,7 +118,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
       steps: [
         'Fortress will attempt automatic installation via SSH if root access is provided.',
         'Manual: `sudo apt install borgbackup` on target.',
-        'Repo Initialization: `borg init --encryption=repokey-blake2` is handled by Fortress.'
+        'Initialize the repository with `borg init --encryption=repokey-blake2` before the first backup.'
       ]
     },
     restic: {
@@ -119,7 +135,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
       desc: 'The classic file sync engine for 1:1 mirroring.',
       steps: [
         'Standard on most Linux distros.',
-        'Fortress uses native system SSH keys for transport.',
+        'Assign an SSH identity and verified host key in Systems.',
         'Requires no extra daemon on target servers.'
       ]
     }
@@ -180,15 +196,17 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
 
         <div className="bg-slate-900/60 backdrop-blur-2xl border border-slate-800/80 rounded-2xl sm:rounded-[3rem] p-4 sm:p-8 md:p-12 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)] relative overflow-hidden sm:min-h-[600px] min-w-0 flex flex-col transition-all duration-500">
 
+          {saveError && <p role="alert" className="mb-4 text-sm text-rose-400">{saveError}</p>}
           {/* STEP 1: DATABASE */}
           {currentStep === 'db' && (
             <div className="space-y-10 animate-in fade-in zoom-in-95 duration-500 flex-1 flex flex-col">
               <div className="text-center">
                 <h2 className="text-3xl font-black text-white mb-3">Persistent Storage Core</h2>
-                <p className="text-slate-500 text-sm max-w-md mx-auto">Select how Fortress should store its job history and metadata.</p>
+                <p className="text-slate-500 text-sm max-w-md mx-auto">The database engine is selected in the controller environment. Setup uses that active connection; switching engines requires a separate migration.</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto w-full">
                 <button
+                  disabled={activeDbType !== DatabaseType.SQLITE}
                   onClick={() => setDbConfig({ type: DatabaseType.SQLITE })}
                   className={`relative p-8 rounded-[2.5rem] border flex flex-col items-center gap-5 transition-all duration-300 ${dbConfig.type === DatabaseType.SQLITE
                     ? 'bg-indigo-600/10 border-indigo-500 shadow-2xl'
@@ -205,6 +223,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                 </button>
 
                 <button
+                  disabled={activeDbType !== DatabaseType.POSTGRES}
                   onClick={() => setDbConfig({ type: DatabaseType.POSTGRES, host: 'localhost', port: 5432, database: 'fortress' })}
                   className={`relative p-8 rounded-[2.5rem] border flex flex-col items-center gap-5 transition-all duration-300 ${dbConfig.type === DatabaseType.POSTGRES
                     ? 'bg-indigo-600/10 border-indigo-500 shadow-2xl'
@@ -293,7 +312,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                   </div>
                   <div className="text-center">
                     <span className="text-sm font-black text-white block">Enterprise SSO</span>
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Google, GitHub, OIDC</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">GitHub OAuth</span>
                   </div>
                 </button>
               </div>
@@ -338,6 +357,8 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                     ].map((prov) => (
                       <button
                         key={prov.id}
+                        disabled={prov.id !== 'github'}
+                        title={prov.id === 'github' ? undefined : 'This provider is not implemented by the controller'}
                         onClick={() => setSsoConfig({ provider: prov.id as any })}
                         className={`relative p-5 rounded-2xl border flex flex-col items-center gap-3 transition-all ${ssoConfig.provider === prov.id
                           ? 'bg-indigo-600/10 border-indigo-500'
@@ -348,7 +369,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                           {prov.id === 'google' ? <img src={prov.icon} className="w-full h-full" /> :
                             prov.id === 'github' ? <Github className="text-white" size={28} /> : <Globe className="text-indigo-400" size={28} />}
                         </div>
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">{prov.label}</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">{prov.label}{prov.id !== 'github' && ' (unavailable)'}</span>
                       </button>
                     ))}
                   </div>
@@ -373,7 +394,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                       </div>
                       <div className="mt-4 p-4 bg-slate-950 rounded-xl border border-slate-800 flex items-center gap-4">
                         <code className="flex-1 text-[10px] font-mono text-indigo-300 truncate">Redirect URI: {redirectUri}</code>
-                        <button onClick={() => navigator.clipboard.writeText(redirectUri)} className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-white"><Copy size={14} /></button>
+                        <button aria-label="Copy redirect URI" onClick={() => void copyText(redirectUri).then(() => toast.success('Redirect URI copied')).catch(error => toast.error(error.message))} className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-white"><Copy size={14} /></button>
                       </div>
                     </div>
                   )}
@@ -383,7 +404,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
               <div className="mt-auto flex flex-col-reverse sm:flex-row gap-4 justify-between items-center pt-6 sm:pt-8 border-t border-slate-800/50">
                 <button onClick={() => setCurrentStep('db')} className="text-slate-600 hover:text-white font-black text-[11px] uppercase tracking-[0.2em]">Back</button>
                 <button
-                  disabled={!authMode || (authMode === 'local' && (!adminEmail || !adminPassword || adminPassword !== adminConfirmPassword || adminPassword.length < 12)) || (authMode === 'sso' && (!ssoConfig.provider || !ssoConfig.clientId))}
+                  disabled={!authMode || (authMode === 'local' && (!adminName.trim() || !adminEmail.includes('@') || !adminPassword || adminPassword !== adminConfirmPassword || adminPassword.length < 12)) || (authMode === 'sso' && (ssoConfig.provider !== 'github' || !ssoConfig.clientId || !ssoConfig.clientSecret))}
                   onClick={() => setCurrentStep('welcome')}
                   className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white w-full sm:w-auto justify-center px-4 sm:px-12 py-4 sm:py-5 rounded-2xl text-xs sm:text-base font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
                 >
@@ -439,42 +460,15 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
           )}
 
           {currentStep === 'vault' && (
-            <div className="space-y-10 animate-in fade-in zoom-in-95 duration-500 flex-1 flex flex-col">
+            <div className="space-y-8 flex-1 flex flex-col">
               <div className="text-center">
-                <h2 className="text-3xl font-black text-white mb-3">Identity Vault Setup</h2>
-                <p className="text-slate-500 text-sm max-w-md mx-auto">This local key secures your SSH identities. We never see it.</p>
+                <h2 className="text-3xl font-black text-white mb-3">Controller Credential Vault</h2>
+                <p className="text-slate-400 text-sm max-w-lg mx-auto">The controller encrypts saved storage credentials and SSH identities with server-held keys. These keys are generated during setup and persisted with the controller configuration.</p>
               </div>
-              <div className="max-w-md mx-auto space-y-6 w-full py-6">
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] ml-2">Master Password</label>
-                  <input
-                    type="password"
-                    value={masterPassword}
-                    onChange={e => setMasterPassword(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-slate-800 rounded-[1.5rem] px-6 py-5 text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono tracking-[0.4em] shadow-inner text-lg text-center"
-                    placeholder="••••••••"
-                  />
-                </div>
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] ml-2">Confirm Password</label>
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-slate-800 rounded-[1.5rem] px-6 py-5 text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono tracking-[0.4em] shadow-inner text-lg text-center"
-                    placeholder="••••••••"
-                  />
-                </div>
-              </div>
-              <div className="mt-auto flex flex-col-reverse sm:flex-row gap-4 justify-between items-center pt-6 sm:pt-8 border-t border-slate-800/50">
-                <button onClick={() => setCurrentStep('welcome')} className="text-slate-600 hover:text-white font-black text-[11px] uppercase tracking-[0.2em]">Back</button>
-                <button
-                  disabled={!masterPassword || masterPassword !== confirmPassword || masterPassword.length < 8}
-                  onClick={() => setCurrentStep('ai')}
-                  className="group flex items-center gap-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white w-full sm:w-auto justify-center px-4 sm:px-12 py-4 sm:py-5 rounded-2xl text-xs sm:text-base font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all active:scale-95"
-                >
-                  Configure AI <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
-                </button>
+              <p className="text-sm text-slate-400 max-w-lg mx-auto">Your administrator sign-in password controls access to the interface. Back up the protected runtime configuration together with the database so saved credentials can be recovered.</p>
+              <div className="mt-auto flex flex-col-reverse sm:flex-row gap-4 justify-between items-center pt-6 border-t border-slate-800/50">
+                <button onClick={() => setCurrentStep('welcome')} className="text-slate-400 py-3">Back</button>
+                <button onClick={() => setCurrentStep('ai')} className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-indigo-600 text-white font-bold">Configure AI</button>
               </div>
             </div>
           )}
@@ -560,10 +554,10 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
               <div className="mt-auto flex flex-col-reverse sm:flex-row gap-4 justify-between items-center pt-6 sm:pt-8 border-t border-slate-800/50">
                 <button onClick={() => setCurrentStep('ai')} className="text-slate-600 hover:text-white font-black text-[11px] uppercase tracking-[0.2em]">Back</button>
                 <button
-                  onClick={handleFinish}
+                  disabled={saving} onClick={handleFinish}
                   className="group flex items-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white w-full sm:w-auto justify-center px-4 sm:px-14 py-4 sm:py-5 rounded-2xl text-xs sm:text-base font-black uppercase tracking-[0.2em] shadow-2xl shadow-emerald-600/30 transition-all active:scale-95"
                 >
-                  Enter Command Center <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+                  {saving ? 'Saving...' : 'Enter Command Center'} <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
                 </button>
               </div>
             </div>

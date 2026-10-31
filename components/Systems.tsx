@@ -1,3 +1,6 @@
+import { checkSystem } from '../client/api/resources';
+import { requireData } from '../client/api/client';
+import { QueryStatus } from './QueryStatus';
 import React, { useState } from 'react';
 import { System } from '../types';
 import { useSystems, useJobs, useSSHKeys } from '../client/api/queries';
@@ -10,11 +13,13 @@ import { AddSystemModal } from './systems/AddSystemModal';
 import { EditSystemModal } from './systems/EditSystemModal';
 import { SSHKeyManager } from './systems/SSHKeyManager';
 
-interface SystemsProps { }
+interface SystemsProps { searchQuery?: string }
 
-export const Systems: React.FC<SystemsProps> = () => {
-  const { data: systems = [] } = useSystems();
-  const { data: sshKeys = [] } = useSSHKeys();
+export const Systems: React.FC<SystemsProps> = ({ searchQuery = '' }) => {
+  const systemsQuery = useSystems();
+  const { data: systems = [] } = systemsQuery;
+  const sshKeysQuery = useSSHKeys();
+  const { data: sshKeys = [] } = sshKeysQuery;
   const deleteSystemMutation = useDeleteSystem();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -22,12 +27,21 @@ export const Systems: React.FC<SystemsProps> = () => {
   const [editingSystem, setEditingSystem] = useState<System | null>(null);
   const [isKeyManagerOpen, setIsKeyManagerOpen] = useState(false);
   const [deployingSystem, setDeployingSystem] = useState<System | null>(null);
+  const [checking, setChecking] = useState<string | null>(null);
+  const checkConnection = async (system: System) => {
+    if (checking) return;
+    setChecking(system.id);
+    try { toast.success(requireData(await checkSystem(system.id)).message); }
+    catch(error) { toast.error(error instanceof Error ? error.message : 'Connection check failed'); }
+    finally { setChecking(null); void systemsQuery.refetch(); }
+  };
 
   const handleDeploy = (system: System) => {
     setDeployingSystem(system);
   };
 
   const finalizeDeployment = () => {
+    void systemsQuery.refetch();
     toast.success('System updated with installed tools');
   };
 
@@ -49,6 +63,8 @@ export const Systems: React.FC<SystemsProps> = () => {
 
   return (
     <div className="space-y-8">
+      <QueryStatus pending={systemsQuery.isPending} error={systemsQuery.error} retry={() => void systemsQuery.refetch()} />
+      <QueryStatus pending={sshKeysQuery.isPending} error={sshKeysQuery.error} retry={() => void sshKeysQuery.refetch()} />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-white tracking-tight">System Infrastructure</h2>
@@ -65,20 +81,22 @@ export const Systems: React.FC<SystemsProps> = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
-        {systems.length === 0 && (
+        {!systemsQuery.isPending && !systemsQuery.error && systems.length === 0 && (
           <div className="col-span-full py-16 text-center border-2 border-dashed border-slate-800 rounded-[2rem] bg-slate-800/20">
             <Server size={48} className="mx-auto text-slate-700 mb-4" />
             <h3 className="text-lg font-bold text-slate-400">No Systems Registered</h3>
             <p className="text-slate-500 text-sm mt-2">Add your first managed node to begin orchestration.</p>
           </div>
         )}
-        {systems.map((system) => (
+        {systems.filter(system => `${system.name} ${system.host}`.toLowerCase().includes(searchQuery.toLowerCase())).map((system) => (
           <SystemCard
             key={system.id}
             system={system}
             onEdit={handleEditSystem}
             onDelete={handleDeleteSystem}
             onDeploy={handleDeploy}
+            onCheck={system => void checkConnection(system)}
+            isChecking={checking === system.id}
           />
         ))}
       </div>

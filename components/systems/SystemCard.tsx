@@ -7,9 +7,11 @@ interface SystemCardProps {
     onEdit: (system: System) => void;
     onDelete: (id: string) => void;
     onDeploy: (system: System) => void;
+    onCheck?: (system: System) => void;
+    isChecking?: boolean;
 }
 
-export const SystemCard: React.FC<SystemCardProps> = ({ system, onEdit, onDelete, onDeploy }) => {
+export const SystemCard: React.FC<SystemCardProps> = ({ system, onEdit, onDelete, onDeploy, onCheck, isChecking }) => {
     const [deleteConfirm, setDeleteConfirm] = useState(false);
 
     return (
@@ -47,7 +49,8 @@ export const SystemCard: React.FC<SystemCardProps> = ({ system, onEdit, onDelete
                             {(!system.installedTools || system.installedTools.length === 0) && <span className="text-[10px] text-slate-700 font-bold uppercase italic">None Deployed</span>}
                         </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
+                        <button title="Check Connection" disabled={!onCheck || isChecking} onClick={() => onCheck?.(system)} className="p-3 bg-slate-700/50 text-slate-300 rounded-xl disabled:opacity-50"><Server size={14}/></button>
                         <button
                             onClick={(e) => { e.stopPropagation(); onEdit(system); }}
                             className="p-3 bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-all"

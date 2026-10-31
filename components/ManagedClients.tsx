@@ -19,25 +19,28 @@ export const ManagedClients:React.FC=()=>{
  };
  useEffect(()=>{void refresh();const timer=setInterval(()=>{void refresh()},30000);return ()=>clearInterval(timer)},[page]);
  const enroll=async()=>{
-  if(!name.trim())return;
+  if(busy||!name.trim())return;
   setBusy(true);setError('');
   const r=await apiFetch<Enrollment>('/managed-agents/admin/enroll',{method:'POST',body:JSON.stringify({name:name.trim()})});
   if(r.data){setEnrollment(r.data);setName('');await refresh()}else setError(r.error||'Enrollment failed');
   setBusy(false);
  };
  const job=async(id:string,operation:string)=>{
+  if(busy)return;
   setBusy(true);setError('');
   const r=await apiFetch('/managed-agents/admin/'+encodeURIComponent(id)+'/jobs',{method:'POST',body:JSON.stringify({operation})});
   if(r.error)setError(r.error);await refresh();setBusy(false);
  };
  const schedule=async(id:string,minutes:number)=>{
+  if(busy)return;
   setBusy(true);setError('');
   const r=await apiFetch('/managed-agents/admin/'+encodeURIComponent(id)+'/schedule',{method:'PUT',body:JSON.stringify({minutes})});
   if(r.error)setError(r.error);await refresh();setBusy(false);
  };
  const disable=async(id:string)=>{
+  if(busy)return;
   if(!window.confirm('Disable this agent and revoke access?'))return;
-  setBusy(true);const r=await apiFetch('/managed-agents/admin/'+encodeURIComponent(id)+'/disable',{method:'POST',body:'{}'});
+  setBusy(true);setError('');const r=await apiFetch('/managed-agents/admin/'+encodeURIComponent(id)+'/disable',{method:'POST',body:'{}'});
   if(r.error)setError(r.error);await refresh();setBusy(false);
  };
  return <section className="space-y-6 text-slate-100">

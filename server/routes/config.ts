@@ -43,13 +43,20 @@ router.post('/setup', async (req, res) => {
             selectedTools.some((item: unknown) => !['borg','restic','rsync'].includes(String(item)))
         );
         const invalidAdmin = authMode === 'local' && (
-            !adminUser || typeof adminUser.name !== 'string' ||
-            typeof adminUser.email !== 'string' ||
-            typeof adminUser.password !== 'string' || adminUser.password.length < 12
+            !adminUser || typeof adminUser.name !== 'string' || !adminUser.name.trim() || adminUser.name.length > 120 ||
+            typeof adminUser.email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminUser.email) || adminUser.email.length > 254 ||
+            typeof adminUser.password !== 'string' || adminUser.password.length < 12 || adminUser.password.length > 256
         );
         if (!dbConfig || !['SQLite','sqlite','PostgreSQL','postgres'].includes(dbConfig.type) ||
             !ssoConfig || !aiConfig || !['local','sso'].includes(authMode) || invalidAdmin || invalidTools)
             return res.status(400).json({error:'Invalid setup configuration'});
+        if (authMode === 'sso' && (ssoConfig.provider !== 'github' || !ssoConfig.clientId || !ssoConfig.clientSecret)) return res.status(400).json({error:'GitHub is the supported SSO provider; its client ID and secret are required'});
+        const active = db.currentConfig;
+        const requestedType = ['sqlite','SQLite'].includes(dbConfig.type) ? 'sqlite' : 'postgres';
+        if (requestedType !== active?.type) return res.status(400).json({error:'The selected database does not match the running controller. Configure the database environment and restart before setup.'});
+        const activeDbConfig = active.type === 'sqlite'
+            ? {type:'SQLite',filePath:active.filePath || './data/fortress.db'}
+            : {type:'PostgreSQL',host:active.host,port:active.port,database:active.database,username:active.username,password:active.password};
         // Claim first-run provisioning atomically to prevent concurrent setup.
         const claim=await db.getOne<{key:string}>(
             "INSERT INTO config(key,value) VALUES('bootstrap_claim',?) ON CONFLICT(key) DO NOTHING RETURNING key",
@@ -57,13 +64,13 @@ router.post('/setup', async (req, res) => {
         if(!claim)return res.status(409).json({error:'Initial setup already claimed'});
 
         // Generate .env file
-        const envPath = generateEnvFile({ dbConfig, aiConfig, ssoConfig, authMode });
+        const envPath = generateEnvFile({ dbConfig: activeDbConfig, aiConfig, ssoConfig, authMode }, Number(process.env.PORT || 9001));
 
         // Reload environment variables runtime
         dotenv.config({ path: envPath, override: true });
 
         await db.saveConfig('ai_config', aiConfig);
-        await db.saveConfig('db_config', dbConfig);
+        await db.saveConfig('db_config', activeDbConfig);
         await db.saveConfig('sso_config', ssoConfig);
         await db.saveConfig('auth_mode', authMode);
         await db.saveConfig('selected_tools', selectedTools || ['borg', 'restic']);
@@ -88,6 +95,14 @@ router.post('/setup', async (req, res) => {
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
+});
+
+router.get('/database-health', authenticateToken, requireAdmin, async (_req, res) => {
+    try {
+        if (!db.isInitialized()) return res.status(503).json({ error: 'The controller database is not initialized' });
+        await db.query('SELECT 1 AS healthy');
+        res.json({ success: true, type: db.currentConfig?.type || 'unknown' });
+    } catch { res.status(503).json({ error: 'The active database connection failed its query check' }); }
 });
 
 // Public endpoint to get auth mode and SSO config for login page
@@ -149,6 +164,12 @@ router.put('/:key', authenticateToken, requireAdmin, async (req, res) => {
                    (incoming[field]===undefined || incoming[field]===''))
                     (value as Record<string,unknown>)[field]=prior;
             }
+        }
+        if (key === 'sso_config' && (value as any)?.provider && (value as any).provider !== 'github')
+            return res.status(400).json({error:'Only GitHub SSO is implemented by this controller'});
+        if (key === 'auth_mode' && value === 'sso') {
+            const sso = await db.getConfig<any>('sso_config');
+            if (sso?.provider !== 'github' || !sso.clientId || !sso.clientSecret) return res.status(400).json({error:'Configure a GitHub client ID and secret before enabling SSO'});
         }
         await db.saveConfig(key,value);
         res.json({success:true});

@@ -1,3 +1,4 @@
+import { importData } from './client/dataTransfer';
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, User, BackupJob, BackupTool, JobStatus, System, JobPriority, SSHKey, Location, AIConfig, AIProvider, DatabaseConfig, SSOConfig } from './types.ts';
 import { Login } from './components/Login.tsx';
@@ -45,9 +46,13 @@ export const createDataExport = ({ currentUser, systems, jobs, locations }: Data
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
+  const [startupError, setStartupError] = useState('');
+  const [startupAttempt, setStartupAttempt] = useState(0);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
-  const [isFirstRun, setIsFirstRun] = useState(false);
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configError, setConfigError] = useState('');
+  const [configVersion, setConfigVersion] = useState(0);
   const [currentView, setCurrentViewState] = useState<View>('dashboard');
   const [navigationOpen, setNavigationOpen] = useState(false);
   const closeNavigation = useCallback(() => setNavigationOpen(false), []);
@@ -78,17 +83,16 @@ function App() {
   // Initialize the application
   useEffect(() => {
     const initApp = async () => {
+      setIsLoading(true); setStartupError('');
       try {
         // Check backend API for status
         const response = await fetch('/api/status');
         if (!response.ok) {
-          console.error('[App] Backend not available');
-          setIsSetupComplete(false);
-          setIsLoading(false);
-          return;
+          throw new Error('The controller is unavailable. Check the connection and retry.');
         }
 
         const backendStatus = await response.json();
+        if (!backendStatus.dbInitialized) throw new Error('The controller database is unavailable. Check the server configuration and retry.');
 
         if (backendStatus.setupComplete) {
           // Backend has completed setup - load public config
@@ -115,8 +119,8 @@ function App() {
           const sessionUser = localStorage.getItem('fortress_user_session');
           if (sessionUser) {
             try {
-              const user = JSON.parse(sessionUser);
-              setCurrentUser(user);
+              const verified = API.requireData(await API.getMe());
+              setCurrentUser(verified.user);
             } catch {
               // Invalid session, will show login
             }
@@ -128,15 +132,33 @@ function App() {
           setIsSetupComplete(false);
         }
       } catch (error) {
-        console.error('Failed to initialize app:', error);
-        setIsSetupComplete(false);
+        setStartupError(error instanceof Error ? error.message : 'The controller could not be reached');
       } finally {
         setIsLoading(false);
       }
     };
 
     initApp();
-  }, []);
+  }, [startupAttempt]);
+
+  useEffect(() => {
+    if (currentUser?.role !== 'admin') return;
+    let cancelled = false;
+    setConfigLoading(true);
+    setConfigError('');
+    Promise.all([
+      API.getConfig<AIConfig>('ai_config').then(API.requireData),
+      API.getConfig<DatabaseConfig>('db_config').then(API.requireData),
+      API.getConfig<SSOConfig>('sso_config').then(API.requireData)
+    ]).then(([ai, database, sso]) => {
+      if (cancelled) return;
+      setAiConfig(ai.value || { provider: AIProvider.NONE });
+      setDbConfig(database.value);
+      setSsoConfig(sso.value);
+    }).catch(error => { if (!cancelled) setConfigError(error.message); })
+      .finally(() => { if (!cancelled) setConfigLoading(false); });
+    return () => { cancelled = true; };
+  }, [currentUser?.id, configVersion]);
 
   const handleLogin = (user: User) => {
     setAiConfig({ provider: AIProvider.NONE });
@@ -199,13 +221,10 @@ function App() {
           localStorage.setItem('fortress_user_session', JSON.stringify(result.user));
         }
       } else {
-        console.error('[Setup] Backend returned error:', error);
-        return;
+        throw new Error(error || 'Setup could not be saved');
       }
     } catch (error) {
-      console.error('[Setup] Failed to call backend API:', error);
-      // Do not advance the wizard when the authoritative setup failed.
-      return;
+      throw error;
     }
 
     // Create vault salt if not exists
@@ -218,67 +237,55 @@ function App() {
   };
 
   const updateAIConfig = async (config: AIConfig) => {
-    if (currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') throw new Error('Administrator access required');
+    API.requireData(await API.saveConfig('ai_config', config));
     setAiConfig(config);
-    try {
-      await API.saveConfig('ai_config', config);
-    } catch (e) { console.error('Failed to save AI config:', e); }
   };
 
   const updateDBConfig = async (config: DatabaseConfig) => {
-    if (currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') throw new Error('Administrator access required');
+    API.requireData(await API.saveConfig('db_config', config));
     setDbConfig(config);
-    try {
-      await API.saveConfig('db_config', config);
-    } catch (e) { console.error('Failed to save DB config:', e); }
   };
 
   const updateSSOConfig = async (config: SSOConfig) => {
-    if (currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') throw new Error('Administrator access required');
+    API.requireData(await API.saveConfig('sso_config', config));
     setSsoConfig(config);
-    try {
-      await API.saveConfig('sso_config', config);
-    } catch (e) { console.error('Failed to save SSO config:', e); }
+    setPublicSsoConfig(getPublicSsoConfig(config));
+  };
+
+  const updateAuthMode = async (mode: 'local' | 'sso') => {
+    if (currentUser?.role !== 'admin') throw new Error('Administrator access required');
+    API.requireData(await API.saveConfig('auth_mode', mode));
+    setAuthMode(mode); localStorage.setItem('fortress_auth_mode', mode);
   };
 
   const handleResetApp = async () => {
-    if (currentUser?.role !== 'admin') return;
-    localStorage.clear();
-    window.location.reload();
+    await handleLogout();
+    localStorage.removeItem('fortress_auth_mode');
+    localStorage.removeItem('fortress_vault_salt');
   };
 
-  const handleExportData = () => {
-    const exportData = createDataExport({
-      currentUser,
-      systems: queryClient.getQueryData(queryKeys.systems),
-      jobs: queryClient.getQueryData(queryKeys.jobs),
-      locations: queryClient.getQueryData(queryKeys.locations),
-      aiConfig,
-      dbConfig,
-      ssoConfig
-    });
-    if (!exportData) return;
+  const handleExportData = async () => {
+    if (currentUser?.role !== 'admin') throw new Error('Administrator access required');
+    const [systems,jobs,locations] = await Promise.all([
+      API.getSystems().then(API.requireData), API.getJobs().then(API.requireData), API.getLocations().then(API.requireData)
+    ]);
+    const exportData = createDataExport({currentUser,systems,jobs,locations,aiConfig,dbConfig,ssoConfig});
+    if (!exportData) throw new Error('Export not permitted');
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `fortress-backup-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    a.href = url; a.download = `fortress-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const handleImportData = (data: string) => {
-    if (currentUser?.role !== 'admin') return;
-    try {
-      const parsed = JSON.parse(data);
-      if (parsed.systems) queryClient.setQueryData(queryKeys.systems, parsed.systems);
-      if (parsed.jobs) queryClient.setQueryData(queryKeys.jobs, parsed.jobs);
-      if (parsed.locations) queryClient.setQueryData(queryKeys.locations, parsed.locations);
-      if (parsed.aiConfig) updateAIConfig(parsed.aiConfig);
-      if (parsed.dbConfig) updateDBConfig(parsed.dbConfig);
-      if (parsed.ssoConfig) updateSSOConfig(parsed.ssoConfig);
-    } catch (e) {
-      console.error('Import failed:', e);
+  const handleImportData = async (data: string) => {
+    if (currentUser?.role !== 'admin') throw new Error('Administrator access required');
+    try { await importData(data); }
+    finally {
+      await Promise.all([queryKeys.systems,queryKeys.locations,queryKeys.jobs].map(queryKey=>queryClient.invalidateQueries({queryKey})));
     }
   };
 
@@ -292,9 +299,11 @@ function App() {
     );
   }
 
-  // Setup flow - ALWAYS show setup first if not complete
+  if (startupError) return <div className="h-dvh p-6 flex flex-col items-center justify-center gap-4 text-slate-200 bg-slate-950"><p role="alert">{startupError}</p><button className="px-4 py-3 bg-indigo-600 rounded-xl" onClick={() => setStartupAttempt(v => v + 1)}>Retry connection</button></div>;
+
+  // Setup flow
   if (isSetupComplete === false) {
-    return <Setup onComplete={completeSetup} />;
+    return <><Setup onComplete={completeSetup} /><Toaster position="bottom-right" /></>;
   }
 
   // Login required (after setup is complete)
@@ -324,17 +333,18 @@ function App() {
           onOpenNavigation={() => setNavigationOpen(true)}
           navigationOpen={navigationOpen}
           showSettings={currentUser.role === 'admin'}
+          showSearch={currentUser.role === 'admin' && ['dashboard','jobs','systems','locations'].includes(currentView)}
         />
 
         {/* Page Content */}
         <div data-app-content className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
           <div className="min-w-0 w-full max-w-7xl mx-auto">
-            {currentView === 'dashboard' && <Dashboard />}
-            {currentView === 'jobs' && <Jobs aiConfig={aiConfig} />}
-            {currentView === 'systems' && <Systems />}
+            {currentView === 'dashboard' && (currentUser.role === 'admin' ? <Dashboard searchQuery={searchQuery} /> : <p>Your account is signed in. Ask an administrator for access to backup management.</p>)}
+            {currentView === 'jobs' && <Jobs aiConfig={aiConfig} searchQuery={searchQuery} />}
+            {currentView === 'systems' && <Systems searchQuery={searchQuery} />}
             {currentView === 'managed-clients' && currentUser.role === 'admin' && <ManagedClients />}
-            {currentView === 'locations' && <Locations />}
-            {currentView === 'settings' && currentUser.role === 'admin' && <SettingsComponent aiConfig={aiConfig} dbConfig={dbConfig} ssoConfig={ssoConfig} onUpdateAIConfig={updateAIConfig} onUpdateDBConfig={updateDBConfig} onUpdateSSOConfig={updateSSOConfig} onResetApp={handleResetApp} onExportData={handleExportData} onImportData={handleImportData} />}
+            {currentView === 'locations' && <Locations searchQuery={searchQuery} />}
+            {currentView === 'settings' && currentUser.role === 'admin' && (configLoading ? <p role="status">Loading saved settings...</p> : configError ? <div role="alert">{configError}<button className="ml-3 underline" onClick={() => setConfigVersion(v => v + 1)}>Retry settings</button></div> : <SettingsComponent authMode={authMode || 'local'} onUpdateAuthMode={updateAuthMode} aiConfig={aiConfig} dbConfig={dbConfig} ssoConfig={ssoConfig} onUpdateAIConfig={updateAIConfig} onUpdateDBConfig={updateDBConfig} onUpdateSSOConfig={updateSSOConfig} onResetApp={handleResetApp} onExportData={handleExportData} onImportData={handleImportData} />)}
           </div>
         </div>
       </main>

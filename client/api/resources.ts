@@ -108,3 +108,6 @@ export const deleteJob = async (id: string) => {
         method: 'DELETE'
     });
 };
+
+export const testLocation = (id: string) => apiFetch<{ success: boolean; message: string }>(`/locations/${encodeURIComponent(id)}/test`, { method: 'POST' });
+export const checkSystem = (id: string) => apiFetch<{ success: boolean; message: string }>(`/systems/${encodeURIComponent(id)}/check`, { method: 'POST', body: '{}' });

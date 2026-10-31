@@ -24,7 +24,7 @@ export const DeploymentTerminal = ({ system, sshKeys, onClose, onComplete }: Dep
         { id: 'borg', name: 'BorgBackup', description: 'Deduplicating backup' },
         { id: 'restic', name: 'Restic', description: 'Cloud-ready backup' },
         { id: 'rsync', name: 'Rsync', description: 'Simple file sync' },
-        { id: 'rclone', name: 'Rclone', description: 'Cloud storage sync' }
+
     ];
 
     const addLog = (type: string, message: string) => {
@@ -48,7 +48,7 @@ export const DeploymentTerminal = ({ system, sshKeys, onClose, onComplete }: Dep
             .then(res => res.json())
             .then(data => {
                 if (data.value && Array.isArray(data.value)) {
-                    setSelectedTools(data.value.map((t: string) => t.toLowerCase()));
+                    setSelectedTools(data.value.map((t: string) => t.toLowerCase()).filter((tool: string) => ['borg','restic','rsync'].includes(tool)));
                 } else {
                     setSelectedTools(['borg']); // Default to borg
                 }
@@ -65,6 +65,7 @@ export const DeploymentTerminal = ({ system, sshKeys, onClose, onComplete }: Dep
     }, []);
 
     const startDeployment = async () => {
+        if (status === 'deploying') return;
         setStatus('deploying');
         setError(null);
         addLog('info', `Starting deployment to ${system.name}...`);
@@ -94,7 +95,7 @@ export const DeploymentTerminal = ({ system, sshKeys, onClose, onComplete }: Dep
                 });
             }
 
-            if (result.success) {
+            if (response.ok && result.success) {
                 setStatus('completed');
                 addLog('success', 'Deployment completed successfully!');
                 onComplete(result.installedTools || []);

@@ -89,12 +89,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin, ssoConfig, authMode: prop
       sessionStorage.setItem('fortress_github_oauth_state',
         JSON.stringify({state,expiresAt:Date.now()+10*60*1000,purpose,linkToken}));
       window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
-    } else if (ssoConfig.provider === 'google') {
-      const clientId = ssoConfig.clientId;
-      const redirectUri = encodeURIComponent(window.location.origin + '/login');
-      const scope = encodeURIComponent('email profile');
-      const state = 'google_oauth';
-      window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code&state=${state}`;
     } else {
       setError('SSO provider not supported');
       setIsRedirecting(false);

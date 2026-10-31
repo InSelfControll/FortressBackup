@@ -1,4 +1,10 @@
-import React, { useMemo } from 'react';
+import * as API from '../client/api/resources';
+import { requireData } from '../client/api/client';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../client/api/queries';
+import toast from 'react-hot-toast';
+import { QueryStatus } from './QueryStatus';
+import React, { useMemo, useState } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell
@@ -8,7 +14,7 @@ import { Activity, Server, HardDrive, AlertCircle, Play, Clock, AlertTriangle, C
 
 import { useJobs, useSystems } from '../client/api/queries';
 
-interface DashboardProps { }
+interface DashboardProps { searchQuery?: string }
 
 const StatCard = ({ title, value, subtext, icon: Icon, color }: any) => (
   <div className="card" style={{ border: '1px solid var(--color-border-subtle)' }}>
@@ -25,10 +31,10 @@ const StatCard = ({ title, value, subtext, icon: Icon, color }: any) => (
   </div>
 );
 
-const QuickActionCard = ({ title, description, icon: Icon, onClick, color }: any) => (
+const QuickActionCard = ({ title, description, icon: Icon, onClick, color, disabled }: any) => (
   <button
-    onClick={onClick}
-    className="p-4 rounded-lg transition-all hover:opacity-90 text-left flex items-start gap-3"
+    disabled={disabled} onClick={onClick}
+    className="p-4 rounded-lg transition-all hover:opacity-90 disabled:opacity-50 text-left flex items-start gap-3"
     style={{ backgroundColor: `${color}10`, border: `1px solid ${color}30` }}
   >
     <div className="p-2 rounded-md" style={{ backgroundColor: `${color}20` }}>
@@ -41,9 +47,23 @@ const QuickActionCard = ({ title, description, icon: Icon, onClick, color }: any
   </button>
 );
 
-export const Dashboard: React.FC<DashboardProps> = () => {
-  const { data: jobs = [] } = useJobs();
-  const { data: systems = [] } = useSystems();
+export const Dashboard: React.FC<DashboardProps> = ({searchQuery = ''}) => {
+  const jobsQuery = useJobs(); const systemsQuery = useSystems();
+  const {data: jobs = []} = jobsQuery; const {data: systems = []} = systemsQuery;
+  const client = useQueryClient(); const [busy, setBusy] = useState(false);
+  const runActions = async (kind: 'jobs' | 'health') => {
+    if (busy) return;
+    setBusy(true); let completed = 0; const errors: string[] = [];
+    const ids = kind === 'jobs' ? jobs.filter(job=>job.status === JobStatus.IDLE).map(job=>job.id) : systems.map(system=>system.id);
+    try {
+      for (const id of ids) {
+        try { if (kind === 'jobs') requireData(await API.runJob(id)); else requireData(await API.checkSystem(id)); completed++; }
+        catch (error) { errors.push(error instanceof Error ? error.message : 'Operation failed'); }
+      }
+      if (errors.length) toast.error(`${completed} succeeded, ${errors.length} failed: ${errors[0]}`);
+      else toast.success(`${completed} ${kind === 'jobs' ? 'jobs completed' : 'SSH connections verified'}`);
+    } finally { setBusy(false); await client.invalidateQueries({queryKey:kind === 'jobs' ? queryKeys.jobs : queryKeys.systems}); }
+  };
   const activeJobs = jobs.filter(j => j.status === JobStatus.RUNNING).length;
   const failedJobs = jobs.filter(j => j.status === JobStatus.FAILED).length;
   const successfulJobs = jobs.filter(j => j.status === JobStatus.SUCCESS).length;
@@ -57,15 +77,11 @@ export const Dashboard: React.FC<DashboardProps> = () => {
 
   const onlineSystems = systems.filter(s => s.status === 'online').length;
 
-  const storageData = useMemo(() => {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const baseStorage = 4000;
-    return days.map((name, i) => ({
-      name,
-      stored: baseStorage + (i * 150) + Math.floor(Math.random() * 200),
-      transferred: 1000 + Math.floor(Math.random() * 3000)
-    }));
-  }, []);
+  const storageData = useMemo(() => jobs.filter(job=>job.lastRun && job.size).map(job=> {
+    const match = /([0-9.]+)\s*(TB|GB|MB|KB|B)/i.exec(job.size || '');
+    const factors: Record<string, number> = {TB:1e6,GB:1e3,MB:1,KB:0.001,B:0.000001};
+    return {name:job.name,stored:match ? Number(match[1])*factors[match[2].toUpperCase()] : 0};
+  }), [jobs]);
 
   const statusData = [
     { name: 'Success', value: successfulJobs, color: 'var(--color-success)' },
@@ -74,12 +90,12 @@ export const Dashboard: React.FC<DashboardProps> = () => {
     { name: 'Idle', value: jobs.filter(j => j.status === JobStatus.IDLE).length, color: 'var(--color-text-muted)' },
   ].filter(d => d.value > 0);
 
-  const efficiency = totalJobs > 0
-    ? Math.round(((successfulJobs + jobs.filter(j => j.status === JobStatus.IDLE).length) / totalJobs) * 100)
-    : 100;
+  const completedJobs = successfulJobs + failedJobs;
+  const efficiency = completedJobs ? Math.round(successfulJobs / completedJobs * 100) : null;
 
   return (
     <div className="space-y-6 animate-fade-in">
+      <QueryStatus pending={jobsQuery.isPending || systemsQuery.isPending} error={jobsQuery.error || systemsQuery.error} retry={() => { void jobsQuery.refetch(); void systemsQuery.refetch(); }} />
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Total Jobs" value={totalJobs.toString()} subtext={`${activeJobs} running`} icon={HardDrive} color="#6366f1" />
@@ -92,8 +108,9 @@ export const Dashboard: React.FC<DashboardProps> = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Storage Chart */}
         <div className="lg:col-span-2 card">
-          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>Storage Growth</h3>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>Latest Backup Sizes</h3>
           <div className="h-64">
+            {storageData.length === 0 ? <p className="text-sm text-slate-500">Run a backup to see recorded backup sizes.</p> : <>
             <ResponsiveContainer width="100%" height="100%" debounce={200}>
               <AreaChart data={storageData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
@@ -103,12 +120,12 @@ export const Dashboard: React.FC<DashboardProps> = () => {
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="name" stroke="var(--color-text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis stroke="var(--color-text-muted)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}TB`} />
+                <YAxis stroke="var(--color-text-muted)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `${v} MB`} />
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" vertical={false} />
                 <RechartsTooltip contentStyle={{ backgroundColor: 'var(--color-bg-secondary)', borderRadius: '8px', border: '1px solid var(--color-border-default)' }} />
                 <Area type="monotone" dataKey="stored" stroke="var(--color-accent-primary)" strokeWidth={2} fillOpacity={1} fill="url(#colorStored)" />
               </AreaChart>
-            </ResponsiveContainer>
+            </ResponsiveContainer></> }
           </div>
         </div>
 
@@ -127,7 +144,7 @@ export const Dashboard: React.FC<DashboardProps> = () => {
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
               <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Efficiency</span>
-              <span className="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>{efficiency}%</span>
+              <span className="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>{efficiency === null ? '—' : `${efficiency}%`}</span>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 mt-3 pt-3" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
@@ -149,8 +166,8 @@ export const Dashboard: React.FC<DashboardProps> = () => {
             <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Quick Actions</h3>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <QuickActionCard title="Run All Scheduled" description="Execute pending jobs" icon={Play} color="#6366f1" onClick={() => { }} />
-            <QuickActionCard title="Check Health" description="Scan all systems" icon={Server} color="#22c55e" onClick={() => { }} />
+            <QuickActionCard title="Run Idle Jobs" description="Run saved idle jobs now" icon={Play} color="#6366f1" disabled={busy || !jobs.some(job=>job.status === JobStatus.IDLE)} onClick={() => void runActions('jobs')} />
+            <QuickActionCard title="Check Health" description="Verify saved SSH connections" icon={Server} color="#22c55e" disabled={busy || !systems.length} onClick={() => void runActions('health')} />
           </div>
         </div>
 
@@ -198,7 +215,7 @@ export const Dashboard: React.FC<DashboardProps> = () => {
           {jobs.length === 0 ? (
             <p className="text-center py-8" style={{ color: 'var(--color-text-muted)' }}>No backup jobs yet. Create your first job to get started.</p>
           ) : (
-            jobs.slice(0, 5).map((job) => (
+            jobs.filter(job=>job.name.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 5).map((job) => (
               <div key={job.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg transition-colors" style={{ backgroundColor: 'var(--color-bg-tertiary)' }}>
                 <div className="flex min-w-0 items-center gap-3">
                   <div className={`w-2 h-2 shrink-0 rounded-full ${job.status === JobStatus.RUNNING ? 'animate-pulse' : ''}`}

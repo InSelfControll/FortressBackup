@@ -85,8 +85,8 @@ export const buildLocationData = (
     path: newLocation.type === 'sftp' ? buildSftpTarget(newLocation) : newLocation.path as string,
     endpoint: newLocation.type === 'sftp' || isCustomS3 ? newLocation.endpoint : undefined,
     region: newLocation.region,
-    access_key: newLocation.accessKey,
-    secret_key: newLocation.secretKey,
+    access_key: newLocation.accessKey || undefined,
+    secret_key: newLocation.secretKey || undefined,
     ...(newLocation.type === 'sftp' ? { host_public_key: newLocation.hostPublicKey?.trim() } : {})
 });
 
@@ -207,6 +207,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                                 <label className="text-[10px] font-black uppercase text-slate-500 ml-2">SSH Private Key</label>
                                 <textarea rows={5} value={newLocation.secretKey || ''} onChange={e => setNewLocation({ ...newLocation, secretKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" />
                                 <p className="text-xs text-slate-400">Restic requires an SSH private key. Password-only authentication is not supported.</p>
+                                <p className="text-xs text-slate-400">Use a dedicated key without a key passphrase. When editing, leave this field untouched to keep the saved key.</p>
                             </div>
                         </div>
                     </>
@@ -305,6 +306,8 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                                 return (
                                     <button
                                         key={type.id}
+                                        disabled
+                                        title="This storage backend is not implemented by the controller"
                                         onClick={() => setNewLocation({ ...newLocation, type: type.id as Location['type'], path: '', endpoint: '', accessKey: '', secretKey: '' })}
                                         className={`p-3 rounded-xl border text-center transition-all ${newLocation.type === type.id ? `${type.color} border-current` : 'bg-slate-800 border-slate-700 hover:border-slate-600'}`}
                                     >

@@ -30,10 +30,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, c
             <nav aria-label="Main navigation" className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1">
                 {[
                     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-                    { id: 'jobs', label: 'Backup Jobs', icon: Layout },
+                    ...(currentUser.role === 'admin' ? [{ id: 'jobs', label: 'Backup Jobs', icon: Layout },
                     { id: 'systems', label: 'Systems', icon: Server },
                     ...(currentUser.role === 'admin' ? [{ id: 'managed-clients', label: 'Managed Clients', icon: Server }] : []),
-                    { id: 'locations', label: 'Storage Locations', icon: HardDrive },
+                    { id: 'locations', label: 'Storage Locations', icon: HardDrive }] : []),
                     ...(currentUser.role === 'admin' ? [{ id: 'settings', label: 'Settings', icon: Settings }] : []),
                 ].map((item) => {
                     const Icon = item.icon;
