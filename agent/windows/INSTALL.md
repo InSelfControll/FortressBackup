@@ -9,6 +9,36 @@ the managed-client guide, licenses, and SHA-256 checksums. You do not need Go.
 remain pre-production. Folder selection is configured on the laptop rather than
 through the dashboard.
 
+## Guided setup
+
+Extract the **complete ZIP**, then double-click **Install FortressBackup.cmd**.
+Approve the administrator prompt. Setup keeps its window open, asks for the
+enrollment ID and token, trusted HTTPS controller URL, existing Restic repository
+and encryption password, and opens a folder picker. Add as many folders as needed.
+Tokens and passwords are hidden during entry and stored with protected ACLs.
+
+Before running setup, configure storage authentication for SYSTEM as described
+in step 5 below. The repository must already be initialized and reachable from
+the laptop. An HTTP server IP cannot be used for enrollment credentials; use a
+reachable controller HTTPS name with a certificate Windows trusts.
+
+Setup verifies binary checksums, validates configuration, and checks repository
+access and enrollment **as SYSTEM**. Verification only reads snapshots and sends
+a heartbeat; it does not claim a queued backup. On failure, the previous files
+and task are restored and an error remains visible. Read
+`C:\ProgramData\FortressBackup\setup-check.log` for details.
+
+On success, setup starts the task immediately. The dashboard shows the check-in;
+any queued backup may then start. The latest polling run is recorded in
+`C:\ProgramData\FortressBackup\agent.log`. Setup success does not mean a backup
+has finished: check the job result and perform a full restore test.
+
+**fortress-agent.exe is the background runner.** Double-clicking it displays setup
+instructions. It does not install anything or select folders. Download the ZIP
+instead of the individual executable for installation.
+
+## Manual configuration
+
 1. Verify the ZIP's SHA-256 against the release's `SHA256SUMS`, then extract it to
    `C:\FortressSetup`. The commands below assume that directory.
 2. In Fortress, enroll the laptop and save its one-time ID and token. Write the
@@ -33,7 +63,7 @@ Set-Location C:\FortressSetup
 $agentHash = ((Select-String -Path .\SHA256SUMS -Pattern '  fortress-agent.exe$').Line -split '\s+')[0]
 $resticHash = ((Select-String -Path .\SHA256SUMS -Pattern '  restic.exe$').Line -split '\s+')[0]
 .\install-task.ps1 -AgentPath .\fortress-agent.exe -ConfigPath .\agent.json `
-  -AgentSha256 $agentHash -ResticSha256 $resticHash -Managed
+  -AgentSha256 $agentHash -ResticSha256 $resticHash -Managed -VerifySetup
 Start-ScheduledTask -TaskName FortressBackup-Windows
 ```
 

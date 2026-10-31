@@ -104,6 +104,8 @@ Borg and Rsync use native SSH transport with the saved destination identity and 
 
 Managed Windows clients are **pre-production**. Read the [managed client guide](agent/windows/MANAGED.md) before enrollment.
 
+Download and extract the complete [Windows ZIP from Releases](https://github.com/InSelfControll/FortressBackup/releases), then run **Install FortressBackup.cmd**. The guided setup selects folders and verifies storage and controller access as SYSTEM before starting the agent. The individual `fortress-agent.exe` is a background runner, not an installer. See the [Windows setup guide](agent/windows/INSTALL.md) for prerequisites and diagnostics.
+
 Clients poll the controller over outbound HTTPS. Enrollment displays a client token once, while the controller stores its hash. Backup sources, repository settings, credentials, SSH verification, and the Restic executable remain in protected local Windows configuration. The controller can queue `backup`, `check`, and `snapshots` operations.
 
 Execution leases, an active-job marker, and replay of unacknowledged completion reports provide duplicate-execution safeguards. Current limitations include:

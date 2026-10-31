@@ -141,6 +141,15 @@ router.post('/admin/:id/disable', authenticateToken, requireAdmin, async (req, r
   } catch (e) { next(e); }
 });
 
+// Installation verifies credentials without claiming a queued backup.
+router.post('/heartbeat', agentAuth, async (req, res, next) => {
+  try {
+    await run('UPDATE managed_clients SET last_seen=? WHERE id=?',
+      [new Date().toISOString(), (req as any).managedAgent]);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 router.post('/poll', agentAuth, async (req, res, next) => {
   try {
     const id = (req as any).managedAgent as string;

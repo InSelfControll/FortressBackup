@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-rc.2] - 2026-10-31
+
+- Add a visible Windows setup launcher with enrollment prompts, folder selection, protected credentials, and immediate task startup.
+- Verify repository and controller access as SYSTEM before enabling polling, without claiming queued jobs; roll back failed upgrades and retain diagnostics.
+- Accept Windows PowerShell UTF-8 JSON with a BOM and write installed JSON without one.
+- Show setup instructions when the background executable is opened without arguments.
+- Audit all six older remote branches against their merged PR trees; no branch work is missing from main.
+
 ## [0.1.0-rc.1] - 2026-10-31
 
 - Preserve and correctly report storage credentials when editing a connection port.

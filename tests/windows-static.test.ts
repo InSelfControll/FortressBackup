@@ -124,5 +124,8 @@ test('release publication waits for validation and verifies bundled executables'
   expect(packaging.run.indexOf('Restic download checksum mismatch')).toBeLessThan(packaging.run.indexOf('Expand-Archive'));
   expect(packaging.run).toContain('Agent artifact checksum mismatch');
   expect(packaging.run).toContain('RESTIC-LICENSE.txt');
+  expect(packaging.run).toContain('Install FortressBackup.cmd');
+  expect(packaging.run).toContain('setup.ps1');
+  expect(step(windowsWorkflow.jobs.verify, 'Verify setup with Windows PowerShell 5.1').shell).toBe('powershell');
   expect(step(release.jobs.controller, 'Require a version tag on main').run).toContain('git merge-base --is-ancestor HEAD origin/main');
 });

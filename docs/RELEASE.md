@@ -1,6 +1,6 @@
 ## Downloads
 
-- **Windows x64 bundle:** Fortress agent, Restic 0.19.1, protected-task installer,
+- **Windows x64 bundle:** Fortress agent, Restic 0.19.1, guided setup launcher and protected-task installer,
   configuration example, setup guides, Restic license, and checksums. No Go build
   is required on the laptop.
 - **Controller archive:** complete controller source with the production frontend
@@ -11,6 +11,14 @@
 
 ## Fixes
 
+- Extract the complete Windows ZIP and double-click **Install FortressBackup.cmd**.
+  Setup asks for enrollment and repository credentials and opens a folder picker.
+  Storage authentication for SYSTEM and a trusted HTTPS controller are prerequisites.
+- Setup checks storage and enrollment as SYSTEM without claiming queued backups,
+  then starts polling immediately. Errors stay visible; diagnostic logs are stored
+  in `C:\ProgramData\FortressBackup`. Failed verification restores the previous install.
+- Double-clicking the background executable now displays installation instructions.
+  Windows PowerShell 5.1 JSON configurations with a UTF-8 BOM are supported.
 - SSH private-key files now retain the final newline OpenSSH requires, including
   keys pasted into the web interface without one.
 - Storage port edits preserve credentials and accurately report saved keys.
@@ -20,6 +28,6 @@
   configuration. Dashboard activity shows client check-ins and queued operations.
 
 Windows managed clients remain **pre-production**. Enrollment does not install the
-agent or select folders. Configure sources, storage credentials, and a trusted
-HTTPS controller locally using the included setup guide. A complete Windows VSS
+agent or select folders. Run the included setup launcher on the laptop with
+storage credentials and a trusted HTTPS controller. A complete Windows VSS
 backup and restore against your own storage is still required before relying on it.
