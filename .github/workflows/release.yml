@@ -92,7 +92,8 @@ jobs:
           Copy-Item (Join-Path $bundle 'restic.exe') downloads/restic-windows-amd64.exe
           Copy-Item agent/windows/install-task.ps1 downloads/install-task.ps1
           Copy-Item agent/windows/setup.ps1 downloads/setup.ps1
-          Copy-Item 'agent/windows/Install FortressBackup.cmd' 'downloads/Install FortressBackup.cmd'
+          # Match GitHub's normalized standalone asset name before generating SHA256SUMS.
+          Copy-Item 'agent/windows/Install FortressBackup.cmd' 'downloads/Install.FortressBackup.cmd'
           Copy-Item agent/windows/agent.example.json downloads/agent.example.json
           Copy-Item agent/windows/INSTALL.md downloads/WINDOWS-SETUP.md
           Copy-Item agent/windows/MANAGED.md downloads/MANAGED-WINDOWS.md

@@ -41,6 +41,15 @@ test.afterAll(async()=>{
     if(processHandle){const stopped=new Promise(resolve=>processHandle.once('exit',resolve));processHandle.kill('SIGTERM');await stopped}
     if(directory)fs.rmSync(directory,{recursive:true,force:true});
 });
+test.afterEach(async({page},info)=>{
+    if(info.status!==info.expectedStatus&&!page.isClosed()){
+        // Disposable test state only; omit passwords and private-key textareas.
+        const fields=await page.getByRole('dialog').locator('input:not([type="password"]),select').evaluateAll(nodes=>nodes.map(node=>({
+            placeholder:node.getAttribute('placeholder'),value:(node as HTMLInputElement).value,
+        }))).catch(()=>[]);
+        console.log('Failed dialog field state:',JSON.stringify(fields));
+    }
+});
 test.beforeEach(async({page})=>{
     // Each test has a normal, server-issued session. No production data or accounts are used.
     const check=await fetch(base+'/api/auth/me',{headers:{Authorization:`Bearer ${token}`}});
