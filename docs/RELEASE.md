@@ -11,13 +11,17 @@
 
 ## Fixes
 
+- Windows installation now opens a graphical setup window with enrollment fields,
+  saved-repository status, Add/Remove Folder buttons, installation progress, and
+  visible connection errors. Extract the complete ZIP and open
+  **FortressBackup-Setup.exe**; no terminal input is required.
 - Windows setup now reuses the saved Restic SFTP repository selected in Managed
   Clients. Its address, encryption password, SSH identity, and pinned host key are
   downloaded securely using the enrollment credentials. Choose folders locally;
   no repository password or manual SYSTEM SSH setup is required in guided setup.
 - Editing an existing backup job now opens with saved values on the first render.
   Standalone launcher download names match their published checksum entries.
-- Extract the complete Windows ZIP and double-click **Install FortressBackup.cmd**.
+- Extract the complete Windows ZIP and double-click **FortressBackup-Setup.exe**.
   Setup asks for enrollment credentials and opens a folder picker. It installs
   saved storage credentials for SYSTEM; a trusted HTTPS controller is required.
 - Setup checks storage and enrollment as SYSTEM without claiming queued backups,

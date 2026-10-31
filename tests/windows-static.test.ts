@@ -69,7 +69,9 @@ test('Windows artifact publication finishes before mutable verification tools ru
 
   const verifySteps = verify.steps.map((candidate: any) => candidate.run ?? '');
   expect(verifySteps.join('\n')).toContain('choco install restic');
-  expect(verify.steps.some((candidate: any) => candidate.uses?.startsWith('actions/upload-artifact@'))).toBe(false);
+  // Verification may publish a screenshot, never rebuilt or updated binaries.
+  const diagnosticUploads = verify.steps.filter((candidate: any) => candidate.uses?.startsWith('actions/upload-artifact@'));
+  expect(diagnosticUploads.map((candidate: any) => candidate.with.path)).toEqual(['${{ runner.temp }}/fortress-setup-gui.png']);
 });
 
 test('Windows CI exercises digest rollback and hostile pre-existing ACLs', () => {
@@ -126,6 +128,9 @@ test('release publication waits for validation and verifies bundled executables'
   expect(packaging.run).toContain('RESTIC-LICENSE.txt');
   expect(packaging.run).toContain('Install FortressBackup.cmd');
   expect(packaging.run).toContain('setup.ps1');
+  expect(packaging.run).toContain('setup-ui.ps1');
+  expect(packaging.run).toContain('FortressBackup-Setup.exe');
+  expect(packaging.run).toContain('Setup artifact checksum mismatch');
   expect(step(windowsWorkflow.jobs.verify, 'Verify setup with Windows PowerShell 5.1').shell).toBe('powershell');
   expect(step(release.jobs.controller, 'Require a version tag on main').run).toContain('git merge-base --is-ancestor HEAD origin/main');
 });

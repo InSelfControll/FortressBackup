@@ -30,7 +30,11 @@ jobs:
         run: go vet ./...
       - name: Build executable
         working-directory: agent/windows
-        run: go build -trimpath -o fortress-agent.exe .
+        run: |
+          go build -trimpath -o fortress-agent.exe .
+          if ($LASTEXITCODE -ne 0) { throw 'Agent build failed' }
+          go build -trimpath -ldflags '-H=windowsgui' -o FortressBackup-Setup.exe ./cmd/setup
+          if ($LASTEXITCODE -ne 0) { throw 'Setup launcher build failed' }
       - name: Hash agent executable
         shell: pwsh
         run: |
@@ -38,6 +42,9 @@ jobs:
           $digest = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
           $checksum = Join-Path (Split-Path -Parent $exe) 'fortress-agent.exe.sha256'
           Set-Content -LiteralPath $checksum -Value "$digest  fortress-agent.exe" -Encoding ascii -NoNewline
+          $setup = (Resolve-Path ./agent/windows/FortressBackup-Setup.exe).Path
+          $setupDigest = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash
+          Set-Content -LiteralPath "$setup.sha256" -Value "$setupDigest  FortressBackup-Setup.exe" -Encoding ascii -NoNewline
           Write-Output "Agent SHA256: $digest"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: github.event_name == 'push'
@@ -46,6 +53,8 @@ jobs:
           path: |
             agent/windows/fortress-agent.exe
             agent/windows/fortress-agent.exe.sha256
+            agent/windows/FortressBackup-Setup.exe
+            agent/windows/FortressBackup-Setup.exe.sha256
           if-no-files-found: error
 
   verify:
@@ -119,6 +128,13 @@ jobs:
       - name: Verify setup with Windows PowerShell 5.1
         shell: powershell
         run: ./agent/windows/test-install.ps1
+      - name: Save graphical setup verification
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: windows-setup-gui-verification
+          path: ${{ runner.temp }}/fortress-setup-gui.png
+          if-no-files-found: ignore
       - name: Verify Windows VSS snapshot and full Restic restore
         shell: pwsh
         run: |

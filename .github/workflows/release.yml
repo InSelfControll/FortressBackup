@@ -68,6 +68,10 @@ jobs:
           if ((Get-FileHash agent-artifact/fortress-agent.exe -Algorithm SHA256).Hash -ine $expectedAgent) {
             throw 'Agent artifact checksum mismatch'
           }
+          $expectedSetup = ((Get-Content agent-artifact/FortressBackup-Setup.exe.sha256 -Raw) -split '\s+')[0]
+          if ((Get-FileHash agent-artifact/FortressBackup-Setup.exe -Algorithm SHA256).Hash -ine $expectedSetup) {
+            throw 'Setup artifact checksum mismatch'
+          }
           $archive = Join-Path $env:RUNNER_TEMP 'restic-windows.zip'
           Invoke-WebRequest -Uri "https://github.com/restic/restic/releases/download/v$env:RESTIC_VERSION/restic_$($env:RESTIC_VERSION)_windows_amd64.zip" -OutFile $archive
           if ((Get-FileHash $archive -Algorithm SHA256).Hash -ine $env:RESTIC_ZIP_SHA256) {
@@ -78,8 +82,9 @@ jobs:
           $bundle = Join-Path $env:RUNNER_TEMP 'fortressbackup-windows'
           New-Item -ItemType Directory -Path $bundle,downloads -Force | Out-Null
           Copy-Item agent-artifact/fortress-agent.exe (Join-Path $bundle 'fortress-agent.exe')
+          Copy-Item agent-artifact/FortressBackup-Setup.exe (Join-Path $bundle 'FortressBackup-Setup.exe')
           Copy-Item (Join-Path $upstream "restic_$($env:RESTIC_VERSION)_windows_amd64.exe") (Join-Path $bundle 'restic.exe')
-          foreach ($name in @('Install FortressBackup.cmd','setup.ps1','provision.ps1','install-task.ps1','agent.example.json','INSTALL.md','MANAGED.md','RESTIC-LICENSE.txt')) {
+          foreach ($name in @('Install FortressBackup.cmd','setup.ps1','setup-ui.ps1','provision.ps1','install-task.ps1','agent.example.json','INSTALL.md','MANAGED.md','RESTIC-LICENSE.txt')) {
             Copy-Item "agent/windows/$name" (Join-Path $bundle $name)
           }
           Copy-Item agent/windows/INSTALL.md (Join-Path $bundle 'README.md')
@@ -89,9 +94,11 @@ jobs:
           [IO.File]::WriteAllLines((Join-Path $bundle 'SHA256SUMS'), $checksums, [Text.Encoding]::ASCII)
           Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath "downloads/fortressbackup-windows-amd64-$env:GITHUB_REF_NAME.zip"
           Copy-Item (Join-Path $bundle 'fortress-agent.exe') downloads/fortress-agent-windows-amd64.exe
+          Copy-Item (Join-Path $bundle 'FortressBackup-Setup.exe') downloads/FortressBackup-Setup.exe
           Copy-Item (Join-Path $bundle 'restic.exe') downloads/restic-windows-amd64.exe
           Copy-Item agent/windows/install-task.ps1 downloads/install-task.ps1
           Copy-Item agent/windows/setup.ps1 downloads/setup.ps1
+          Copy-Item agent/windows/setup-ui.ps1 downloads/setup-ui.ps1
           Copy-Item agent/windows/provision.ps1 downloads/provision.ps1
           # Match GitHub's normalized standalone asset name before generating SHA256SUMS.
           Copy-Item 'agent/windows/Install FortressBackup.cmd' 'downloads/Install.FortressBackup.cmd'
