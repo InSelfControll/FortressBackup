@@ -11,11 +11,15 @@
 
 ## Fixes
 
+- Windows setup now reuses the saved Restic SFTP repository selected in Managed
+  Clients. Its address, encryption password, SSH identity, and pinned host key are
+  downloaded securely using the enrollment credentials. Choose folders locally;
+  no repository password or manual SYSTEM SSH setup is required in guided setup.
 - Editing an existing backup job now opens with saved values on the first render.
   Standalone launcher download names match their published checksum entries.
 - Extract the complete Windows ZIP and double-click **Install FortressBackup.cmd**.
-  Setup asks for enrollment and repository credentials and opens a folder picker.
-  Storage authentication for SYSTEM and a trusted HTTPS controller are prerequisites.
+  Setup asks for enrollment credentials and opens a folder picker. It installs
+  saved storage credentials for SYSTEM; a trusted HTTPS controller is required.
 - Setup checks storage and enrollment as SYSTEM without claiming queued backups,
   then starts polling immediately. Errors stay visible; diagnostic logs are stored
   in `C:\ProgramData\FortressBackup`. Failed verification restores the previous install.
@@ -30,6 +34,6 @@
   configuration. Dashboard activity shows client check-ins and queued operations.
 
 Windows managed clients remain **pre-production**. Enrollment does not install the
-agent or select folders. Run the included setup launcher on the laptop with
-storage credentials and a trusted HTTPS controller. A complete Windows VSS
+agent or select folders. Choose its repository in Managed Clients and run the
+included setup launcher with enrollment credentials and a trusted HTTPS controller. A complete Windows VSS
 backup and restore against your own storage is still required before relying on it.

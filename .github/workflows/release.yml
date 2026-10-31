@@ -79,7 +79,7 @@ jobs:
           New-Item -ItemType Directory -Path $bundle,downloads -Force | Out-Null
           Copy-Item agent-artifact/fortress-agent.exe (Join-Path $bundle 'fortress-agent.exe')
           Copy-Item (Join-Path $upstream "restic_$($env:RESTIC_VERSION)_windows_amd64.exe") (Join-Path $bundle 'restic.exe')
-          foreach ($name in @('Install FortressBackup.cmd','setup.ps1','install-task.ps1','agent.example.json','INSTALL.md','MANAGED.md','RESTIC-LICENSE.txt')) {
+          foreach ($name in @('Install FortressBackup.cmd','setup.ps1','provision.ps1','install-task.ps1','agent.example.json','INSTALL.md','MANAGED.md','RESTIC-LICENSE.txt')) {
             Copy-Item "agent/windows/$name" (Join-Path $bundle $name)
           }
           Copy-Item agent/windows/INSTALL.md (Join-Path $bundle 'README.md')
@@ -92,6 +92,7 @@ jobs:
           Copy-Item (Join-Path $bundle 'restic.exe') downloads/restic-windows-amd64.exe
           Copy-Item agent/windows/install-task.ps1 downloads/install-task.ps1
           Copy-Item agent/windows/setup.ps1 downloads/setup.ps1
+          Copy-Item agent/windows/provision.ps1 downloads/provision.ps1
           # Match GitHub's normalized standalone asset name before generating SHA256SUMS.
           Copy-Item 'agent/windows/Install FortressBackup.cmd' 'downloads/Install.FortressBackup.cmd'
           Copy-Item agent/windows/agent.example.json downloads/agent.example.json

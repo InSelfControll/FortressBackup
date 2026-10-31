@@ -13,14 +13,22 @@ through the dashboard.
 
 Extract the **complete ZIP**, then double-click **Install FortressBackup.cmd**.
 Approve the administrator prompt. Setup keeps its window open, asks for the
-enrollment ID and token, trusted HTTPS controller URL, existing Restic repository
-and encryption password, and opens a folder picker. Add as many folders as needed.
-Tokens and passwords are hidden during entry and stored with protected ACLs.
+enrollment ID and token and trusted HTTPS controller URL, then retrieves the
+saved repository selected in **Managed Clients**. A sole configured Restic SFTP
+repository is selected automatically during enrollment. Existing clients can
+choose their repository in the client row without enrolling again.
 
-Before running setup, configure storage authentication for SYSTEM as described
-in step 5 below. The repository must already be initialized and reachable from
-the laptop. An HTTP server IP cannot be used for enrollment credentials; use a
-reachable controller HTTPS name with a certificate Windows trusts.
+The repository URL, encryption password, SSH identity, and pinned host key come
+from the controller. Setup does not ask you to type them again or configure
+SYSTEM's global SSH files. It installs protected credentials for the agent and
+enables the native Windows OpenSSH client if missing. Choose folders using the
+folder picker and add as many as needed.
+
+The repository must already be initialized and reachable from the laptop. An
+HTTP server IP cannot be used for credential provisioning; use a reachable
+controller HTTPS name with a certificate Windows trusts. The controller's
+`TRUST_PROXY` must identify the trusted HTTPS reverse proxy when TLS terminates
+outside Fortress. Untrusted forwarding headers and plaintext HTTP are rejected.
 
 Setup verifies binary checksums, validates configuration, and checks repository
 access and enrollment **as SYSTEM**. Verification only reads snapshots and sends
@@ -37,7 +45,10 @@ has finished: check the job result and perform a full restore test.
 instructions. It does not install anything or select folders. Download the ZIP
 instead of the individual executable for installation.
 
-## Manual configuration
+## Advanced manual configuration
+
+Use this only for an independently managed configuration. The guided setup above
+automatically provisions saved credentials; no repository password entry is needed.
 
 1. Verify the ZIP's SHA-256 against the release's `SHA256SUMS`, then extract it to
    `C:\FortressSetup`. The commands below assume that directory.

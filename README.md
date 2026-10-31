@@ -64,7 +64,7 @@ docker compose -f Fortress.yaml up -d --build
 
 Open **[http://localhost:9001](http://localhost:9001)** and complete the setup wizard with the token. For access from another device, use a trusted TLS reverse proxy or a private access path. Do not expose the controller directly to an untrusted network.
 
-If exactly one trusted reverse proxy connects to Fortress, set `TRUST_PROXY=1` in the controller environment so login admission uses the client address supplied by that proxy. Leave it unset for direct access or other proxy arrangements.
+Behind HTTPS termination, set `TRUST_PROXY` to the exact trusted proxy IP addresses or CIDRs (comma separated) so HTTPS setup and client-address admission use verified forwarding headers. `TRUST_PROXY=1` remains supported for a deployment where every request passes through exactly one trusted proxy. Leave it unset for direct access; do not trust arbitrary LAN clients as proxies.
 
 ## Configure a backup
 
@@ -106,11 +106,11 @@ Managed Windows clients are **pre-production**. Read the [managed client guide](
 
 Download and extract the complete [Windows ZIP from Releases](https://github.com/InSelfControll/FortressBackup/releases), then run **Install FortressBackup.cmd**. The guided setup selects folders and verifies storage and controller access as SYSTEM before starting the agent. The individual `fortress-agent.exe` is a background runner, not an installer. See the [Windows setup guide](agent/windows/INSTALL.md) for prerequisites and diagnostics.
 
-Clients poll the controller over outbound HTTPS. Enrollment displays a client token once, while the controller stores its hash. Backup sources, repository settings, credentials, SSH verification, and the Restic executable remain in protected local Windows configuration. The controller can queue `backup`, `check`, and `snapshots` operations.
+Clients poll the controller over outbound HTTPS. Enrollment displays a client token once, while the controller stores its hash. Select a saved Restic SFTP repository during enrollment; a single configured repository is selected automatically. Setup retrieves only the repository assigned to that client, including its encryption password, SSH identity, and pinned host key, over authenticated HTTPS. Credentials and selected folders are stored in protected local Windows configuration. The controller can queue `backup`, `check`, and `snapshots` operations.
 
 Execution leases, an active-job marker, and replay of unacknowledged completion reports provide duplicate-execution safeguards. Current limitations include:
 
-- No full remote provisioning of backup sources, repositories, or credentials.
+- Source folders are selected locally; automatic repository provisioning currently supports saved Restic SFTP destinations. Repositories must already be initialized.
 - No automatic enrollment-token rotation or client updates.
 - No file-level managed-client restore interface.
 - No completed end-to-end Windows VSS and Hetzner Storage Box restore test.

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-rc.4] - 2026-10-31
+
+- Reuse controller-configured Restic SFTP repositories during Windows setup. Repository URLs, encryption passwords, SSH identities, and pinned host keys are retrieved automatically over authenticated HTTPS.
+- Assign a saved repository during enrollment or to an existing client in Managed Clients; a sole configured repository is selected automatically for new enrollments.
+- Install protected storage credentials for SYSTEM without changing its global SSH configuration. Setup asks for enrollment credentials and local folders.
+- Restrict credential provisioning to each administrator-assigned repository, block plaintext HTTP, and prevent caching or public inventory disclosure.
+
 ## [0.1.0-rc.3] - 2026-10-31
 
 - Initialize an edited backup job with its saved values on the first render, removing the delayed empty form state.

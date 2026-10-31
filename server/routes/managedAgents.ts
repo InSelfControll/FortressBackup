@@ -2,13 +2,16 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import crypto from 'node:crypto';
 import { getOne, query, run } from '../db/helpers.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
+import {managedRepository} from '../services/managedRepository.js';
 
-// No storage credentials, source paths or remote commands are accepted here.
+// Source folders and executable commands remain local. Setup credentials are
+// released only over HTTPS to an agent with an administrator-assigned repository.
 const router = Router();
 type Operation = 'backup' | 'check' | 'snapshots';
 type Agent = {
   id: string; name: string; token_hash: string; created_at: string;
   last_seen: string | null; disabled: number; schedule_minutes: number; next_run_at: string | null;
+  repository_job_id?: string|null; repository_name?: string|null; storage_name?: string|null;
 };
 type AgentJob = {
   id: string; client_id: string; operation: Operation;
@@ -18,12 +21,16 @@ type AgentJob = {
 };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sha256 = (v: string) => crypto.createHash('sha256').update(v).digest('hex');
+const agentSelect=`SELECT m.*,r.job_id AS repository_job_id,j.name AS repository_name,l.name AS storage_name
+  FROM managed_clients m LEFT JOIN managed_repositories r ON r.client_id=m.id
+  LEFT JOIN jobs j ON j.id=r.job_id LEFT JOIN locations l ON l.id=j.destination_id`;
 const lookup = (id: unknown) => typeof id === 'string' && uuid.test(id)
-  ? getOne<Agent>('SELECT * FROM managed_clients WHERE id=?', [id]) : Promise.resolve(null);
+  ? getOne<Agent>(agentSelect+' WHERE m.id=?', [id]) : Promise.resolve(null);
 const publicAgent = ({ token_hash: _secret, ...safe }: Agent) => ({
   id: safe.id, name: safe.name, createdAt: safe.created_at,
   lastSeen: safe.last_seen, disabled: !!safe.disabled,
-  scheduleMinutes: safe.schedule_minutes, nextRunAt: safe.next_run_at
+  scheduleMinutes: safe.schedule_minutes, nextRunAt: safe.next_run_at,
+  repositoryJobId:safe.repository_job_id||null,repositoryName:safe.repository_name||null,storageName:safe.storage_name||null
 });
 const publicJob = (j: AgentJob) => ({
   id: j.id, operation: j.operation, state: j.state,
@@ -54,10 +61,22 @@ router.post('/admin/enroll', authenticateToken, requireAdmin, async (req, res, n
     const name = req.body?.name;
     if (typeof name !== 'string' || !name.trim() || name.length > 100)
       return res.status(400).json({ error: 'Invalid name' });
+    let repositoryJobId=req.body?.repositoryJobId;
+    if(repositoryJobId===undefined){
+      const ready=await query<{id:string}>(`SELECT j.id FROM jobs j JOIN locations l ON l.id=j.destination_id
+        WHERE j.tool='Restic' AND j.repo_password IS NOT NULL AND j.repo_password<>''
+        AND l.type='sftp' AND l.secret_key IS NOT NULL AND l.secret_key<>'' AND l.host_public_key IS NOT NULL`);
+      if(ready.length===1)repositoryJobId=ready[0].id;
+    }
+    if(repositoryJobId!=null){
+      if(typeof repositoryJobId!=='string'||!uuid.test(repositoryJobId))return res.status(400).json({error:'Invalid repository job'});
+      try{await managedRepository(repositoryJobId)}catch(e){return res.status(400).json({error:e instanceof Error?e.message:'Repository not ready'})}
+    }
     const id = crypto.randomUUID();
     const token = crypto.randomBytes(32).toString('base64url');
     await run('INSERT INTO managed_clients(id,name,token_hash,created_at) VALUES(?,?,?,?)',
       [id, name.trim(), sha256(token), new Date().toISOString()]);
+    if(repositoryJobId)await run('INSERT INTO managed_repositories(client_id,job_id) VALUES(?,?)',[id,repositoryJobId]);
     res.status(201).json({ id, name: name.trim(), token });
   } catch (e) { next(e); }
 });
@@ -68,9 +87,7 @@ router.get('/admin', authenticateToken, requireAdmin, async (req, res, next) => 
     if (!Number.isSafeInteger(limit)||limit<1||limit>100||
         !Number.isSafeInteger(offset)||offset<0||offset>1000000)
       return res.status(400).json({error:'Invalid pagination'});
-    const agents=await query<Agent>(`
-      SELECT id,name,token_hash,created_at,last_seen,disabled,schedule_minutes,next_run_at
-      FROM managed_clients ORDER BY created_at DESC LIMIT ? OFFSET ?`,[limit,offset]);
+    const agents=await query<Agent>(agentSelect+' ORDER BY m.created_at DESC LIMIT ? OFFSET ?',[limit,offset]);
     const recent=await query<AgentJob>(`
       SELECT id,client_id,operation,state,created_at,started_at,finished_at,lease_until,message
       FROM (
@@ -96,6 +113,33 @@ router.get('/admin/:id', authenticateToken, requireAdmin, async (req, res, next)
       'SELECT * FROM managed_jobs WHERE client_id=? ORDER BY created_at DESC LIMIT 50', [agent.id]);
     res.json({ ...publicAgent(agent), jobs: jobs.map(publicJob) });
   } catch (e) { next(e); }
+});
+
+router.put('/admin/:id/repository',authenticateToken,requireAdmin,async(req,res,next)=>{
+  try{
+    const agent=await lookup(req.params.id);
+    if(!agent)return res.sendStatus(404);
+    if(agent.disabled)return res.status(409).json({error:'Client disabled'});
+    const jobId=req.body?.repositoryJobId;
+    if(typeof jobId!=='string'||!uuid.test(jobId))return res.status(400).json({error:'Invalid repository job'});
+    try{await managedRepository(jobId)}catch(e){return res.status(400).json({error:e instanceof Error?e.message:'Repository not ready'})}
+    await run(`INSERT INTO managed_repositories(client_id,job_id) VALUES(?,?)
+      ON CONFLICT(client_id) DO UPDATE SET job_id=excluded.job_id`,[agent.id,jobId]);
+    res.json(publicAgent((await lookup(agent.id))!));
+  }catch(e){next(e)}
+});
+
+router.post('/setup',async(req,res,next)=>{
+  res.set('Cache-Control','no-store');res.set('Pragma','no-cache');
+  if(!req.secure)return res.status(400).json({error:'HTTPS is required to download repository credentials'});
+  next();
+},agentAuth,async(req,res,next)=>{
+  try{
+    const agent=await lookup((req as any).managedAgent);
+    if(!agent?.repository_job_id)return res.status(409).json({error:'Choose a saved repository for this laptop in Managed Clients first'});
+    const profile=await managedRepository(agent.repository_job_id);
+    res.json(profile);
+  }catch(e){next(e)}
 });
 
 router.post('/admin/:id/jobs', authenticateToken, requireAdmin, async (req, res, next) => {

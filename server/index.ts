@@ -37,7 +37,8 @@ if (result.error) {
 }
 
 const app = express();
-app.set('trust proxy', process.env.TRUST_PROXY === '1' ? 1 : false);
+const proxyTrust=process.env.TRUST_PROXY?.trim();
+app.set('trust proxy', proxyTrust==='1'?1:(!proxyTrust||proxyTrust==='0'||proxyTrust==='false'?false:proxyTrust));
 const PORT = process.env.PORT || 9001;
 
 // Middleware

@@ -1,6 +1,7 @@
 #requires -Version 5.1
 # Run by Windows CI with Windows PowerShell, including its UTF-8 BOM behavior.
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'provision.ps1')
 $root=Join-Path $env:RUNNER_TEMP ('fortress-setup-test-'+[guid]::NewGuid().ToString('N'))
 $task='FortressBackup-SetupTest'
 $installed=Join-Path $env:ProgramData 'FortressBackup'
@@ -39,32 +40,47 @@ try {
     $store.Open('ReadWrite');$store.Add($certificate);$store.Close()
     & netsh http add sslcert "ipport=0.0.0.0:$port" "certhash=$($certificate.Thumbprint)" 'appid={aab65062-e484-4b41-96db-faa6bcc832d2}' | Out-Null
     if($LASTEXITCODE -ne 0){throw 'Test TLS binding failed'}
-    $serverJob=Start-Job -ArgumentList $port,$root -ScriptBlock {
-        param($port,$root)
+    $profileFixture=@{repository='sftp://backup@storage.example.invalid:23/repository';password=[guid]::NewGuid().ToString('N');sshPrivateKey=('identity-'+[guid]::NewGuid().ToString('N'));knownHosts=('pinned-host-'+[guid]::NewGuid().ToString('N'));repositoryName='Saved repository';storageName='Saved storage'}
+    $expectedToken=[IO.File]::ReadAllText($token)
+    $serverJob=Start-Job -ArgumentList $port,$root,($profileFixture|ConvertTo-Json),$expectedToken,$config.agentId -ScriptBlock {
+        param($port,$root,$profileJson,$expectedToken,$agentId)
         $http=New-Object Net.HttpListener
         $http.Prefixes.Add("https://localhost:$port/")
         $http.Start()
         [IO.File]::WriteAllText((Join-Path $root 'ready'),'ready')
         try {
-            $request=$http.GetContext()
-            if($request.Request.HttpMethod -ne 'POST' -or $request.Request.RawUrl -ne '/api/managed-agents/heartbeat'){throw 'Preflight tried to claim a job'}
-            if(!$request.Request.Headers['Authorization'].StartsWith('Bearer ')){throw 'Enrollment authentication missing'}
-            $body=[Text.Encoding]::UTF8.GetBytes('{"ok":true}')
-            $request.Response.ContentType='application/json'
-            $request.Response.ContentLength64=$body.Length
-            $request.Response.OutputStream.Write($body,0,$body.Length)
-            $request.Response.Close()
-            [IO.File]::WriteAllText((Join-Path $root 'heartbeat'),'authenticated')
+            foreach($route in @('setup','heartbeat')){
+                $request=$http.GetContext()
+                if($request.Request.HttpMethod -ne 'POST' -or $request.Request.RawUrl -ne ('/api/managed-agents/'+$route)){throw 'Setup tried to claim a job'}
+                if($request.Request.Headers['Authorization'] -ne ('Bearer '+$expectedToken) -or $request.Request.Headers['X-Fortress-Agent-Id'] -ne $agentId){throw 'Enrollment authentication missing'}
+                $response=if($route -eq 'setup'){$profileJson}else{'{"ok":true}'}
+                $body=[Text.Encoding]::UTF8.GetBytes($response)
+                $request.Response.ContentType='application/json'
+                $request.Response.ContentLength64=$body.Length
+                $request.Response.OutputStream.Write($body,0,$body.Length)
+                $request.Response.Close()
+                [IO.File]::WriteAllText((Join-Path $root $route),'authenticated')
+            }
         }finally{$http.Stop();$http.Close()}
     }
     $deadline=(Get-Date).AddSeconds(30)
     while(!(Test-Path -LiteralPath (Join-Path $root 'ready')) -and (Get-Date) -lt $deadline){Start-Sleep -Milliseconds 200}
     if(!(Test-Path -LiteralPath (Join-Path $root 'ready'))){throw 'Test HTTPS server did not start'}
     $config.controllerUrl="https://localhost:$port"
+    $profile=Get-ManagedRepository -Controller $config.controllerUrl -Id $config.agentId -Token $expectedToken
+    $generated=Join-Path $root 'generated credentials'
+    $credentials=Save-ManagedRepository -Profile $profile -Directory $generated
+    foreach($name in $credentials.Keys){$config[$name]=$credentials[$name]}
+    if([IO.File]::ReadAllText($config.passwordFile) -ne $profileFixture.password){throw 'Saved encryption password was not provisioned'}
+    if([IO.File]::ReadAllText($config.sftpKeyFile) -ne ($profileFixture.sshPrivateKey+"`n")){throw 'Saved SSH identity lost its final newline'}
+    if((Get-Acl -LiteralPath $generated).Sddl -match ';;;WD|;;;BU|;;;AU'){throw 'Provisioned credentials are readable by ordinary users'}
     $config | ConvertTo-Json | Set-Content -LiteralPath $cfg -Encoding UTF8
     & (Join-Path $PSScriptRoot 'install-task.ps1') -AgentPath $exe -ConfigPath $cfg -AgentSha256 $hash -ResticSha256 $resticHash -TaskName $task -Managed -VerifySetup
     if(!(Test-Path -LiteralPath (Join-Path $root 'heartbeat'))){throw 'Setup never authenticated to the controller'}
     if((Get-Content -LiteralPath (Join-Path $installed 'setup-check.log') -Raw) -notmatch 'No queued job claimed'){throw 'Setup success diagnostics missing'}
+    $savedConfig=Get-Content -LiteralPath $installedCfg -Raw|ConvertFrom-Json
+    if($savedConfig.sftpKeyFile -ne (Join-Path $installed 'storage-key') -or $savedConfig.sftpKnownHostsFile -ne (Join-Path $installed 'known_hosts')){throw 'Storage credential paths were not rewritten for SYSTEM'}
+    $beforeKey=(Get-FileHash -LiteralPath $savedConfig.sftpKeyFile -Algorithm SHA256).Hash
     $before=(Get-FileHash -LiteralPath $installedCfg -Algorithm SHA256).Hash
     $beforeTask=Export-ScheduledTask -TaskName $task
     # An invalid controller causes preflight to fail before any storage or network request.
@@ -76,6 +92,7 @@ try {
     }catch{$rejected=$true}
     if(!$rejected){throw 'Invalid setup was accepted'}
     if($before -ne (Get-FileHash -LiteralPath $installedCfg -Algorithm SHA256).Hash){throw 'Previous configuration lost after failed verification'}
+    if($beforeKey -ne (Get-FileHash -LiteralPath $savedConfig.sftpKeyFile -Algorithm SHA256).Hash){throw 'Previous storage identity lost after failed verification'}
     if($beforeTask -ne (Export-ScheduledTask -TaskName $task)){throw 'Previous task lost after failed verification'}
     $log=Get-Content -LiteralPath (Join-Path $installed 'setup-check.log') -Raw
     if($log -notmatch 'plain HTTPS origin'){throw 'Setup error was not recorded for the user'}

@@ -33,5 +33,5 @@ own backup destination.
 - Use pinned SSH host keys and a dedicated least-privilege Hetzner account.
 - The agent and Restic executables must be installed from verified artifacts.
 - Install with `install-task.ps1` which validates digests and restricts NTFS ACLs.
-- Backup credentials and source selection remain stored locally on Windows.
+- Guided setup downloads the assigned repository credentials securely from the controller and stores them with protected ACLs; source folders are selected locally.
 - A backup is only production-ready after testing a real VSS backup and restore.

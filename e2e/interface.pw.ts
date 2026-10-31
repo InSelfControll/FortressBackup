@@ -119,9 +119,13 @@ test('export fetches cold data; invalid import stays editable; valid import pers
 });
 
 test('managed enrollment, schedule, job queue, and revocation persist',async({page})=>{
+    const source=(await api('/systems'))[0];const storage=(await api('/locations')).find((location:any)=>location.type==='sftp');
+    const repository=await api('/jobs','POST',{name:'Saved Windows repository',tool:'Restic',sourceId:source.id,sourcePaths:['/home'],destinationId:storage.id,repoPassword:crypto.randomBytes(32).toString('base64url')});
     await go(page,'Managed Clients');await page.getByLabel('Client name').fill('Disposable Windows Client');await page.getByRole('button',{name:'Enroll',exact:true}).click();await expect(page.getByText('Save credentials now. Token displayed only once.')).toBeVisible();await page.getByRole('button',{name:"I've saved these credentials"}).click();await page.getByLabel('Backup schedule').selectOption('60');await page.getByRole('button',{name:'backup',exact:true}).click();await expect(page.getByText(/backup · Queued — waiting for the Windows agent/)).toBeVisible();
+    expect((await api('/managed-agents/admin')).find((agent:any)=>agent.name==='Disposable Windows Client').repositoryJobId).toBe(repository.id);
     await go(page,'Dashboard');const activity=page.getByRole('region',{name:'Windows client activity'});await expect(activity.getByText('Disposable Windows Client',{exact:true})).toBeVisible();await expect(activity.getByText('Awaiting setup',{exact:true})).toBeVisible();await expect(activity.getByText(/Queued — waiting for the Windows agent/)).toBeVisible();await activity.getByRole('button',{name:'Open Managed Clients'}).click();
     page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'Disable',exact:true}).click();await expect(page.getByRole('button',{name:'backup',exact:true})).toBeDisabled();
+    await api('/jobs/'+repository.id,'DELETE');
 });
 
 test('navigation, filters, clipboard, and errors remain usable on mobile',async({page})=>{
