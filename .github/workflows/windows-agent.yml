@@ -154,3 +154,10 @@ jobs:
             throw 'Restored file does not match original'
           }
           Write-Output 'Windows VSS backup and restore verified'
+      - name: Verify real Restic managed SSH argument handling
+        shell: pwsh
+        working-directory: agent/windows
+        run: |
+          $env:FORTRESS_TEST_RESTIC = (Get-Command restic -ErrorAction Stop).Source
+          go test -v -run TestResticManagedSFTPArgv ./...
+          if ($LASTEXITCODE -ne 0) { throw 'Managed SSH transport argument verification failed' }

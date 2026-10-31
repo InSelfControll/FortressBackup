@@ -127,6 +127,9 @@ export interface ManagedAgent {
   disabled: boolean;
   scheduleMinutes?: number;
   nextRunAt?: string | null;
+  repositoryJobId?: string | null;
+  repositoryName?: string | null;
+  storageName?: string | null;
   jobs: ManagedAgentJob[];
 }
 
@@ -142,6 +145,7 @@ export interface BackupJob {
   retention: RetentionPolicy;
   priority: JobPriority;
   repoPassword?: string;
+  hasRepoPassword?: boolean;
   lastRun?: string;
   status: JobStatus;
   nextRun: string;

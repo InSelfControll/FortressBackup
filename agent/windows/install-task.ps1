@@ -28,6 +28,12 @@ $resticSource=(Resolve-Path -LiteralPath $config.resticPath -ErrorAction Stop).P
 if(!((Get-FileHash -LiteralPath $resticSource -Algorithm SHA256).Hash -ieq $ResticSha256)){throw 'Restic binary SHA256 mismatch'}
 if($config.sshCommand){throw 'Arbitrary RESTIC_SFTP_COMMAND is not allowed for elevated tasks'}
 $sourcePassword=(Resolve-Path -LiteralPath $config.passwordFile -ErrorAction Stop).Path
+$hasSFTP=!!($config.sftpKeyFile -or $config.sftpKnownHostsFile)
+if($hasSFTP){
+    if(!$config.sftpKeyFile -or !$config.sftpKnownHostsFile){throw 'Managed SFTP requires both the SSH identity and pinned known_hosts'}
+    $sourceSSHKey=(Resolve-Path -LiteralPath $config.sftpKeyFile -ErrorAction Stop).Path
+    $sourceKnownHosts=(Resolve-Path -LiteralPath $config.sftpKnownHostsFile -ErrorAction Stop).Path
+}
 if($Managed){
     if(!$config.agentTokenFile){throw 'Managed mode requires an enrollment token file'}
     $sourceToken=(Resolve-Path -LiteralPath $config.agentTokenFile -ErrorAction Stop).Path
@@ -73,6 +79,12 @@ try{
     Assert-FileDigest -Path $stagedRestic -Expected $ResticSha256 -Label 'Staged Restic binary'
     Copy-Protected $sourcePassword $stagedPassword
     if($Managed){Copy-Protected $sourceToken $stagedToken}
+    if($hasSFTP){
+        Copy-Protected $sourceSSHKey (Join-Path $staging 'storage-key')
+        Copy-Protected $sourceKnownHosts (Join-Path $staging 'known_hosts')
+        $config.sftpKeyFile=Join-Path $root 'storage-key'
+        $config.sftpKnownHostsFile=Join-Path $root 'known_hosts'
+    }
     $config.passwordFile=$password
     $config.resticPath=$restic
     if($Managed){$config.agentTokenFile=$token}
@@ -81,6 +93,7 @@ try{
 
     $payloadNames=@('fortress-agent.exe','restic.exe','repo-password.txt','agent.json')
     if($Managed){$payloadNames+='agent-token.txt'}
+    if($hasSFTP){$payloadNames+=@('storage-key','known_hosts')}
     $backedUp=@{}
     $installed=@{}
     $existingTask=$null

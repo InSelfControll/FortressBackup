@@ -15,7 +15,7 @@ for the guided setup, SYSTEM storage prerequisites, and local diagnostic logs.
 - The controller stores a SHA-256 hash of each randomly generated bearer token; enrollment returns the secret **once**.
 - Only controller JWT users with role `admin` can enroll, queue operations or disable an agent.
 - Jobs contain **only an allow-listed operation** (`backup`, `check`, `snapshots`).
-- Repository, paths, encryption passwords, SSH key, SSH host verification and Restic executable are held in a locally protected Windows agent config, not supplied by the controller.
+- During enrollment, an administrator assigns an existing Restic SFTP repository. Setup downloads only that repository's address, encryption password, SSH identity and pinned host key over authenticated HTTPS; public inventory never returns them. Paths and the trusted executable remain local. Credentials are protected for SYSTEM and Administrators.
 - One in-flight job per client. A five-hour execution lease requires manual intervention after expiration to prevent automatic duplicate backups.
 
 ## Controller enrollment
@@ -47,7 +47,7 @@ Run PowerShell as administrator:
 .\\install-task.ps1 -AgentPath 'C:\FortressSetup\fortress-agent.exe' -ConfigPath 'C:\FortressSetup\agent.json' -AgentSha256 '<trusted-agent-SHA256>' -ResticSha256 '<trusted-restic-SHA256>' -Managed
 ```
 
-The task uses SYSTEM for VSS and polls every minute. SYSTEM has its own OpenSSH identity/known_hosts files; provision a **pinned trusted Hetzner host key** and dedicated SSH key for that identity before enabling the task. Protect the controller with a trusted TLS certificate and private network or Cloudflare Access if needed.
+The task uses SYSTEM for VSS and polls every minute. Guided setup installs the assigned storage key and pinned known_hosts in its protected directory and uses the native OpenSSH executable with strict verification. It does not change SYSTEM's global SSH configuration. Independently managed configurations still require their own SSH setup. Protect the controller with a trusted TLS certificate and private network.
 
 ## Queue backup from the controller
 ```bash
@@ -76,7 +76,7 @@ curl -sS -X POST "https://fortress.example.net/api/managed-agents/admin/ENROLLME
 - Backups are scheduled in the controller; the Windows Task Scheduler runs the agent poller every minute.
 
 ## Production blockers
-- Backup source folders, repository destinations and credentials remain locally configured and are not centrally editable. This reduces remote attack surface but is not full remote policy provisioning.
+- Source folders remain local. Repository assignments are managed centrally; rerun setup to apply changes to the protected local credential files. Automatic setup currently supports existing Restic SFTP repositories and never initializes or overwrites repositories.
 - No client auto-update or rotation of existing enrollment tokens.
 - No structured Restic progress or user-visible file-level restore from the managed-client screen.
 - No automatic token rotation or transport-level client certificate authentication.

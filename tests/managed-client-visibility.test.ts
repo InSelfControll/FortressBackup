@@ -47,3 +47,17 @@ test('enrolled clients receive installation and local folder-selection instructi
   expect(html).toContain('Queued — waiting for the Windows agent');
  }finally{client.clear();}
 });
+
+test('a single configured repository is selected automatically without exposing credentials',()=>{
+ const client=new QueryClient();
+ client.setQueryData([...queryKeys.managedAgents,0],[agent]);
+ client.setQueryData(queryKeys.jobs,[{id:'saved-repository',name:'Saved Restic job',tool:'Restic',hasRepoPassword:true,destinationId:'storage'}]);
+ client.setQueryData(queryKeys.locations,[{id:'storage',name:'Existing storage',type:'sftp',hasSecretKey:true}]);
+ try{
+  const html=renderToStaticMarkup(React.createElement(QueryClientProvider,{client},React.createElement(ManagedClients)));
+  expect(html).toContain('value="saved-repository" selected=""');
+  expect(html).toContain('Saved Restic job — Existing storage');
+  expect(html).toContain('retrieves this repository&#x27;s saved encryption password');
+  expect(html).toContain('Assign a repository before running Windows setup.');
+ }finally{client.clear()}
+});

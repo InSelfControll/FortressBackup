@@ -34,6 +34,8 @@ type Config struct {
  ControllerURL string `json:"controllerUrl"`
  AgentID string `json:"agentId"`
  AgentTokenFile string `json:"agentTokenFile"`
+ SFTPKeyFile string `json:"sftpKeyFile,omitempty"`
+ SFTPKnownHostsFile string `json:"sftpKnownHostsFile,omitempty"`
 }
 
 func loadConfig(path string) (Config,error) {
@@ -56,11 +58,15 @@ func loadConfig(path string) (Config,error) {
  if c.AgentTokenFile!="" && !filepath.IsAbs(c.AgentTokenFile) {return c,errors.New("agentTokenFile must be absolute")}
  for _,source:=range c.Sources {if !filepath.IsAbs(source) {return c,fmt.Errorf("source must be absolute: %q",source)}; if _,err=os.Stat(source);err!=nil{return c,fmt.Errorf("source %q: %w",source,err)}}
  for _,exclude:=range c.Excludes {if strings.TrimSpace(exclude)=="" {return c,errors.New("empty exclude")}}
+ if _,err:=sftpCommand(c);err!=nil{return c,err}
  return c,nil
 }
 
 func execute(ctx context.Context,c Config,operation string) error {
  args:=[]string{"--repo",c.Repository,"--password-file",c.PasswordFile}
+ transport,err:=sftpCommand(c)
+ if err!=nil{return err}
+ if transport!="" {args=append(args,"-o","sftp.command="+transport)}
  switch operation {
  case "backup":
   args=append(args,"backup","--json","--exclude-caches")
@@ -81,7 +87,7 @@ func execute(ctx context.Context,c Config,operation string) error {
  cmd.Stderr=os.Stderr
  // The SSH command must be locally configured, not supplied by a remote request.
  if c.SSHCommand!="" {cmd.Env=append(os.Environ(),"RESTIC_SFTP_COMMAND="+c.SSHCommand)}
- err:=cmd.Run()
+ err=cmd.Run()
  if ctx.Err()!=nil{return ctx.Err()}
  return err
 }

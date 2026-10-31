@@ -1,0 +1,80 @@
+import {test,expect} from 'bun:test';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import express from 'express';
+import jwt from 'jsonwebtoken';
+import {utils as sshUtils} from 'ssh2';
+import managedAgents from '../server/routes/managedAgents.js';
+import {initDatabase,closeDatabase} from '../server/db/connection.js';
+import {run,getOne} from '../server/db/helpers.js';
+import {saveLocation} from '../server/db/locations.js';
+import {saveJob} from '../server/db/jobs.js';
+import {encrypt} from '../server/encryption.js';
+
+test('repository provisioning is scoped, TLS-only, redacted, revocable, and never claims a job',async()=>{
+ const previous={jwt:process.env.JWT_SECRET,key:process.env.FORTRESS_CREDENTIAL_KEY};
+ const signing=crypto.randomBytes(48).toString('hex');
+ process.env.JWT_SECRET=signing;process.env.FORTRESS_CREDENTIAL_KEY=crypto.randomBytes(32).toString('hex');
+ const folder=fs.mkdtempSync(path.join(os.tmpdir(),'fortress-provision-'));
+ const app=express();app.set('trust proxy','loopback');app.use(express.json());app.use('/agents',managedAgents);
+ await initDatabase({type:'sqlite',filePath:path.join(folder,'data.db')});
+ const server=app.listen(0,'127.0.0.1');
+ try{
+  const address=server.address();if(!address||typeof address==='string')throw new Error('Test server failed');
+  const base='http://127.0.0.1:'+address.port+'/agents';
+  const api=async(route:string,body:unknown,headers:Record<string,string>,method='POST')=>{
+   const response=await fetch(base+route,{method,headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});
+   return {status:response.status,headers:response.headers,data:await response.json() as any};
+  };
+  await run('INSERT INTO users(id,email,name,role,auth_type) VALUES(?,?,?,?,?)',['admin','admin@example.invalid','Admin','admin','local']);
+  await run('INSERT INTO users(id,email,name,role,auth_type) VALUES(?,?,?,?,?)',['viewer','viewer@example.invalid','Viewer','viewer','local']);
+  const admin={Authorization:'Bearer '+jwt.sign({id:'admin',role:'admin',authEpoch:0},signing)};
+  const viewer={Authorization:'Bearer '+jwt.sign({id:'viewer',role:'viewer',authEpoch:0},signing)};
+  const privateKey=crypto.generateKeyPairSync('rsa',{modulusLength:2048,privateKeyEncoding:{type:'pkcs1',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}}).privateKey;
+  const key=sshUtils.parseKey(privateKey);if(key instanceof Error||Array.isArray(key))throw new Error('Test SSH key failed');
+  const hostKey=key.type+' '+key.getPublicSSH().toString('base64');
+  const locationId=crypto.randomUUID(),jobId=crypto.randomUUID(),otherId=crypto.randomUUID();
+  const password=crypto.randomBytes(32).toString('base64url');
+  await saveLocation({id:locationId,name:'Existing storage',type:'sftp',path:'sftp://backup@storage.example.invalid:23/repository',secret_key:privateKey.trimEnd(),host_public_key:hostKey});
+  await saveJob({id:jobId,name:'Configured Restic repository',tool:'Restic',destination_id:locationId,repo_password:JSON.stringify(encrypt(password,signing)),priority:'Medium',status:'Idle'});
+  await saveJob({id:otherId,name:'Other engine',tool:'BorgBackup',destination_id:locationId,repo_password:JSON.stringify(encrypt(password,signing)),priority:'Medium',status:'Idle'});
+  expect((await api('/admin/enroll',{name:'Rejected',repositoryJobId:otherId},admin)).status).toBe(400);
+  const enrolled=await api('/admin/enroll',{name:'Laptop',repositoryJobId:jobId},admin);
+  expect(enrolled.status).toBe(201);
+  const auth={'Authorization':'Bearer '+enrolled.data.token,'X-Fortress-Agent-Id':enrolled.data.id,'X-Forwarded-Proto':'https'};
+  expect((await api('/setup',{},{})).status).toBe(400);
+  expect((await api('/setup',{}, {'X-Forwarded-Proto':'https'})).status).toBe(401);
+  app.set('trust proxy',false);
+  expect((await api('/setup',{},auth)).status).toBe(400); // Forged forwarding headers are not TLS.
+  app.set('trust proxy','loopback');
+  const provisioned=await api('/setup',{repositoryJobId:otherId},auth);
+  expect(provisioned.status).toBe(200);
+  expect(provisioned.headers.get('cache-control')).toBe('no-store');
+  expect(provisioned.data).toMatchObject({repositoryJobId:jobId,storageName:'Existing storage',password,repository:'sftp://backup@storage.example.invalid:23/repository'});
+  expect(provisioned.data.sshPrivateKey).toBe(privateKey.trimEnd()+'\n');
+  expect(provisioned.data.knownHosts).toBe('[storage.example.invalid]:23 '+hostKey+'\n');
+  expect(provisioned.data).not.toHaveProperty('command');
+  const second=await api('/admin/enroll',{name:'Unassigned'},admin);
+  const secondAuth={...auth,Authorization:'Bearer '+second.data.token,'X-Fortress-Agent-Id':second.data.id};
+  expect((await api('/setup',{repositoryJobId:jobId},secondAuth)).status).toBe(409);
+  expect((await api('/setup',{}, {...secondAuth,'X-Fortress-Agent-Id':enrolled.data.id})).status).toBe(401);
+  expect((await api('/admin/'+second.data.id+'/repository',{repositoryJobId:jobId},viewer,'PUT')).status).toBe(403);
+  expect((await api('/admin/'+second.data.id+'/repository',{repositoryJobId:jobId},admin,'PUT')).status).toBe(200);
+  expect((await api('/setup',{},secondAuth)).status).toBe(200);
+  const inventory=await api('/admin',undefined,admin,'GET');
+  expect(inventory.data.find((item:any)=>item.id===enrolled.data.id)).toMatchObject({repositoryJobId:jobId,storageName:'Existing storage'});
+  expect(JSON.stringify(inventory.data)).not.toContain(password);
+  expect(JSON.stringify(inventory.data)).not.toContain('PRIVATE KEY');
+  expect(JSON.stringify(inventory.data)).not.toContain(enrolled.data.token);
+  expect((await getOne<{count:number}>('SELECT count(*) AS count FROM managed_jobs'))?.count).toBe(0);
+  expect((await getOne<{last_seen:string|null}>('SELECT last_seen FROM managed_clients WHERE id=?',[enrolled.data.id]))?.last_seen).toBeNull();
+  await api('/admin/'+enrolled.data.id+'/disable',{},admin);
+  expect((await api('/setup',{},auth)).status).toBe(401);
+ }finally{
+  await new Promise<void>(resolve=>server.close(()=>resolve()));await closeDatabase();fs.rmSync(folder,{recursive:true,force:true});
+  if(previous.jwt===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=previous.jwt;
+  if(previous.key===undefined)delete process.env.FORTRESS_CREDENTIAL_KEY;else process.env.FORTRESS_CREDENTIAL_KEY=previous.key;
+ }
+},30000);

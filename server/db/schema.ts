@@ -16,6 +16,10 @@ const managedTablesDDL = `
       schedule_minutes INTEGER NOT NULL DEFAULT 0,
       next_run_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS managed_repositories (
+      client_id TEXT PRIMARY KEY REFERENCES managed_clients(id) ON DELETE CASCADE,
+      job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS managed_jobs (
       id TEXT PRIMARY KEY,
       client_id TEXT NOT NULL REFERENCES managed_clients(id),

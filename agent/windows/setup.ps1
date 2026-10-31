@@ -2,6 +2,7 @@
 [CmdletBinding()]
 param([string]$ConfigPath, [switch]$Elevated)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'provision.ps1')
 try {
     $admin=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if(!$admin){
@@ -14,8 +15,7 @@ try {
     }
     Write-Host 'Fortress Backup - Windows setup' -ForegroundColor Cyan
     Write-Host 'Enrollment does not install software. This setup selects folders, verifies access, and starts the agent.'
-    Write-Host 'Use an existing initialized Restic repository and its encryption password.'
-    Write-Host 'For SFTP, configure a dedicated SSH key and pinned known_hosts for SYSTEM first (see README.md).'
+    Write-Host 'The saved repository, encryption password, and SSH identity are retrieved securely from Fortress.'
     $agent=Join-Path $PSScriptRoot 'fortress-agent.exe'
     $restic=Join-Path $PSScriptRoot 'restic.exe'
     $sums=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'SHA256SUMS')
@@ -39,9 +39,15 @@ try {
             $parsedId=[guid]::Empty
             if(![guid]::TryParse($id,[ref]$parsedId)){throw 'Enter the enrollment client ID, not the laptop IP address.'}
             $token=Read-Host 'Enrollment token (hidden)' -AsSecureString
-            $repository=(Read-Host 'Existing Restic repository URL').Trim()
-            $password=Read-Host 'Existing repository encryption password (hidden)' -AsSecureString
-            if(!$password.Length){throw 'Repository encryption password is required.'}
+            $tokenText=(New-Object Net.NetworkCredential('', $token)).Password
+            if($tokenText -notmatch '^[A-Za-z0-9_-]{32,256}$'){throw 'Invalid enrollment token. Use the one-time token from Managed Clients.'}
+            Write-Host 'Retrieving the repository already assigned in Fortress...'
+            try {
+                $profile=Get-ManagedRepository -Controller $controller -Id $id -Token $tokenText
+            }catch{
+                throw 'Could not retrieve the saved repository. Check the HTTPS address and enrollment credentials, and choose a repository for this laptop in Managed Clients.'
+            }
+            Write-Host ('Using saved storage: '+$profile.storageName+' / '+$profile.repositoryName) -ForegroundColor Cyan
             Add-Type -AssemblyName System.Windows.Forms
             $sources=@()
             do {
@@ -54,22 +60,20 @@ try {
                     Write-Host ('Selected: '+$picker.SelectedPath)
                 }finally{$picker.Dispose()}
             }while((Read-Host 'Add another folder? [y/N]') -match '^(y|yes)$')
+            $ssh=Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
+            if(!(Test-Path -LiteralPath $ssh)){
+                Write-Host 'Installing the Windows OpenSSH client required for storage access...'
+                Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0 | Out-Null
+                if(!(Test-Path -LiteralPath $ssh)){throw 'Windows OpenSSH client installation did not complete. Check Windows optional features.'}
+            }
             # Protect the directory before writing any plaintext secrets, including on PowerShell 5.1.
             $temporary=Join-Path $env:TEMP ('FortressSetup-'+[guid]::NewGuid().ToString('N'))
-            $acl=New-Object Security.AccessControl.DirectorySecurity
-            $acl.SetSecurityDescriptorSddlForm('O:BAG:BAD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)')
-            # The launcher uses Windows PowerShell 5.1/.NET Framework. Create with
-            # the final ACL atomically so another process cannot preplant files.
-            [IO.Directory]::CreateDirectory($temporary,$acl) | Out-Null
+            $credentials=Save-ManagedRepository -Profile $profile -Directory $temporary
             $utf8=New-Object Text.UTF8Encoding($false)
             $tokenPath=Join-Path $temporary 'agent-token.txt'
-            $passwordPath=Join-Path $temporary 'repo-password.txt'
-            $tokenText=(New-Object Net.NetworkCredential('', $token)).Password
-            if($tokenText -notmatch '^[A-Za-z0-9_-]{32,256}$'){throw 'Invalid enrollment token. Use the one-time token from Managed Clients.'}
             [IO.File]::WriteAllText($tokenPath,$tokenText,$utf8)
-            [IO.File]::WriteAllText($passwordPath,(New-Object Net.NetworkCredential('', $password)).Password,$utf8)
             $ConfigPath=Join-Path $temporary 'agent.json'
-            $config=@{resticPath=$restic;repository=$repository;passwordFile=$passwordPath;sources=@($sources | Select-Object -Unique);excludes=@();host=$env:COMPUTERNAME;timeoutMinutes=240;useVSS=$true;controllerUrl=$controller;agentId=$id;agentTokenFile=$tokenPath}
+            $config=@{resticPath=$restic;repository=$credentials.repository;passwordFile=$credentials.passwordFile;sftpKeyFile=$credentials.sftpKeyFile;sftpKnownHostsFile=$credentials.sftpKnownHostsFile;sources=@($sources | Select-Object -Unique);excludes=@();host=$env:COMPUTERNAME;timeoutMinutes=240;useVSS=$true;controllerUrl=$controller;agentId=$id;agentTokenFile=$tokenPath}
             [IO.File]::WriteAllText($ConfigPath,($config | ConvertTo-Json -Depth 8),$utf8)
         }
         & $agent -config $ConfigPath -operation validate
