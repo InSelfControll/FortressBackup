@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-rc.1] - 2026-10-31
+
+- Preserve and correctly report storage credentials when editing a connection port.
+- Normalize temporary SSH key files for Restic, Borg, and Rsync, including pasted keys missing a final newline.
+- Detect Rocky Linux through its declared distribution family and support distribution-managed Restic without self-update.
+- Show Windows client setup, check-ins, and queued operations on the dashboard with automatic refresh.
+- Publish tested controller archives and Windows x64 bundles, executables, installers, configuration examples, guides, licenses, and checksums through version-tag releases.
+
 ## [Unreleased] - 2024-12-25
 
 ### Added

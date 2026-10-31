@@ -2,7 +2,7 @@
  * Resource CRUD API endpoints - Systems, Locations, Jobs, SSH Keys
  */
 
-import { System, Location, BackupJob, SSHKey } from '../../types.js';
+import { System, Location, BackupJob, SSHKey, ManagedAgent } from '../../types.js';
 import { apiFetch } from './client.js';
 
 // ==================== SYSTEMS ====================
@@ -111,3 +111,5 @@ export const deleteJob = async (id: string) => {
 
 export const testLocation = (id: string) => apiFetch<{ success: boolean; message: string }>(`/locations/${encodeURIComponent(id)}/test`, { method: 'POST' });
 export const checkSystem = (id: string) => apiFetch<{ success: boolean; message: string }>(`/systems/${encodeURIComponent(id)}/check`, { method: 'POST', body: '{}' });
+
+export const getManagedAgents = (page = 0) => apiFetch<ManagedAgent[]>(`/managed-agents/admin?limit=50&offset=${page * 50}`);

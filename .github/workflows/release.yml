@@ -1,0 +1,124 @@
+name: Release downloads
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  controller:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Require a version tag on main
+        shell: bash
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]
+          git merge-base --is-ancestor HEAD origin/main
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - name: Validate controller
+        run: |
+          bun install --frozen-lockfile
+          bun audit --audit-level=high
+          bun test
+          bun run build
+          bunx tsc --noEmit
+          bunx playwright install --with-deps chromium
+          bunx playwright test
+      - name: Package controller with built frontend
+        run: |
+          mkdir -p package/fortressbackup downloads
+          git archive HEAD | tar -x -C package/fortressbackup
+          cp -r dist package/fortressbackup/dist
+          tar -czf "downloads/fortressbackup-controller-${GITHUB_REF_NAME}.tar.gz" -C package fortressbackup
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: controller-downloads
+          path: downloads/*
+          if-no-files-found: error
+
+  windows:
+    uses: ./.github/workflows/windows-agent.yml
+
+  package-windows:
+    needs: windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: fortress-agent-windows-amd64
+          path: agent-artifact
+      - name: Assemble Windows x64 download
+        shell: pwsh
+        env:
+          RESTIC_VERSION: '0.19.1'
+          RESTIC_ZIP_SHA256: da948ad707ed690426473aaba2046cd61f8f90f6f0e7dab6be0d5796531de67d
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expectedAgent = ((Get-Content agent-artifact/fortress-agent.exe.sha256 -Raw) -split '\s+')[0]
+          if ((Get-FileHash agent-artifact/fortress-agent.exe -Algorithm SHA256).Hash -ine $expectedAgent) {
+            throw 'Agent artifact checksum mismatch'
+          }
+          $archive = Join-Path $env:RUNNER_TEMP 'restic-windows.zip'
+          Invoke-WebRequest -Uri "https://github.com/restic/restic/releases/download/v$env:RESTIC_VERSION/restic_$($env:RESTIC_VERSION)_windows_amd64.zip" -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ine $env:RESTIC_ZIP_SHA256) {
+            throw 'Restic download checksum mismatch'
+          }
+          $upstream = Join-Path $env:RUNNER_TEMP 'restic-upstream'
+          Expand-Archive -LiteralPath $archive -DestinationPath $upstream
+          $bundle = Join-Path $env:RUNNER_TEMP 'fortressbackup-windows'
+          New-Item -ItemType Directory -Path $bundle,downloads -Force | Out-Null
+          Copy-Item agent-artifact/fortress-agent.exe (Join-Path $bundle 'fortress-agent.exe')
+          Copy-Item (Join-Path $upstream "restic_$($env:RESTIC_VERSION)_windows_amd64.exe") (Join-Path $bundle 'restic.exe')
+          foreach ($name in @('install-task.ps1','agent.example.json','MANAGED.md','RESTIC-LICENSE.txt')) {
+            Copy-Item "agent/windows/$name" (Join-Path $bundle $name)
+          }
+          Copy-Item agent/windows/INSTALL.md (Join-Path $bundle 'README.md')
+          $checksums = Get-ChildItem -LiteralPath $bundle -File | Sort-Object Name | ForEach-Object {
+            '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          }
+          [IO.File]::WriteAllLines((Join-Path $bundle 'SHA256SUMS'), $checksums, [Text.Encoding]::ASCII)
+          Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath "downloads/fortressbackup-windows-amd64-$env:GITHUB_REF_NAME.zip"
+          Copy-Item (Join-Path $bundle 'fortress-agent.exe') downloads/fortress-agent-windows-amd64.exe
+          Copy-Item (Join-Path $bundle 'restic.exe') downloads/restic-windows-amd64.exe
+          Copy-Item agent/windows/install-task.ps1 downloads/install-task.ps1
+          Copy-Item agent/windows/agent.example.json downloads/agent.example.json
+          Copy-Item agent/windows/INSTALL.md downloads/WINDOWS-SETUP.md
+          Copy-Item agent/windows/MANAGED.md downloads/MANAGED-WINDOWS.md
+          Copy-Item agent/windows/RESTIC-LICENSE.txt downloads/RESTIC-LICENSE.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-downloads
+          path: downloads/*
+          if-no-files-found: error
+
+  publish:
+    needs: [controller, package-windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: '*-downloads'
+          merge-multiple: true
+          path: downloads
+      - name: Publish verified release downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          (cd downloads && sha256sum * > SHA256SUMS)
+          args=(--verify-tag --title "Fortress Backup ${GITHUB_REF_NAME}" --notes-file docs/RELEASE.md)
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then args+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" downloads/* "${args[@]}"

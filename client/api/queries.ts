@@ -12,6 +12,7 @@ export const queryKeys = {
     jobs: ['jobs'],
     locations: ['locations'],
     sshKeys: ['sshKeys'],
+    managedAgents: ['managed-agents'],
 };
 
 // Hooks
@@ -73,5 +74,14 @@ export function useSSHKeys() {
         queryFn: async () => {
             return requireData(await API.getSSHKeys());
         }
+    });
+}
+
+export function useManagedAgents(page = 0) {
+    return useQuery({
+        queryKey: [...queryKeys.managedAgents, page],
+        staleTime: 0,
+        refetchInterval: 10000,
+        queryFn: () => API.getManagedAgents(page).then(requireData),
     });
 }

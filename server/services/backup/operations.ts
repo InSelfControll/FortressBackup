@@ -100,7 +100,7 @@ export async function executeBackup(
                 tempKeyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fortress-ssh-'));
                 fs.chmodSync(tempKeyDir, 0o700);
                 const keyPath=path.join(tempKeyDir,'key');
-                fs.writeFileSync(keyPath, sshConfig.privateKey, { mode:0o600,flag:'wx' });
+                fs.writeFileSync(keyPath, sshConfig.privateKey.replace(/\r\n/g,'\n').trimEnd()+'\n', { mode:0o600,flag:'wx' });
                 tempKeyFile=keyPath;
             } else if (sshConfig.privateKey) {
                 if(!path.isAbsolute(sshConfig.privateKey) || !/^[A-Za-z0-9_./-]+$/.test(sshConfig.privateKey))

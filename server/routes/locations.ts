@@ -53,9 +53,7 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
         }
         if(location.host_public_key)location.host_public_key=validateHostPublicKey(location.host_public_key);
         await db.saveLocation(location);
-        res.json({id:location.id,name:location.name,type:location.type,path:location.path,
-            endpoint:location.endpoint,region:location.region,host_public_key:location.host_public_key,
-            hasAccessKey:!!location.access_key,hasSecretKey:!!location.secret_key});
+        res.json(await db.getPublicLocation(location.id));
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
@@ -71,9 +69,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
         }
         if(location.host_public_key)location.host_public_key=validateHostPublicKey(location.host_public_key);
         await db.saveLocation(location);
-        res.json({id:location.id,name:location.name,type:location.type,path:location.path,
-            endpoint:location.endpoint,region:location.region,host_public_key:location.host_public_key,
-            hasAccessKey:!!location.access_key,hasSecretKey:!!location.secret_key});
+        res.json(await db.getPublicLocation(location.id));
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }

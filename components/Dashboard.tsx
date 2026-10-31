@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../client/api/queries';
 import toast from 'react-hot-toast';
 import { QueryStatus } from './QueryStatus';
+import { ManagedClientOverview } from './ManagedClients';
 import React, { useMemo, useState } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
@@ -12,9 +13,9 @@ import {
 import { BackupJob, JobStatus, System } from '../types';
 import { Activity, Server, HardDrive, AlertCircle, Play, Clock, AlertTriangle, CheckCircle2, Zap } from 'lucide-react';
 
-import { useJobs, useSystems } from '../client/api/queries';
+import { useJobs, useSystems, useManagedAgents } from '../client/api/queries';
 
-interface DashboardProps { searchQuery?: string }
+interface DashboardProps { searchQuery?: string; onOpenManagedClients?: () => void }
 
 const StatCard = ({ title, value, subtext, icon: Icon, color }: any) => (
   <div className="card" style={{ border: '1px solid var(--color-border-subtle)' }}>
@@ -47,8 +48,9 @@ const QuickActionCard = ({ title, description, icon: Icon, onClick, color, disab
   </button>
 );
 
-export const Dashboard: React.FC<DashboardProps> = ({searchQuery = ''}) => {
+export const Dashboard: React.FC<DashboardProps> = ({searchQuery = '',onOpenManagedClients}) => {
   const jobsQuery = useJobs(); const systemsQuery = useSystems();
+  const managedAgentsQuery = useManagedAgents();
   const {data: jobs = []} = jobsQuery; const {data: systems = []} = systemsQuery;
   const client = useQueryClient(); const [busy, setBusy] = useState(false);
   const runActions = async (kind: 'jobs' | 'health') => {
@@ -103,6 +105,9 @@ export const Dashboard: React.FC<DashboardProps> = ({searchQuery = ''}) => {
         <StatCard title="System Health" value={systems.length > 0 ? `${avgSystemHealth}%` : 'N/A'} subtext={`${onlineSystems}/${systems.length} online`} icon={Server} color="#22c55e" />
         <StatCard title="Failed Jobs" value={failedJobs.toString()} subtext={failedJobs > 0 ? 'Needs attention' : 'All good'} icon={AlertCircle} color="#ef4444" />
       </div>
+
+      <QueryStatus pending={managedAgentsQuery.isPending} error={managedAgentsQuery.error} retry={()=>void managedAgentsQuery.refetch()}/>
+      {managedAgentsQuery.data&&<ManagedClientOverview agents={managedAgentsQuery.data} onOpen={onOpenManagedClients}/>}
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

@@ -11,7 +11,7 @@ A self-hosted controller for managing backup sources, storage destinations, and 
 [![Built with Bun](https://img.shields.io/badge/runtime-Bun-14151a?logo=bun&logoColor=white)](https://bun.sh/)
 [![Interface](https://img.shields.io/badge/interface-React-149eca?logo=react&logoColor=white)](https://react.dev/)
 
-[Get started](#get-started) · [Configure a backup](#configure-a-backup) · [Storage Box](#hetzner-storage-box) · [Security & recovery](#security--recovery) · [Contributing](#development--verification)
+[Downloads](https://github.com/InSelfControll/FortressBackup/releases) · [Get started](#get-started) · [Configure a backup](#configure-a-backup) · [Storage Box](#hetzner-storage-box) · [Security & recovery](#security--recovery) · [Contributing](#development--verification)
 
 </div>
 

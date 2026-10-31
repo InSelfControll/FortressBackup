@@ -110,7 +110,8 @@ test('export fetches cold data; invalid import stays editable; valid import pers
 });
 
 test('managed enrollment, schedule, job queue, and revocation persist',async({page})=>{
-    await go(page,'Managed Clients');await page.getByLabel('Client name').fill('Disposable Windows Client');await page.getByRole('button',{name:'Enroll',exact:true}).click();await expect(page.getByText('Save credentials now. Token displayed only once.')).toBeVisible();await page.getByRole('button',{name:"I've saved these credentials"}).click();await page.getByLabel('Backup schedule').selectOption('60');await page.getByRole('button',{name:'backup',exact:true}).click();await expect(page.getByText(/backup · pending/)).toBeVisible();
+    await go(page,'Managed Clients');await page.getByLabel('Client name').fill('Disposable Windows Client');await page.getByRole('button',{name:'Enroll',exact:true}).click();await expect(page.getByText('Save credentials now. Token displayed only once.')).toBeVisible();await page.getByRole('button',{name:"I've saved these credentials"}).click();await page.getByLabel('Backup schedule').selectOption('60');await page.getByRole('button',{name:'backup',exact:true}).click();await expect(page.getByText(/backup · Queued — waiting for the Windows agent/)).toBeVisible();
+    await go(page,'Dashboard');const activity=page.getByRole('region',{name:'Windows client activity'});await expect(activity.getByText('Disposable Windows Client',{exact:true})).toBeVisible();await expect(activity.getByText('Awaiting setup',{exact:true})).toBeVisible();await expect(activity.getByText(/Queued — waiting for the Windows agent/)).toBeVisible();await activity.getByRole('button',{name:'Open Managed Clients'}).click();
     page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'Disable',exact:true}).click();await expect(page.getByRole('button',{name:'backup',exact:true})).toBeDisabled();
 });
 

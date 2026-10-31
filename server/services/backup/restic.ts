@@ -52,7 +52,7 @@ const resticPrefix = (config: ResticConfig): string => {
     if(config.destinationType!=='sftp')return `${env ? env + ' ' : ''}restic -r ${sh(repository)}`;
     const peer=sftpPeer(repository);
     const publicKey=validateHostPublicKey(config.destinationHostPublicKey);
-    const privateKey = config.destinationSecretKey?.replace(/\r\n/g, '\n');
+    const privateKey = config.destinationSecretKey?.replace(/\r\n/g, '\n').trimEnd();
     if(!privateKey?.startsWith('-----'))
         throw new Error('Restic SFTP requires an SSH private key; password-only authentication is not supported');
     if(/[\u0000-\u0009\u000b-\u001f\u007f]/.test(privateKey))
@@ -65,7 +65,7 @@ const resticPrefix = (config: ResticConfig): string => {
     const sftpCommand=`${sh(sshCommandStart+' ')}UserKnownHostsFile="$FORTRESS_TRUST_DIR/known_hosts"${sh(' -i ')}"$FORTRESS_TRUST_DIR/id_key"${sh(' -s sftp')}`;
     const keySetup=[
         'fortress_peer_cleanup() { rm -f -- "$FORTRESS_TRUST_DIR/known_hosts" "$FORTRESS_TRUST_DIR/id_key"; rmdir -- "$FORTRESS_TRUST_DIR"; }',
-        `printf '%s' ${privateKeyLiteral} > "$FORTRESS_TRUST_DIR/id_key" || exit 1`,
+        `printf '%s\\n' ${privateKeyLiteral} > "$FORTRESS_TRUST_DIR/id_key" || exit 1`,
         'chmod 600 "$FORTRESS_TRUST_DIR/id_key" || exit 1',
         ''
     ].join('\n');

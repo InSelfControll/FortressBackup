@@ -7,25 +7,27 @@ import { SSHExecutor } from './types.js';
 export const detectOS = async (executor: SSHExecutor): Promise<{ distro: string; packageManager: string }> => {
     executor.log('info', 'Detecting operating system...');
 
-    // Try to detect Debian/Ubuntu
+    // Match both the distribution and its declared compatible families.
     try {
         const { stdout } = await executor.executeCommand('cat /etc/os-release 2>/dev/null || echo ""');
+        const ids = (stdout.match(/^(?:ID|ID_LIKE)=.*$/gm) || []).flatMap(line =>
+            line.slice(line.indexOf('=') + 1).replace(/["']/g, '').trim().split(/\s+/));
 
-        if (stdout.includes('ID=ubuntu') || stdout.includes('ID=debian') || stdout.includes('ID=raspbian')) {
+        if (ids.some(id => ['ubuntu', 'debian', 'raspbian'].includes(id))) {
             const nameMatch = stdout.match(/PRETTY_NAME="([^"]+)"/);
             const distro = nameMatch ? nameMatch[1] : 'Debian-based Linux';
             executor.log('success', `Detected: ${distro}`);
             return { distro, packageManager: 'apt' };
         }
 
-        if (stdout.includes('ID=fedora') || stdout.includes('ID=rhel') || stdout.includes('ID=centos')) {
+        if (ids.some(id => ['fedora', 'rhel', 'centos'].includes(id))) {
             const nameMatch = stdout.match(/PRETTY_NAME="([^"]+)"/);
             const distro = nameMatch ? nameMatch[1] : 'RHEL-based Linux';
             executor.log('success', `Detected: ${distro}`);
             return { distro, packageManager: 'dnf' };
         }
 
-        if (stdout.includes('ID=arch')) {
+        if (ids.includes('arch')) {
             executor.log('success', 'Detected: Arch Linux');
             return { distro: 'Arch Linux', packageManager: 'pacman' };
         }
@@ -85,10 +87,10 @@ export const installBorg = async (executor: SSHExecutor, packageManager: string)
 };
 
 export const installRestic = async (executor: SSHExecutor): Promise<boolean> => {
-    executor.log('info', 'Checking the latest stable Restic release...');
+    executor.log('info', 'Installing or verifying Restic...');
 
     // Bootstrap from a trusted distribution repository. The upstream self-update
-    // operation validates signed release metadata and selects the correct architecture.
+    // operation validates signed release metadata when available in the package.
     const command = [
         'set -eu',
         'if ! command -v restic >/dev/null 2>&1; then',
@@ -103,13 +105,17 @@ export const installRestic = async (executor: SSHExecutor): Promise<boolean> => 
         '    echo "No supported trusted package source for Restic" >&2; exit 1',
         '  fi',
         'fi',
-        'tmpdir=$(mktemp -d)',
-        'trap \'rm -rf "$tmpdir"\' EXIT HUP INT TERM',
-        'restic self-update --output "$tmpdir/restic"',
-        'if [ -s "$tmpdir/restic" ]; then',
-        '  chmod 755 "$tmpdir/restic"',
-        '  "$tmpdir/restic" version',
-        '  sudo -n install -m 0755 "$tmpdir/restic" /usr/local/bin/restic',
+        'if restic self-update --help >/dev/null 2>&1; then',
+        '  tmpdir=$(mktemp -d)',
+        '  trap \'rm -rf "$tmpdir"\' EXIT HUP INT TERM',
+        '  restic self-update --output "$tmpdir/restic"',
+        '  if [ -s "$tmpdir/restic" ]; then',
+        '    chmod 755 "$tmpdir/restic"',
+        '    "$tmpdir/restic" version',
+        '    sudo -n install -m 0755 "$tmpdir/restic" /usr/local/bin/restic',
+        '  fi',
+        'else',
+        '  echo "Using distribution-managed Restic (self-update unavailable)"',
         'fi',
         'restic version',
     ].join('\n');
@@ -121,7 +127,7 @@ export const installRestic = async (executor: SSHExecutor): Promise<boolean> => 
             executor.log('error', `Restic update failed: ${stderr || stdout}`);
             return false;
         }
-        executor.log('success', `Restic updated: ${stdout.trim().split('\n').pop() || 'verified'}`);
+        executor.log('success', `Restic verified: ${stdout.trim().split('\n').pop() || 'verified'}`);
         return true;
     } catch (error) {
         executor.log('error', `Restic update failed: ${error instanceof Error ? error.message : String(error)}`);

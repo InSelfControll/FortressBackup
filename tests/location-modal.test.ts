@@ -128,6 +128,20 @@ test('identifies the SFTP credential as a private key and rejects password messa
   expect(html).not.toContain('Use SSH key or password');
 });
 
+test('port edits retain a saved SSH key without sending an empty replacement', () => {
+  const location: Location = {
+    id: 'saved-sftp', name: 'Saved SFTP', type: 'sftp',
+    path: 'sftp://backup@storage.example.invalid:22/backups',
+    hostPublicKey: HOST_PUBLIC_KEY, hasAccessKey: true, hasSecretKey: true,
+  };
+  const state = modal.getLocationFormState(location);
+  const payload = JSON.parse(JSON.stringify(modal.buildLocationData({ ...state, region: '23' }, false, location.id)));
+  expect(payload.path).toBe('sftp://backup@storage.example.invalid:23/backups');
+  expect(payload.host_public_key).toBe(HOST_PUBLIC_KEY);
+  expect(payload).not.toHaveProperty('secret_key');
+  expect(renderLocation(location)).toContain('SSH private key saved. Leave blank to keep it');
+});
+
 test('requires a host public key for SFTP submission', () => {
   expect(typeof modal.canSubmitLocation).toBe('function');
 

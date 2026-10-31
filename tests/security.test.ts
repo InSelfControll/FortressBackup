@@ -73,6 +73,26 @@ test('privileged APIs deny viewers and never echo stored credentials', async()=>
   expect(row?.access_key.startsWith('enc:v1:')).toBe(true);
   expect(row?.secret_key.startsWith('enc:v1:')).toBe(true);
   expect((await getLocation(response.id))?.secret_key).toBe(secret);
+  const hostPublicKey='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINb3o4m8E7d1+Nh4V2m3zF6nY7sR4r7yYh6m4fK3M2bV';
+  const storage={name:'SSH storage',type:'sftp',path:'sftp://backup@storage.example.invalid:22/backups',
+    region:'22',host_public_key:hostPublicKey};
+  const sftpCreated=await request('/locations',admin,'POST',{...storage,access_key:access,secret_key:secret});
+  expect(sftpCreated.status).toBe(200);
+  const sftp=await sftpCreated.json() as any;
+  const beforePortEdit=await getOne<{access_key:string;secret_key:string;host_public_key:string}>(
+    'SELECT access_key,secret_key,host_public_key FROM locations WHERE id=?',[sftp.id]);
+  const portEdited=await request('/locations/'+sftp.id,admin,'PUT',{
+    ...storage,path:'sftp://backup@storage.example.invalid:23/backups',region:'23'});
+  expect(portEdited.status).toBe(200);
+  const editedStorage=await portEdited.json() as any;
+  expect(editedStorage.hasAccessKey).toBe(true);
+  expect(editedStorage.hasSecretKey).toBe(true);
+  expect(JSON.stringify(editedStorage)).not.toContain(secret);
+  expect(JSON.stringify(editedStorage)).not.toContain(access);
+  expect(await getOne<{access_key:string;secret_key:string;host_public_key:string}>(
+    'SELECT access_key,secret_key,host_public_key FROM locations WHERE id=?',[sftp.id]))
+    .toEqual(beforePortEdit);
+  expect((await getLocation(sftp.id))?.secret_key).toBe(secret);
   const aiSecret='test-ai-'+crypto.randomBytes(24).toString('hex');
   await saveConfig('ai_config',{provider:'Gemini',apiKey:aiSecret});
   const sealed=await getOne<{value:string}>('SELECT value FROM config WHERE key=?',['ai_config']);

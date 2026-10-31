@@ -7,6 +7,14 @@ durable status reporting, and encrypted Restic repositories.
 **Canonical setup guide:** [MANAGED.md](MANAGED.md). Do not use old standalone
 Task Scheduler instructions.
 
+## Downloads
+
+Download the complete Windows x64 bundle from
+[GitHub Releases](https://github.com/InSelfControll/FortressBackup/releases).
+It includes the agent executable, Restic, installer, example configuration,
+setup guides, license, and checksums. Follow [INSTALL.md](INSTALL.md); building
+from source is optional. Enrollment alone does not install the agent.
+
 ## Build
 
 ```powershell

@@ -339,7 +339,7 @@ function App() {
         {/* Page Content */}
         <div data-app-content className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
           <div className="min-w-0 w-full max-w-7xl mx-auto">
-            {currentView === 'dashboard' && (currentUser.role === 'admin' ? <Dashboard searchQuery={searchQuery} /> : <p>Your account is signed in. Ask an administrator for access to backup management.</p>)}
+            {currentView === 'dashboard' && (currentUser.role === 'admin' ? <Dashboard searchQuery={searchQuery} onOpenManagedClients={()=>setCurrentView('managed-clients')} /> : <p>Your account is signed in. Ask an administrator for access to backup management.</p>)}
             {currentView === 'jobs' && <Jobs aiConfig={aiConfig} searchQuery={searchQuery} />}
             {currentView === 'systems' && <Systems searchQuery={searchQuery} />}
             {currentView === 'managed-clients' && currentUser.role === 'admin' && <ManagedClients />}
