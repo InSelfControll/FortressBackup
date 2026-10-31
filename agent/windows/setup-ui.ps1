@@ -59,6 +59,7 @@ function New-SetupWindow([string]$SetupRoot){
     $close=Add-SetupControl Button close 'Cancel' 490 558 140 33
     $install.Enabled=$false;$add.Enabled=$false;$remove.Enabled=$false
     $form.AcceptButton=$connect
+    $form.CancelButton=$close
     $changed={
         if($state.Profile -and !$state.Worker){
             $state.Profile=$null;$state.Token=''
