@@ -1,6 +1,7 @@
 import React from 'react';
 import { afterAll, beforeAll, beforeEach, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { fileURLToPath } from 'node:url';
 import { Sidebar } from '../components/layout/Sidebar.tsx';
 import { queryClient } from '../client/query.ts';
 import type { User } from '../types.ts';
@@ -54,6 +55,56 @@ const viewer: User = {
   role: 'viewer',
   avatar: '/dummy-avatar.png',
 };
+
+test('cold API imports and session teardown do not require browser styles or a document', async () => {
+  // A fresh process prevents an earlier UI import from hiding an import-order bug.
+  const child = Bun.spawn([process.execPath, '--eval', `
+    import { strict as assert } from 'node:assert';
+    const values = new Map();
+    globalThis.localStorage = {
+      getItem: key => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: key => values.delete(key),
+    };
+    globalThis.window = { location: { pathname: '/settings', href: '/settings' } };
+    assert.equal(typeof document, 'undefined');
+    globalThis.fetch = async input => String(input) === '/api/auth/logout'
+      ? Response.json({ success: true })
+      : Response.json({ error: 'Invalid token' }, { status: 401 });
+    const api = await import('./client/api/index.ts');
+    const { queryClient } = await import('./client/query.ts');
+    api.setToken('disposable-expired-session');
+    localStorage.setItem('fortress_user_session', 'disposable-user');
+    queryClient.setQueryData(['private-records'], ['disposable-private-record']);
+    const mutation = queryClient.getMutationCache().build(queryClient, {
+      gcTime: 0,
+      mutationFn: async () => { throw new Error('disposable mutation failure'); },
+    });
+    await assert.rejects(mutation.execute(null), /disposable mutation failure/);
+    assert.deepEqual(await api.apiFetch('/systems'), { error: 'Session expired' });
+    assert.equal(api.getToken(), null);
+    assert.equal(localStorage.getItem('fortress_user_session'), null);
+    assert.equal(queryClient.getQueryCache().getAll().length, 0);
+    assert.equal(queryClient.getMutationCache().getAll().length, 0);
+    assert.equal(window.location.href, '/');
+  `], {
+    cwd: fileURLToPath(new URL('..', import.meta.url)),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const deadline = setTimeout(() => child.kill(), 4_000);
+  try {
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect({ exitCode, output: exitCode === 0 ? '' : stdout + stderr }).toEqual({ exitCode: 0, output: '' });
+  } finally {
+    clearTimeout(deadline);
+    child.kill();
+  }
+});
 
 beforeAll(async () => {
   Object.defineProperty(globalThis, 'localStorage', {
