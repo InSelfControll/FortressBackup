@@ -61,8 +61,14 @@ router.post('/admin/enroll', authenticateToken, requireAdmin, async (req, res, n
     const name = req.body?.name;
     if (typeof name !== 'string' || !name.trim() || name.length > 100)
       return res.status(400).json({ error: 'Invalid name' });
-    const repositoryJobId=req.body?.repositoryJobId;
-    if(repositoryJobId!==undefined){
+    let repositoryJobId=req.body?.repositoryJobId;
+    if(repositoryJobId===undefined){
+      const ready=await query<{id:string}>(`SELECT j.id FROM jobs j JOIN locations l ON l.id=j.destination_id
+        WHERE j.tool='Restic' AND j.repo_password IS NOT NULL AND j.repo_password<>''
+        AND l.type='sftp' AND l.secret_key IS NOT NULL AND l.secret_key<>'' AND l.host_public_key IS NOT NULL`);
+      if(ready.length===1)repositoryJobId=ready[0].id;
+    }
+    if(repositoryJobId!=null){
       if(typeof repositoryJobId!=='string'||!uuid.test(repositoryJobId))return res.status(400).json({error:'Invalid repository job'});
       try{await managedRepository(repositoryJobId)}catch(e){return res.status(400).json({error:e instanceof Error?e.message:'Repository not ready'})}
     }

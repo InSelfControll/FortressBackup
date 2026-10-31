@@ -56,7 +56,9 @@ test('repository provisioning is scoped, TLS-only, redacted, revocable, and neve
   expect(provisioned.data.sshPrivateKey).toBe(privateKey.trimEnd()+'\n');
   expect(provisioned.data.knownHosts).toBe('[storage.example.invalid]:23 '+hostKey+'\n');
   expect(provisioned.data).not.toHaveProperty('command');
-  const second=await api('/admin/enroll',{name:'Unassigned'},admin);
+  const automatic=await api('/admin/enroll',{name:'Automatic repository'},admin);
+  expect((await getOne<{job_id:string}>('SELECT job_id FROM managed_repositories WHERE client_id=?',[automatic.data.id]))?.job_id).toBe(jobId);
+  const second=await api('/admin/enroll',{name:'Unassigned',repositoryJobId:null},admin);
   const secondAuth={...auth,Authorization:'Bearer '+second.data.token,'X-Fortress-Agent-Id':second.data.id};
   expect((await api('/setup',{repositoryJobId:jobId},secondAuth)).status).toBe(409);
   expect((await api('/setup',{}, {...secondAuth,'X-Fortress-Agent-Id':enrolled.data.id})).status).toBe(401);
