@@ -90,6 +90,7 @@ export interface System {
   health: number;
   installedTools?: BackupTool[];
   sshKeyId?: string;
+  hostPublicKey?: string;
 }
 
 export interface Location {
@@ -101,6 +102,7 @@ export interface Location {
   region?: string;
   accessKey?: string;
   secretKey?: string;
+  hostPublicKey?: string;
 }
 
 export interface BackupJob {

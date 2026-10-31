@@ -9,6 +9,34 @@ interface RestoreModalProps {
     onClose: () => void;
 }
 
+interface RestorePayloadInput {
+    snapshotId: string;
+    restorePath: string;
+    systemId: string;
+    fileSelectionMode: 'all' | 'specific';
+    selectedFiles: string[];
+}
+
+export const buildRestorePayload = ({
+    snapshotId,
+    restorePath,
+    systemId,
+    fileSelectionMode,
+    selectedFiles,
+}: RestorePayloadInput) => {
+    const payload: any = { snapshotId, restorePath, systemId };
+    if (fileSelectionMode === 'specific') {
+        payload.paths = selectedFiles;
+    }
+    return payload;
+};
+
+export const canStartRestore = (
+    restorePath: string,
+    fileSelectionMode: 'all' | 'specific',
+    selectedFiles: string[]
+) => Boolean(restorePath) && restorePath !== '/' && (fileSelectionMode === 'all' || selectedFiles.length > 0);
+
 export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen, onClose }) => {
     const [step, setStep] = useState<'snapshots' | 'config' | 'restoring' | 'result'>('snapshots');
     const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
@@ -16,7 +44,6 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
     const [error, setError] = useState<string | null>(null);
 
     const [selectedSnapshot, setSelectedSnapshot] = useState<Snapshot | null>(null);
-    const [restoreToOriginal, setRestoreToOriginal] = useState(false);
     const [fileSelectionMode, setFileSelectionMode] = useState<'all' | 'specific'>('all');
     const [files, setFiles] = useState<any[]>([]);
     const [loadingFiles, setLoadingFiles] = useState(false);
@@ -37,7 +64,6 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
             setStep('snapshots');
             setError(null);
             setRestoreLogs([]);
-            setRestoreToOriginal(false);
             setFileSelectionMode('all');
             setFiles([]);
             setSelectedFiles([]);
@@ -120,11 +146,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
     };
 
     const handleRestore = async () => {
-        if (!selectedSnapshot) return;
-
-        // precise path logic: if original, use root. If custom, use input.
-        const effectivePath = restoreToOriginal ? '/' : restorePath;
-        if (!effectivePath) return;
+        if (!selectedSnapshot || !canStartRestore(restorePath, fileSelectionMode, selectedFiles)) return;
 
         setStep('restoring');
         setError(null);
@@ -139,15 +161,13 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                 'Content-Type': 'application/json'
             };
 
-            const payload: any = {
+            const payload = buildRestorePayload({
                 snapshotId: selectedSnapshot.id,
-                restorePath: effectivePath,
-                systemId: targetSystemId
-            };
-
-            if (fileSelectionMode === 'specific' && selectedFiles.length > 0) {
-                payload.paths = selectedFiles;
-            }
+                restorePath,
+                systemId: targetSystemId,
+                fileSelectionMode,
+                selectedFiles
+            });
 
             const res = await fetch(`/api/jobs/${job.id}/restore`, {
                 method: 'POST',
@@ -280,32 +300,17 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                                     </div>
 
                                     <div>
-                                        <label className="flex items-center justify-between mb-2">
-                                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Restore Location</span>
-                                            <button
-                                                onClick={() => setRestoreToOriginal(!restoreToOriginal)}
-                                                className={`text-[10px] font-bold px-2 py-1 rounded border transition-colors ${restoreToOriginal ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'}`}
-                                            >
-                                                {restoreToOriginal ? 'Using Original Path' : 'Use Original Path'}
-                                            </button>
-                                        </label>
-
-                                        {restoreToOriginal ? (
-                                            <div className="p-3 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-400 text-sm italic flex items-center gap-2">
-                                                <RotateCcw size={14} /> Will restore files to their original paths
-                                            </div>
-                                        ) : (
-                                            <div className="relative">
-                                                <FolderInput className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                                                <input
-                                                    type="text"
-                                                    value={restorePath}
-                                                    onChange={e => setRestorePath(e.target.value)}
-                                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
-                                                    placeholder="/tmp/restored_files"
-                                                />
-                                            </div>
-                                        )}
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Restore Location</label>
+                                        <div className="relative">
+                                            <FolderInput className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                                            <input
+                                                type="text"
+                                                value={restorePath}
+                                                onChange={e => setRestorePath(e.target.value)}
+                                                className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
+                                                placeholder="/tmp/restored_files"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 
@@ -437,7 +442,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                         {step === 'config' && (
                             <button
                                 onClick={handleRestore}
-                                disabled={!restorePath}
+                                disabled={!canStartRestore(restorePath, fileSelectionMode, selectedFiles)}
                                 className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-2"
                             >
                                 <RotateCcw size={16} /> Start Restore

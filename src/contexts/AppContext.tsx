@@ -67,9 +67,19 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const [aiConfig, setAiConfig] = useState<AIConfig>({ provider: AIProvider.NONE });
   const [dbConfig, setDbConfig] = useState<DatabaseConfig | null>(null);
   const [ssoConfig, setSsoConfig] = useState<SSOConfig | null>(null);
+  const [publicSsoConfig, setPublicSsoConfig] = useState<SSOConfig | null>(null);
   const [authMode, setAuthMode] = useState<'local' | 'sso' | null>(null);
 
   const queryClient = useQueryClient();
+
+  const clearAuthenticatedState = () => {
+    setCurrentUser(null);
+    setAiConfig({ provider: AIProvider.NONE });
+    setDbConfig(null);
+    setSsoConfig(null);
+  };
+
+  useEffect(() => API.subscribeToSessionTeardown(clearAuthenticatedState), []);
 
   // Initialize the application
   useEffect(() => {
@@ -103,7 +113,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
                   setAuthMode(mode);
                   localStorage.setItem('fortress_auth_mode', mode);
                 }
-                if (sso) setSsoConfig(sso);
+                if (sso) {
+                  setPublicSsoConfig(sso);
+                  setSsoConfig(sso);
+                }
               } catch (parseError) {
                 console.log('[App] Could not parse public config:', parseError);
               }
@@ -135,13 +148,19 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 
 
   const handleLogin = (user: User) => {
+    setAiConfig({ provider: AIProvider.NONE });
+    setDbConfig(null);
+    setSsoConfig(user.role==='admin'?publicSsoConfig:null);
     setCurrentUser(user);
     localStorage.setItem('fortress_user_session', JSON.stringify(user));
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem('fortress_user_session');
+  const handleLogout = async () => {
+    try {
+      await API.logout();
+    } finally {
+      clearAuthenticatedState();
+    }
   };
 
   const completeSetup = async (config: {
@@ -159,6 +178,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     setAiConfig(ai);
     setDbConfig(db);
     setSsoConfig(sso);
+    setPublicSsoConfig({ provider: sso.provider, clientId: sso.clientId, discoveryUrl: sso.discoveryUrl });
     setAuthMode(mode);
 
     try {
@@ -275,7 +295,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     setAiConfig,
     dbConfig,
     setDbConfig,
-    ssoConfig,
+    ssoConfig: currentUser?ssoConfig:publicSsoConfig,
     setSsoConfig,
     authMode,
     setAuthMode,

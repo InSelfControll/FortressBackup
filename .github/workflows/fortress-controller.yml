@@ -1,27 +1,33 @@
 name: Fortress controller
 on:
   push:
-    paths:
+    paths: &controller-paths
       - 'server/**'
       - 'tests/**'
       - 'scripts/**'
       - 'components/**'
+      - 'client/**'
+      - 'src/**'
+      - 'agent/**'
+      - 'landing/**'
       - 'App.tsx'
       - 'types.ts'
-      - 'client/**'
+      - 'index.tsx'
+      - 'index.html'
+      - 'global.css'
+      - 'vite.config.ts'
+      - 'tsconfig.json'
+      - 'tailwind.config.js'
+      - 'postcss.config.js'
+      - 'Dockerfile'
+      - 'docker-compose.yaml'
+      - 'docker-compose.postgres.yaml'
       - 'package.json'
       - 'bun.lock'
+      - '.github/workflows/windows-agent.yml'
       - '.github/workflows/fortress-controller.yml'
   pull_request:
-    paths:
-      - 'server/**'
-      - 'components/**'
-      - 'App.tsx'
-      - 'types.ts'
-      - 'client/**'
-      - 'package.json'
-      - 'bun.lock'
-      - '.github/workflows/fortress-controller.yml'
+    paths: *controller-paths
 permissions:
   contents: read
 jobs:
@@ -36,8 +42,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Audit dependency vulnerabilities
         run: bun audit --audit-level=high
-      - name: Managed-agent integration test
-        run: bun test tests/managed-agents.test.ts tests/security.test.ts
+      - name: Bun regression tests
+        run: bun test
       - name: Generate route tree and build frontend
         run: bun run build
       - name: Type-check generated route tree

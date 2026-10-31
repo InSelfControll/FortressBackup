@@ -25,16 +25,18 @@ export async function buildJobExecutionContext(job:db.Job, credentialsInput:Reco
   if(!tool)throw new Error('Unsupported backup engine');
   if(!Array.isArray(apiJob.sourcePaths)||!apiJob.sourcePaths.length)
     throw new Error('No backup source paths');
-  const sshConfig:SSHConfig={
+  const sshConfig:SSHConfig & {hostPublicKey:string}={
     host:system.host,port:system.port||22,username:system.username||'root',
     hostFingerprint:system.host_fingerprint||'',
+    hostPublicKey:(system as db.System & {host_public_key?:string}).host_public_key||'',
     privateKey:credentials.privateKey,passphrase:credentials.passphrase,password:credentials.password
   };
-  const jobConfig:BackupJobConfig={
+  const jobConfig:BackupJobConfig & {destinationHostPublicKey?:string}={
     jobId:apiJob.id,jobName:String(apiJob.name).replace(/\s+/g,'_'),
     tool,sourcePaths:apiJob.sourcePaths,
     destinationType:destination.type as BackupJobConfig['destinationType'],
     destinationPath:destination.path,
+    destinationHostPublicKey:destination.host_public_key,
     destinationEndpoint:destination.endpoint,
     destinationRegion:destination.region,
     destinationAccessKey:destination.access_key,

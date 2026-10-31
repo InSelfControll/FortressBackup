@@ -3,11 +3,12 @@
  */
 
 // @ts-ignore - Vite provides import.meta.env
-const API_BASE = (import.meta as any).env?.VITE_API_URL || 'http://localhost:9001/api';
+const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
 
 export interface ApiResponse<T> {
     data?: T;
     error?: string;
+    linkToken?: string;
 }
 
 // Token management
@@ -49,18 +50,12 @@ export const apiFetch = async <T>(
         const data = await response.json();
 
         if (!response.ok) {
-            if (response.status === 401 || response.status === 403) {
+            if (response.status === 401) {
                 // Session expired or invalid
                 console.warn(`[API] Auth error ${response.status}:`, data.error);
                 // Import dynamically to avoid circular dependency
                 const { logout } = await import('./auth');
-                logout();
-
-                // Force hard reload if session seems stuck
-                if (localStorage.getItem('fortress_user_session')) {
-                    console.error('[API] Failed to clear session, forcing removal');
-                    localStorage.removeItem('fortress_user_session');
-                }
+                await logout();
 
                 if (window.location.pathname !== '/') {
                     window.location.href = '/';
@@ -69,7 +64,10 @@ export const apiFetch = async <T>(
                 }
                 return { error: 'Session expired' };
             }
-            return { error: data.error || 'Request failed' };
+            return {
+                error: data.error || 'Request failed',
+                ...(typeof data.linkToken === 'string' ? { linkToken: data.linkToken } : {})
+            };
         }
 
         return { data };

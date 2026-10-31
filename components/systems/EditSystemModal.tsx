@@ -10,6 +10,21 @@ interface EditSystemModalProps {
     sshKeys: SSHKey[];
 }
 
+export const buildSystemData = (
+    system: System & { hostFingerprint?: string },
+    newSystem: Partial<System>
+): System & { hostFingerprint?: string } => ({
+    ...system,
+    name: newSystem.name,
+    host: newSystem.host,
+    type: newSystem.type as 'local' | 'remote',
+    port: newSystem.port,
+    username: newSystem.username,
+    sshKeyId: newSystem.sshKeyId,
+    hostPublicKey: newSystem.hostPublicKey,
+    hostFingerprint: newSystem.hostPublicKey === system.hostPublicKey ? system.hostFingerprint : undefined
+});
+
 export const EditSystemModal: React.FC<EditSystemModalProps> = ({ isOpen, onClose, system, sshKeys }) => {
     const updateSystemMutation = useUpdateSystem();
 
@@ -19,7 +34,8 @@ export const EditSystemModal: React.FC<EditSystemModalProps> = ({ isOpen, onClos
         type: system.type,
         port: system.port || 22,
         username: system.username || 'root',
-        sshKeyId: system.sshKeyId || ''
+        sshKeyId: system.sshKeyId || '',
+        hostPublicKey: system.hostPublicKey || ''
     });
 
     useEffect(() => {
@@ -30,22 +46,15 @@ export const EditSystemModal: React.FC<EditSystemModalProps> = ({ isOpen, onClos
                 type: system.type,
                 port: system.port || 22,
                 username: system.username || 'root',
-                sshKeyId: system.sshKeyId || ''
+                sshKeyId: system.sshKeyId || '',
+                hostPublicKey: system.hostPublicKey || ''
             });
         }
     }, [system, isOpen]);
 
     const handleUpdateSystem = () => {
         if (newSystem.name && newSystem.host) {
-            updateSystemMutation.mutate({
-                ...system,
-                name: newSystem.name,
-                host: newSystem.host,
-                type: newSystem.type as 'local' | 'remote',
-                port: newSystem.port,
-                username: newSystem.username,
-                sshKeyId: newSystem.sshKeyId
-            }, {
+            updateSystemMutation.mutate(buildSystemData(system, newSystem), {
                 onSuccess: () => {
                     onClose();
                     toast.success('System updated successfully');
@@ -91,6 +100,10 @@ export const EditSystemModal: React.FC<EditSystemModalProps> = ({ isOpen, onClos
                                 <option key={key.id} value={key.id}>{key.name}</option>
                             ))}
                         </select>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Host Public Key (Optional)</label>
+                        <textarea rows={3} value={newSystem.hostPublicKey || ''} onChange={e => setNewSystem({ ...newSystem, hostPublicKey: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..." />
                     </div>
                 </div>
                 <div className="flex justify-end gap-4 mt-10">

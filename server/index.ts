@@ -17,10 +17,12 @@ import authRouter from './routes/auth.js';
 import configRouter from './routes/config.js';
 import systemsRouter from './routes/systems.js';
 import locationsRouter from './routes/locations.js';
-import jobsRouter from './routes/jobs.js';
+import jobsRouter, { recoverInterruptedRuns } from './routes/jobs.js';
 import managedAgentsRouter, { dispatchScheduledManagedJobs } from './routes/managedAgents.js';
+import { securityHeaders } from './middleware/securityHeaders.js';
 import sshKeysRouter from './routes/sshKeys.js';
 import aiRouter from './routes/ai.js';
+import { reconcileRecordedProcessGroups } from './services/backup/core.js';
 
 // Initialize environment
 const durableEnv = process.env.FORTRESS_ENV_PATH || path.join(process.cwd(), 'data', '.env');
@@ -35,10 +37,12 @@ if (result.error) {
 }
 
 const app = express();
+app.set('trust proxy', process.env.TRUST_PROXY === '1' ? 1 : false);
 const PORT = process.env.PORT || 9001;
 
 // Middleware
 const allowedFrontend = process.env.FRONTEND_URL || 'http://localhost:3001';
+app.use(securityHeaders);
 app.use(cors({origin:(origin, callback) => callback(null, !origin || origin === allowedFrontend)}));
 app.use(express.json());
 
@@ -125,6 +129,7 @@ const initialize = async () => {
             username: process.env.PG_USER,
             password: process.env.PG_PASSWORD
         });
+        await recoverInterruptedRuns();
         console.log(`[Fortress API] Database: ${dbType}`);
         setInterval(() => void dispatchScheduledManagedJobs().catch(error => console.error('[Managed Agents] Scheduler failed:', error)), 60_000);
     } catch (error: any) {
@@ -138,6 +143,12 @@ initialize();
 // Graceful shutdown
 process.on('SIGTERM', async () => {
     console.log('[Fortress API] Shutting down...');
+    if (db.isInitialized()) {
+        const activeRuns = await db.query<{id: string; run_epoch: number}>(
+            `SELECT id,run_epoch FROM jobs WHERE status='Running'`
+        );
+        await Promise.all(activeRuns.map(run => reconcileRecordedProcessGroups(run.id, run.run_epoch)));
+    }
     await db.closeDatabase();
     process.exit(0);
 });

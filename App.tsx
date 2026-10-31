@@ -16,6 +16,32 @@ import * as API from './client/api/index.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from './client/api/queries.js';
 
+interface DataExportInput {
+  currentUser: User | null;
+  systems: unknown;
+  jobs: unknown;
+  locations: unknown;
+  aiConfig: unknown;
+  dbConfig: unknown;
+  ssoConfig: unknown;
+}
+
+export const getPublicSsoConfig = ({ provider, clientId, discoveryUrl }: SSOConfig): SSOConfig => ({
+  provider,
+  clientId,
+  discoveryUrl
+});
+
+export const createDataExport = ({ currentUser, systems, jobs, locations }: DataExportInput) => {
+  if (currentUser?.role !== 'admin') return null;
+  return {
+    systems,
+    jobs,
+    locations,
+    exportedAt: new Date().toISOString()
+  };
+};
+
 function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -29,7 +55,18 @@ function App() {
   const [aiConfig, setAiConfig] = useState<AIConfig>({ provider: AIProvider.NONE });
   const [dbConfig, setDbConfig] = useState<DatabaseConfig | null>(null);
   const [ssoConfig, setSsoConfig] = useState<SSOConfig | null>(null);
+  const [publicSsoConfig, setPublicSsoConfig] = useState<SSOConfig | null>(null);
   const [authMode, setAuthMode] = useState<'local' | 'sso' | null>(null);
+
+  const clearAuthenticatedState = () => {
+    setAiConfig({ provider: AIProvider.NONE });
+    setDbConfig(null);
+    setSsoConfig(null);
+    setCurrentView('dashboard');
+    setCurrentUser(null);
+  };
+
+  useEffect(() => API.subscribeToSessionTeardown(clearAuthenticatedState), []);
 
   // Initialize the application
   useEffect(() => {
@@ -56,7 +93,10 @@ function App() {
                 setAuthMode(mode);
                 localStorage.setItem('fortress_auth_mode', mode);
               }
-              if (sso) setSsoConfig(sso);
+              if (sso) {
+                setPublicSsoConfig(getPublicSsoConfig(sso));
+                setSsoConfig(sso);
+              }
             }
           } catch (e) {
             console.log('[App] Could not load public config');
@@ -92,13 +132,22 @@ function App() {
   }, []);
 
   const handleLogin = (user: User) => {
+    setAiConfig({ provider: AIProvider.NONE });
+    setDbConfig(null);
+    setSsoConfig(user.role === 'admin' ? publicSsoConfig : null);
+    setCurrentView('dashboard');
     setCurrentUser(user);
     localStorage.setItem('fortress_user_session', JSON.stringify(user));
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem('fortress_user_session');
+  const handleLogout = async () => {
+    try {
+      await API.logout();
+    } catch (error) {
+      console.error('Failed to revoke session:', error);
+    } finally {
+      clearAuthenticatedState();
+    }
   };
 
   const completeSetup = async (config: {
@@ -116,6 +165,7 @@ function App() {
     setAiConfig(ai);
     setDbConfig(db);
     setSsoConfig(sso);
+    setPublicSsoConfig(getPublicSsoConfig(sso));
     setAuthMode(mode);
 
     try {
@@ -161,6 +211,7 @@ function App() {
   };
 
   const updateAIConfig = async (config: AIConfig) => {
+    if (currentUser?.role !== 'admin') return;
     setAiConfig(config);
     try {
       await API.saveConfig('ai_config', config);
@@ -168,6 +219,7 @@ function App() {
   };
 
   const updateDBConfig = async (config: DatabaseConfig) => {
+    if (currentUser?.role !== 'admin') return;
     setDbConfig(config);
     try {
       await API.saveConfig('db_config', config);
@@ -175,6 +227,7 @@ function App() {
   };
 
   const updateSSOConfig = async (config: SSOConfig) => {
+    if (currentUser?.role !== 'admin') return;
     setSsoConfig(config);
     try {
       await API.saveConfig('sso_config', config);
@@ -182,24 +235,22 @@ function App() {
   };
 
   const handleResetApp = async () => {
-    // Clear localStorage and reload
+    if (currentUser?.role !== 'admin') return;
     localStorage.clear();
     window.location.reload();
   };
 
   const handleExportData = () => {
-    const systems = queryClient.getQueryData(queryKeys.systems);
-    const jobs = queryClient.getQueryData(queryKeys.jobs);
-    const locations = queryClient.getQueryData(queryKeys.locations);
-    const exportData = {
-      systems,
-      jobs,
-      locations,
+    const exportData = createDataExport({
+      currentUser,
+      systems: queryClient.getQueryData(queryKeys.systems),
+      jobs: queryClient.getQueryData(queryKeys.jobs),
+      locations: queryClient.getQueryData(queryKeys.locations),
       aiConfig,
       dbConfig,
-      ssoConfig,
-      exportedAt: new Date().toISOString()
-    };
+      ssoConfig
+    });
+    if (!exportData) return;
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -210,6 +261,7 @@ function App() {
   };
 
   const handleImportData = (data: string) => {
+    if (currentUser?.role !== 'admin') return;
     try {
       const parsed = JSON.parse(data);
       if (parsed.systems) queryClient.setQueryData(queryKeys.systems, parsed.systems);
@@ -240,7 +292,7 @@ function App() {
 
   // Login required (after setup is complete)
   if (!currentUser) {
-    return <Login onLogin={handleLogin} ssoConfig={ssoConfig} authMode={authMode} />;
+    return <Login onLogin={handleLogin} ssoConfig={publicSsoConfig} authMode={authMode} />;
   }
 
   return (
@@ -269,7 +321,7 @@ function App() {
             {currentView === 'systems' && <Systems />}
             {currentView === 'managed-clients' && currentUser.role === 'admin' && <ManagedClients />}
             {currentView === 'locations' && <Locations />}
-            {currentView === 'settings' && <SettingsComponent aiConfig={aiConfig} dbConfig={dbConfig} ssoConfig={ssoConfig} onUpdateAIConfig={updateAIConfig} onUpdateDBConfig={updateDBConfig} onUpdateSSOConfig={updateSSOConfig} onResetApp={handleResetApp} onExportData={handleExportData} onImportData={handleImportData} />}
+            {currentView === 'settings' && currentUser.role === 'admin' && <SettingsComponent aiConfig={aiConfig} dbConfig={dbConfig} ssoConfig={ssoConfig} onUpdateAIConfig={updateAIConfig} onUpdateDBConfig={updateDBConfig} onUpdateSSOConfig={updateSSOConfig} onResetApp={handleResetApp} onExportData={handleExportData} onImportData={handleImportData} />}
           </div>
         </div>
       </main>

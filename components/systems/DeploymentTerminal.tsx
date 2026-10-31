@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { System, SSHKey } from '../../types';
 import { ShieldCheck, AlertCircle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { API_BASE, getToken } from '../../client/api/client.js';
 
 interface DeploymentTerminalProps {
     system: System;
@@ -40,9 +41,9 @@ export const DeploymentTerminal = ({ system, sshKeys, onClose, onComplete }: Dep
 
     useEffect(() => {
         // Fetch selected tools from config
-        const token = localStorage.getItem('fortress_token');
-        fetch('http://localhost:9001/api/config/selected_tools', {
-            headers: { 'Authorization': `Bearer ${token}` }
+        const token = getToken();
+        fetch(`${API_BASE}/config/selected_tools`, {
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
         })
             .then(res => res.json())
             .then(data => {
@@ -71,11 +72,12 @@ export const DeploymentTerminal = ({ system, sshKeys, onClose, onComplete }: Dep
 
         try {
             // Call backend API
-            const response = await fetch(`http://localhost:9001/api/systems/${system.id}/deploy`, {
+            const token = getToken();
+            const response = await fetch(`${API_BASE}/systems/${system.id}/deploy`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('fortress_token')}`
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
                 },
                 body: JSON.stringify({
                     sshKeyId: authMethod === 'key' ? selectedKeyId : undefined,

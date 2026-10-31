@@ -11,6 +11,71 @@ import { spawn } from 'node:child_process';
 import { SSHConfig, BackupExecutionLog } from './types.js';
 import { maskSensitiveData } from '../../utils/maskSensitiveData.js';
 import { appendBoundedJobLog } from '../../utils/boundedLog.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+interface BackupProcessContext {
+    jobId: string;
+    runEpoch: number;
+}
+
+interface RecordedProcessGroup {
+    pgid: number;
+    exited: Promise<void>;
+    release: () => void;
+}
+
+const processContext = new AsyncLocalStorage<BackupProcessContext>();
+const recordedProcessGroups = new Map<string, Set<RecordedProcessGroup>>();
+
+const processRunKey = (jobId: string, runEpoch: number) => `${jobId}:${runEpoch}`;
+
+export function withBackupProcessContext<T>(context: BackupProcessContext, operation: () => T): T {
+    return processContext.run(context, operation);
+}
+
+function recordProcessGroup(jobId: string, runEpoch: number, pgid: number): RecordedProcessGroup {
+    const key = processRunKey(jobId, runEpoch);
+    const groups = recordedProcessGroups.get(key) ?? new Set<RecordedProcessGroup>();
+    let resolveExited!: () => void;
+    const group: RecordedProcessGroup = {
+        pgid,
+        exited: new Promise<void>(resolve => { resolveExited = resolve; }),
+        release: () => {
+            groups.delete(group);
+            if (groups.size === 0) recordedProcessGroups.delete(key);
+            resolveExited();
+        }
+    };
+    groups.add(group);
+    recordedProcessGroups.set(key, groups);
+    return group;
+}
+
+export async function reconcileRecordedProcessGroups(jobId: string, runEpoch: number): Promise<boolean> {
+    const recorded = recordedProcessGroups.get(processRunKey(jobId, runEpoch));
+    if (!recorded?.size) return false;
+
+    const groups = [...recorded];
+    let stopped = true;
+    for (const group of groups) {
+        try {
+            process.kill(-group.pgid, 'SIGKILL');
+        } catch (error: any) {
+            if (error?.code !== 'ESRCH') stopped = false;
+        }
+    }
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+        const exited = await Promise.race([
+            Promise.all(groups.map(group => group.exited)).then(() => true),
+            new Promise<false>(resolve => { timeout = setTimeout(() => resolve(false), 5000); })
+        ]);
+        return stopped && exited;
+    } finally {
+        if (timeout) clearTimeout(timeout);
+    }
+}
 
 export class BackupExecutor extends EventEmitter {
     private client: Client;
@@ -104,17 +169,23 @@ export class BackupExecutor extends EventEmitter {
      * credentials) are never part of argv, SSH exec requests, or log messages.
      * This is a compatibility bridge until fixed remote runners are deployed.
      */
-    async exec(command: string): Promise<{stdout:string;stderr:string;code:number}> {
+    async exec(command: string, signal?: AbortSignal): Promise<{stdout:string;stderr:string;code:number}> {
         if (!this.connected || command.length > 128 * 1024)
             throw new Error('Executor disconnected or script exceeds maximum size');
         this.log('info', 'Executing constrained backup operation');
         return new Promise((resolve,reject) => {
             let stdout='', stderr='', total=0, finished=false;
             let terminate:()=>void=()=>{};
+            let releaseRecordedGroup:()=>void=()=>{};
+            const onAbort=()=>fail(new Error('Backup command aborted'));
+            const cleanup=()=>{
+                clearTimeout(timeout);
+                signal?.removeEventListener('abort',onAbort);
+            };
             const timeout=setTimeout(()=>fail(new Error('Backup command timed out')), 6*60*60*1000);
             const fail=(error:Error)=>{
                 if(finished)return;
-                finished=true; clearTimeout(timeout); terminate(); reject(error);
+                finished=true; cleanup(); terminate(); reject(error);
             };
             const append=(kind:'stdout'|'stderr',chunk:Buffer)=>{
                 if(finished)return;
@@ -127,13 +198,31 @@ export class BackupExecutor extends EventEmitter {
                     this.log(kind==='stderr'?'error':'progress',value.slice(0,2048));
             };
             const done=(code:number|null)=>{
+                releaseRecordedGroup();
                 if(finished)return;
-                finished=true;clearTimeout(timeout);
+                finished=true;cleanup();
                 resolve({stdout,stderr,code:typeof code==='number'?code:1});
             };
+            if(signal?.aborted)return onAbort();
+            signal?.addEventListener('abort',onAbort,{once:true});
             if(this.isLocal){
-                const child=spawn('/bin/sh',['-s'],{stdio:['pipe','pipe','pipe']});
-                terminate=()=>child.kill('SIGKILL');
+                const child=spawn('/bin/sh',['-s'],{
+                    stdio:['pipe','pipe','pipe'],detached:process.platform!=='win32'
+                });
+                const context=processContext.getStore();
+                if(context && child.pid!==undefined && process.platform!=='win32'){
+                    const recorded=recordProcessGroup(context.jobId,context.runEpoch,child.pid);
+                    releaseRecordedGroup=recorded.release;
+                }
+                terminate=()=>{
+                    if(child.pid===undefined)return;
+                    if(process.platform==='win32'){
+                        spawn('taskkill',['/pid',String(child.pid),'/T','/F'],{stdio:'ignore'}).on('error',()=>{});
+                        return;
+                    }
+                    try { process.kill(-child.pid,'SIGKILL'); }
+                    catch { child.kill('SIGKILL'); }
+                };
                 child.on('error',fail);
                 child.stdout.on('data',(chunk:Buffer)=>append('stdout',chunk));
                 child.stderr.on('data',(chunk:Buffer)=>append('stderr',chunk));

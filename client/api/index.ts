@@ -7,7 +7,10 @@ export { apiFetch, setToken, getToken, API_BASE } from './client.js';
 export type { ApiResponse } from './client.js';
 
 // Auth
-export { register, login, githubAuth, getMe, logout } from './auth.js';
+export {
+    register, login, githubAuth, githubLink, getMe, logout,
+    clearClientSession, subscribeToSessionTeardown
+} from './auth.js';
 export type { AuthUser, AuthResponse } from './auth.js';
 
 // Health & Config

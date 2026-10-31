@@ -80,7 +80,7 @@ router.post('/setup', async (req, res) => {
                 auth_type: 'local'
             }, adminUser.password);
 
-            token = jwt.sign({ id: user.id, email: user.email, role: user.role }, getJwtSecret(), { expiresIn: '7d' });
+            token = jwt.sign({ id: user.id, email: user.email, role: user.role, authEpoch: user.auth_epoch }, getJwtSecret(), { expiresIn: '7d' });
         }
 
         await db.saveConfig('setup_complete', true);

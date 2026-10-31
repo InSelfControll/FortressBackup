@@ -65,7 +65,8 @@ export const createTables = () => {
       health INTEGER DEFAULT 100,
       installed_tools TEXT,
       ssh_key_id TEXT,
-      host_fingerprint TEXT
+      host_fingerprint TEXT,
+      host_public_key TEXT
     );
     
     CREATE TABLE IF NOT EXISTS locations (
@@ -76,7 +77,8 @@ export const createTables = () => {
       endpoint TEXT,
       region TEXT,
       access_key TEXT,
-      secret_key TEXT
+      secret_key TEXT,
+      host_public_key TEXT
     );
     
     CREATE TABLE IF NOT EXISTS jobs (
@@ -91,6 +93,7 @@ export const createTables = () => {
       retention TEXT,
       priority TEXT DEFAULT 'Medium',
       status TEXT DEFAULT 'Idle',
+      run_epoch INTEGER NOT NULL DEFAULT 0,
       next_run TEXT,
       last_run TEXT,
       size TEXT,
@@ -139,12 +142,18 @@ export const createTables = () => {
       sqliteDb.prepare('ALTER TABLE users ADD COLUMN auth_epoch INTEGER NOT NULL DEFAULT 0').run();
     sqliteDb.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_github_id ON users(github_id) WHERE github_id IS NOT NULL').run();
     const columns = sqliteDb.prepare("PRAGMA table_info(systems)").all() as any[];
+    const jobColumns = sqliteDb.prepare('PRAGMA table_info(jobs)').all() as any[];
+    if (!jobColumns.some(col => col.name === 'run_epoch'))
+      sqliteDb.prepare('ALTER TABLE jobs ADD COLUMN run_epoch INTEGER NOT NULL DEFAULT 0').run();
+    const locationColumns = sqliteDb.prepare('PRAGMA table_info(locations)').all() as any[];
     const managedColumns=sqliteDb.prepare('PRAGMA table_info(managed_jobs)').all() as any[];
     if (!managedColumns.some(col=>col.name==='schedule_slot'))
       sqliteDb.prepare('ALTER TABLE managed_jobs ADD COLUMN schedule_slot TEXT').run();
     sqliteDb.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_schedule_slot ON managed_jobs(client_id,schedule_slot) WHERE schedule_slot IS NOT NULL').run();
     const hasSshKeyId = columns.some(col => col.name === 'ssh_key_id');
     if (!columns.some(col => col.name === 'host_fingerprint')) sqliteDb.prepare('ALTER TABLE systems ADD COLUMN host_fingerprint TEXT').run();
+    if (!columns.some(col => col.name === 'host_public_key')) sqliteDb.prepare('ALTER TABLE systems ADD COLUMN host_public_key TEXT').run();
+    if (!locationColumns.some(col => col.name === 'host_public_key')) sqliteDb.prepare('ALTER TABLE locations ADD COLUMN host_public_key TEXT').run();
     if (!hasSshKeyId) {
       console.log('[DB] Migrating: Adding ssh_key_id to systems table');
       sqliteDb.prepare("ALTER TABLE systems ADD COLUMN ssh_key_id TEXT").run();
@@ -186,7 +195,8 @@ export const createTablesPostgres = async () => {
       health INTEGER DEFAULT 100,
       installed_tools TEXT,
       ssh_key_id TEXT,
-      host_fingerprint TEXT
+      host_fingerprint TEXT,
+      host_public_key TEXT
     );
     
     CREATE TABLE IF NOT EXISTS locations (
@@ -197,7 +207,8 @@ export const createTablesPostgres = async () => {
       endpoint TEXT,
       region TEXT,
       access_key TEXT,
-      secret_key TEXT
+      secret_key TEXT,
+      host_public_key TEXT
     );
     
     CREATE TABLE IF NOT EXISTS jobs (
@@ -212,6 +223,7 @@ export const createTablesPostgres = async () => {
       retention TEXT,
       priority TEXT DEFAULT 'Medium',
       status TEXT DEFAULT 'Idle',
+      run_epoch INTEGER NOT NULL DEFAULT 0,
       next_run TEXT,
       last_run TEXT,
       size TEXT,
@@ -250,7 +262,10 @@ export const createTablesPostgres = async () => {
   await pgPool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS github_id TEXT');
   await pgPool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_epoch INTEGER NOT NULL DEFAULT 0');
   await pgPool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_github_id ON users(github_id) WHERE github_id IS NOT NULL');
+  await pgPool.query('ALTER TABLE jobs ADD COLUMN IF NOT EXISTS run_epoch INTEGER NOT NULL DEFAULT 0');
   await pgPool.query('ALTER TABLE systems ADD COLUMN IF NOT EXISTS host_fingerprint TEXT');
+  await pgPool.query('ALTER TABLE systems ADD COLUMN IF NOT EXISTS host_public_key TEXT');
+  await pgPool.query('ALTER TABLE locations ADD COLUMN IF NOT EXISTS host_public_key TEXT');
   await pgPool.query('ALTER TABLE managed_jobs ADD COLUMN IF NOT EXISTS schedule_slot TEXT');
   await pgPool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_schedule_slot ON managed_jobs(client_id,schedule_slot) WHERE schedule_slot IS NOT NULL');
 };
