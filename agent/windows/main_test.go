@@ -6,6 +6,7 @@ import (
  "encoding/json"
  "os"
  "path/filepath"
+ "strings"
  "testing"
 )
 
@@ -13,9 +14,11 @@ func writeConfig(t *testing.T, sources []string) string {
  t.Helper()
  d:=t.TempDir()
  pass:=filepath.Join(d,"secret")
+ restic:=filepath.Join(d,"restic.exe")
+ if err:=os.WriteFile(restic,[]byte("test executable placeholder"),0600);err!=nil{t.Fatal(err)}
  if err:=os.WriteFile(pass,[]byte(filepath.Base(d)),0600);err!=nil{t.Fatal(err)}
  cfg:=filepath.Join(d,"config.json")
- b,err:=json.Marshal(Config{Repository:"sftp:backup:repo",PasswordFile:pass,Sources:sources})
+ b,err:=json.Marshal(Config{ResticPath:restic,Repository:"sftp:backup:repo",PasswordFile:pass,Sources:sources})
  if err!=nil{t.Fatal(err)}
  if err:=os.WriteFile(cfg,b,0600);err!=nil{t.Fatal(err)}
  return cfg
@@ -41,4 +44,30 @@ func TestPendingReportRoundTrip(t *testing.T) {
  if err:=writePending(file,input);err!=nil{t.Fatal(err)}
  got,err:=readPending(file);if err!=nil{t.Fatal(err)}
  if got==nil||got.ID!=input.ID||!got.Success||got.Message!=input.Message{t.Fatalf("bad report: %+v",got)}
+}
+
+func TestLoadConfigAcceptsWindowsPowerShellUTF8(t *testing.T) {
+ source:=t.TempDir()
+ p:=writeConfig(t,[]string{source})
+ data,err:=os.ReadFile(p);if err!=nil{t.Fatal(err)}
+ for _,prefix:=range []string{"","\xef\xbb\xbf"} {
+  if err:=os.WriteFile(p,append([]byte(prefix),data...),0600);err!=nil{t.Fatal(err)}
+  c,err:=loadConfig(p);if err!=nil{t.Fatal(err)}
+  if len(c.Sources)!=1 || c.Sources[0]!=source {t.Fatal("source selection lost")}
+ }
+}
+
+func TestAgentCredentialsRequireSecureOriginAndToken(t *testing.T) {
+ token:=filepath.Join(t.TempDir(),"token")
+ if err:=os.WriteFile(token,[]byte(strings.Repeat("a",43)+"\r\n"),0600);err!=nil{t.Fatal(err)}
+ c:=Config{ControllerURL:"https://controller.example.invalid/",AgentID:"enrollment-id",AgentTokenFile:token}
+ endpoint,_,err:=agentCredentials(c)
+ if err!=nil || endpoint!="https://controller.example.invalid/api/managed-agents" {t.Fatalf("valid config rejected: %v",err)}
+ for _,origin:=range []string{"http://10.0.11.14:19001","https://user:pass@example.invalid","https://example.invalid/path","https://example.invalid?token=secret"} {
+  c.ControllerURL=origin
+  if _,_,err:=agentCredentials(c);err==nil {t.Fatalf("unsafe origin accepted: %s",origin)}
+ }
+ c.ControllerURL="https://controller.example.invalid"
+ if err:=os.WriteFile(token,[]byte(strings.Repeat("a",32)+"\nsecret"),0600);err!=nil{t.Fatal(err)}
+ if _,_,err:=agentCredentials(c);err==nil{t.Fatal("multiline token accepted")}
 }

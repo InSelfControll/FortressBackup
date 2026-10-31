@@ -116,6 +116,9 @@ jobs:
             Unregister-ScheduledTask -TaskName FortressBackup-CITest -Confirm:$false -ErrorAction SilentlyContinue
             Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
           }
+      - name: Verify setup with Windows PowerShell 5.1
+        shell: powershell
+        run: ./agent/windows/test-install.ps1
       - name: Verify Windows VSS snapshot and full Restic restore
         shell: pwsh
         run: |

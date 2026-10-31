@@ -12,7 +12,8 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ResticSha256,
     [string]$TaskName='FortressBackup-Windows',
     [int]$DailyHour=2,
-    [switch]$Managed
+    [switch]$Managed,
+    [switch]$VerifySetup
 )
 $ErrorActionPreference='Stop'
 if($DailyHour -lt 0 -or $DailyHour -gt 23){throw 'Invalid DailyHour'}
@@ -75,7 +76,7 @@ try{
     $config.passwordFile=$password
     $config.resticPath=$restic
     if($Managed){$config.agentTokenFile=$token}
-    $config | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $stagedConfig -Encoding UTF8
+    [IO.File]::WriteAllText($stagedConfig, ($config | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
     Set-ProtectedSecurityDescriptor -Path $stagedConfig
 
     $payloadNames=@('fortress-agent.exe','restic.exe','repo-password.txt','agent.json')
@@ -84,9 +85,13 @@ try{
     $installed=@{}
     $existingTask=$null
     $existingTaskXml=$null
+    $existingTask=Get-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction SilentlyContinue
+    if($existingTask -and $existingTask.State -in @('Running','Queued')){throw 'A backup task is active. Wait for it to finish before upgrading.'}
     try{
-        $existingTask=Get-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction SilentlyContinue
-        if($existingTask){$existingTaskXml=Export-ScheduledTask -TaskName $TaskName -TaskPath '\'}
+        if($existingTask){
+            $existingTaskXml=Export-ScheduledTask -TaskName $TaskName -TaskPath '\'
+            Disable-ScheduledTask -TaskName $TaskName | Out-Null
+        }
         foreach($name in $payloadNames){
             $destination=Join-Path $root $name
             if(Test-Path -LiteralPath $destination){
@@ -107,8 +112,31 @@ try{
         }
         Assert-FileDigest -Path $agent -Expected $AgentSha256 -Label 'Installed agent binary'
         Assert-FileDigest -Path $restic -Expected $ResticSha256 -Label 'Installed Restic binary'
+        if($VerifySetup){
+            if(!$Managed){throw 'Setup verification requires managed mode'}
+            $checkName='FortressBackup-SetupCheck-' + [guid]::NewGuid().ToString('N')
+            $checkLog=Join-Path $root 'setup-check.log'
+            try{
+                $checkAction=New-ScheduledTaskAction -Execute $agent -Argument ('-config "{0}" -operation preflight -log "{1}"' -f $configuration,$checkLog)
+                $checkPrincipal=New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest
+                Register-ScheduledTask -TaskName $checkName -Action $checkAction -Principal $checkPrincipal -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2)) | Out-Null
+                $started=Get-Date
+                Start-ScheduledTask -TaskName $checkName
+                $finished=$false
+                do{
+                    Start-Sleep -Seconds 1
+                    $info=Get-ScheduledTaskInfo -TaskName $checkName
+                    $state=(Get-ScheduledTask -TaskName $checkName).State
+                    $finished=$info.LastRunTime -ge $started.AddSeconds(-1) -and $state -notin @('Running','Queued')
+                }while(!$finished -and (Get-Date) -lt $started.AddSeconds(100))
+                if(!$finished -or $info.LastTaskResult -ne 0){throw "Setup verification failed as SYSTEM. Read $checkLog for the storage, HTTPS or enrollment error. No queued backup was claimed."}
+            }finally{
+                Stop-ScheduledTask -TaskName $checkName -ErrorAction SilentlyContinue
+                Unregister-ScheduledTask -TaskName $checkName -Confirm:$false -ErrorAction SilentlyContinue
+            }
+        }
         $mode=if($Managed){'managed'}else{'backup'}
-        $args='-config "{0}" -operation {1}' -f $configuration,$mode
+        $args='-config "{0}" -operation {1} -log "{2}"' -f $configuration,$mode,(Join-Path $root 'agent.log')
         $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 5) -StartWhenAvailable
         if($Managed){
             $command='"{0}" {1}' -f $agent,$args
@@ -140,7 +168,7 @@ try{
         try{
             if($existingTaskXml){
                 Register-ScheduledTask -TaskName $TaskName -Xml $existingTaskXml -Force | Out-Null
-            }elseif(Get-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction SilentlyContinue){
+            }elseif(!$existingTask -and (Get-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction SilentlyContinue)){
                 Unregister-ScheduledTask -TaskName $TaskName -TaskPath '\' -Confirm:$false
             }
         }catch{$rollbackErrors+=$_.Exception.Message}

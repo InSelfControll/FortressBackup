@@ -75,10 +75,10 @@ export const ManagedClients:React.FC=()=>{
   <details className="rounded-xl border border-slate-700 bg-slate-900 p-4 space-y-3" open={agents.some(agent=>!agent.lastSeen&&!agent.disabled)}>
    <summary className="cursor-pointer font-semibold">Set up the Windows laptop and choose folders</summary>
    <ol className="list-decimal pl-5 space-y-2 text-sm text-slate-300">
-    <li>Install the Fortress Windows agent and Restic on the laptop using the Windows setup guide.</li>
-    <li>In the laptop's <code>agent.json</code>, set <code>sources</code> to the folders you want backed up, such as Documents or Pictures. Configure the repository and password file locally. Folder selection is not available in this web interface.</li>
+    <li>Download and extract the complete Windows ZIP from Releases. Double-click <code>Install FortressBackup.cmd</code> and approve the Windows administrator prompt. The background <code>fortress-agent.exe</code> is not an installer.</li>
+    <li>The setup asks for your enrollment credentials, repository, password, and folders such as Documents or Pictures. It saves the local <code>agent.json</code> with your selected <code>sources</code>. Folder selection is not available in this web interface.</li>
     <li>Set a trusted HTTPS controller address and the enrollment ID and token file, then install the managed scheduled task. The agent cannot connect to an HTTP controller address.</li>
-    <li>The task checks in every minute. After the first check-in, queued operations can start and their status appears here and on the dashboard.</li>
+    <li>Setup verifies storage and controller access as SYSTEM before starting the task. The task checks in every minute. Check-ins and queued, running, completed, or failed operations appear here and on the dashboard. Setup errors stay visible; local diagnostics are in <code>C:\ProgramData\FortressBackup</code>.</li>
    </ol>
    <div className="flex flex-wrap gap-4 text-sm"><a className="text-indigo-300 underline" href="https://github.com/InSelfControll/FortressBackup/releases" target="_blank" rel="noreferrer">Download Windows agent and installer</a><a className="text-indigo-300 underline" href="https://github.com/InSelfControll/FortressBackup/blob/main/agent/windows/INSTALL.md" target="_blank" rel="noreferrer">Windows agent setup guide</a></div>
   </details>

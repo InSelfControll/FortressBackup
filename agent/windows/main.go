@@ -15,7 +15,9 @@ import (
  "os/exec"
  "path/filepath"
  "strings"
+ "syscall"
  "time"
+ "unsafe"
 )
 
 type Config struct {
@@ -37,7 +39,10 @@ type Config struct {
 func loadConfig(path string) (Config,error) {
  var c Config
  file,err:=os.Open(path); if err!=nil{return c,err}; defer file.Close()
- decoder:=json.NewDecoder(io.LimitReader(file,1<<20)); decoder.DisallowUnknownFields()
+ // Windows PowerShell 5.1 and common Windows editors can prefix UTF-8 JSON with a BOM.
+ data,err:=io.ReadAll(io.LimitReader(file,(1<<20)+1));if err!=nil{return c,err}
+ if len(data)>1<<20{return c,errors.New("config too large")}
+ decoder:=json.NewDecoder(strings.NewReader(strings.TrimPrefix(string(data),"\xef\xbb\xbf"))); decoder.DisallowUnknownFields()
  if err=decoder.Decode(&c);err!=nil{return c,err}
  if !filepath.IsAbs(c.ResticPath) { return c,errors.New("resticPath must be an absolute, trusted executable path") }
  if filepath.Ext(c.ResticPath)!=".exe" { return c,errors.New("resticPath must point to an exe") }
@@ -82,16 +87,37 @@ func execute(ctx context.Context,c Config,operation string) error {
 }
 
 func main(){
+ if len(os.Args)==1 {
+  message,_:=syscall.UTF16PtrFromString("This is the Fortress Backup background agent.\n\nTo install it and choose backup folders, extract the Windows ZIP from GitHub Releases and double-click Install FortressBackup.cmd.\n\nEnrollment in the dashboard creates credentials; it does not install the agent.\n\nhttps://github.com/InSelfControll/FortressBackup/releases")
+  title,_:=syscall.UTF16PtrFromString("Fortress Backup setup")
+  syscall.NewLazyDLL("user32.dll").NewProc("MessageBoxW").Call(0,uintptr(unsafe.Pointer(message)),uintptr(unsafe.Pointer(title)),0x40)
+  return
+ }
  configPath:=flag.String("config", "", "absolute path to restricted agent JSON config")
- operation:=flag.String("operation","backup","backup, check, snapshots or managed")
+ operation:=flag.String("operation","backup","backup, check, snapshots, validate, preflight or managed")
+ logPath:=flag.String("log","","absolute path to protected diagnostic log (replaced each run)")
  flag.Parse()
+ if *logPath!="" {
+  if !filepath.IsAbs(*logPath){fmt.Fprintln(os.Stderr,"log path must be absolute");os.Exit(2)}
+  log,err:=os.OpenFile(*logPath,os.O_CREATE|os.O_WRONLY|os.O_TRUNC,0600)
+  if err!=nil{fmt.Fprintln(os.Stderr,"log:",err);os.Exit(2)}
+  defer log.Close()
+  os.Stdout=log;os.Stderr=log
+  fmt.Fprintln(os.Stdout,time.Now().Format(time.RFC3339),"operation:",*operation)
+ }
  if *configPath=="" {fmt.Fprintln(os.Stderr,"--config required");os.Exit(2)}
  c,err:=loadConfig(*configPath)
  if err!=nil {fmt.Fprintln(os.Stderr,"config:",err);os.Exit(2)}
+ if *operation=="validate" {
+  if _,_,err=agentCredentials(c);err!=nil{fmt.Fprintln(os.Stderr,"config:",err);os.Exit(2)}
+  fmt.Fprintln(os.Stdout,"Configuration valid; no backup or controller request performed.");return
+ }
  deadline:=c.TimeoutMinutes
  if *operation=="managed" {deadline+=30} // Report acknowledgement grace after backup timeout.
+ if *operation=="preflight" {deadline=1}
  ctx,cancel:=context.WithTimeout(context.Background(),time.Duration(deadline)*time.Minute)
  defer cancel()
- if *operation=="managed" {err=managedOnce(ctx,c)} else {err=execute(ctx,c,*operation)}
+ if *operation=="managed" || *operation=="preflight" {err=managedOnce(ctx,c,*operation=="preflight")} else {err=execute(ctx,c,*operation)}
  if err!=nil{fmt.Fprintln(os.Stderr,"backup failed:",err);os.Exit(1)}
+ if *operation=="managed" || *operation=="preflight" {fmt.Fprintln(os.Stdout,"Operation completed successfully.")}
 }

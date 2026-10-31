@@ -40,6 +40,12 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     const auth={'Content-Type':'application/json','Authorization':'Bearer '+enrollment.data.token,'X-Fortress-Agent-Id':id};
     const queue=await api('/admin/'+id+'/jobs',{operation:'backup'});
     expect(queue.status).toBe(201);
+    expect((await api('/heartbeat',{}, {'Content-Type':'application/json'})).status).toBe(401);
+    expect((await api('/heartbeat',{},auth)).status).toBe(200);
+    const beforePoll=await api('/admin/'+id,undefined,adminHeaders,'GET');
+    expect(beforePoll.data.lastSeen).toBeTruthy();
+    expect(beforePoll.data.jobs[0].state).toBe('pending');
+    expect(beforePoll.data.jobs[0].startedAt).toBeNull();
     const overlapping=await api('/admin/'+id+'/jobs',{operation:'check'});
     expect(overlapping.status).toBe(409);
     const poll=await api('/poll',{},auth);
@@ -76,6 +82,7 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     expect(disabled.status).toBe(200);
     const deniedAfterDisable=await api('/poll',{},auth);
     expect(deniedAfterDisable.status).toBe(401);
+    expect((await api('/heartbeat',{},auth)).status).toBe(401);
   } finally {
     await new Promise<void>(resolve=>server.close(()=>resolve()));
     await closeDatabase();

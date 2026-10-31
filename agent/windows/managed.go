@@ -54,22 +54,27 @@ func readPending(path string) (*pendingReport, error) {
     return &report, nil
 }
 
-func managedOnce(ctx context.Context, c Config) error {
+func agentCredentials(c Config) (string,string,error) {
     u, err := url.Parse(c.ControllerURL)
     if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil ||
         u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
-        return errors.New("controllerURL must be a plain HTTPS origin")
+        return "","",errors.New("controllerURL must be a plain HTTPS origin")
     }
-    if c.AgentID == "" || c.AgentTokenFile == "" { return errors.New("agentId and agentTokenFile required") }
+    if c.AgentID == "" || c.AgentTokenFile == "" { return "","",errors.New("agentId and agentTokenFile required") }
     tokenBytes, err := os.ReadFile(c.AgentTokenFile)
-    if err != nil { return err }
+    if err != nil { return "","",err }
     token := strings.TrimSpace(string(tokenBytes))
-    if len(token) < 32 || len(token) > 256 { return errors.New("invalid enrollment token") }
+    if len(token) < 32 || len(token) > 256 || strings.ContainsAny(token,"\r\n\t ") { return "","",errors.New("invalid enrollment token") }
+    return strings.TrimRight(c.ControllerURL,"/")+"/api/managed-agents",token,nil
+}
+
+func managedOnce(ctx context.Context, c Config, preflight bool) error {
+    endpoint,token,err:=agentCredentials(c)
+    if err!=nil{return err}
     client := &http.Client{
         Timeout: 30*time.Second,
         CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
     }
-    endpoint := strings.TrimRight(c.ControllerURL, "/") + "/api/managed-agents"
     var poll pollResponse
     request := func(route string, payload any) error {
         data, err := json.Marshal(payload)
@@ -88,6 +93,13 @@ func managedOnce(ctx context.Context, c Config) error {
         if route == "/poll" {
             return json.Unmarshal(response, &poll)
         }
+        return nil
+    }
+    if preflight {
+        // Verify storage as SYSTEM without claiming or executing a queued job.
+        if err:=execute(ctx,c,"snapshots");err!=nil{return fmt.Errorf("repository access check failed: %w",err)}
+        if err:=request("/heartbeat",map[string]string{});err!=nil{return fmt.Errorf("controller connection check failed: %w",err)}
+        fmt.Fprintln(os.Stdout,"Repository accessible; enrollment authenticated. No queued job claimed.")
         return nil
     }
     // Report files contain no encryption keys or remote commands. Restrict the
@@ -112,7 +124,7 @@ func managedOnce(ctx context.Context, c Config) error {
         // reconciliation, even if the controller redelivered its lease.
         return fmt.Errorf("job %s was interrupted; verify its repository and clear the local active marker manually",active.ID)
     }
-    if poll.Job == nil { return nil }
+    if poll.Job == nil { fmt.Fprintln(os.Stdout,"Controller check-in complete; no queued operations.");return nil }
     if poll.Job.Operation!="backup" && poll.Job.Operation!="check" && poll.Job.Operation!="snapshots" {
         return errors.New("controller requested unsupported operation")
     }
