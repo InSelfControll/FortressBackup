@@ -15,6 +15,8 @@ function Start-SetupOperation($State,[scriptblock]$Work,[object[]]$Arguments){
 }
 
 function New-SetupWindow([string]$SetupRoot){
+    # PS 5.1 event closures do not retain script-scoped function lookup.
+    $startOperation=${function:Start-SetupOperation}
     [Windows.Forms.Application]::EnableVisualStyles()
     $form=New-Object Windows.Forms.Form
     $form.Text='Fortress Backup setup'
@@ -84,7 +86,7 @@ function New-SetupWindow([string]$SetupRoot){
         $repository.Text='Saved repository: loading...'
         $status.Text='Connecting securely and retrieving your saved repository...'
         $progress.Style='Marquee'
-        Start-SetupOperation $state {
+        & $startOperation $state {
             param($root,$address,$clientId,$secret)
             $ErrorActionPreference='Stop'
             . (Join-Path $root 'provision.ps1')
@@ -114,7 +116,7 @@ function New-SetupWindow([string]$SetupRoot){
         $controller.Enabled=$false;$id.Enabled=$false;$token.Enabled=$false
         $progress.Style='Marquee'
         $status.Text='Installing protected files and checking storage and controller access as SYSTEM. This may take several minutes...'
-        Start-SetupOperation $state {
+        & $startOperation $state {
             param($root,$profile,$address,$clientId,$secret,$sources)
             $ErrorActionPreference='Stop'
             . (Join-Path $root 'provision.ps1')
