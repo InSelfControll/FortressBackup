@@ -11,9 +11,11 @@ through the dashboard.
 
 ## Guided setup
 
-Extract the **complete ZIP**, then double-click **Install FortressBackup.cmd**.
-Approve the administrator prompt. Setup keeps its window open, asks for the
-enrollment ID and token and trusted HTTPS controller URL, then retrieves the
+Extract the **complete ZIP**, then double-click **FortressBackup-Setup.exe**.
+The executable opens setup without a terminal. **Install FortressBackup.cmd**
+remains available as an alternative launcher for the same graphical setup.
+Approve the administrator prompt. A graphical setup window asks for the
+enrollment ID and token and trusted HTTPS controller URL. Click **Connect** to retrieve the
 saved repository selected in **Managed Clients**. A sole configured Restic SFTP
 repository is selected automatically during enrollment. Existing clients can
 choose their repository in the client row without enrolling again.
@@ -21,8 +23,10 @@ choose their repository in the client row without enrolling again.
 The repository URL, encryption password, SSH identity, and pinned host key come
 from the controller. Setup does not ask you to type them again or configure
 SYSTEM's global SSH files. It installs protected credentials for the agent and
-enables the native Windows OpenSSH client if missing. Choose folders using the
-folder picker and add as many as needed.
+enables the native Windows OpenSSH client if missing. Use **Add folder...** and
+**Remove** to choose folders, then click **Install**. Connection and installation
+run in the background with visible progress. Errors remain in the setup window;
+there are no console prompts. Closing before Install leaves the installation unchanged.
 
 The repository must already be initialized and reachable from the laptop. An
 HTTP server IP cannot be used for credential provisioning; use a reachable

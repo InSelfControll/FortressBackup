@@ -2,6 +2,7 @@
 # Run by Windows CI with Windows PowerShell, including its UTF-8 BOM behavior.
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'provision.ps1')
+. (Join-Path $PSScriptRoot 'setup-ui.ps1')
 $root=Join-Path $env:RUNNER_TEMP ('fortress-setup-test-'+[guid]::NewGuid().ToString('N'))
 $task='FortressBackup-SetupTest'
 $installed=Join-Path $env:ProgramData 'FortressBackup'
@@ -67,7 +68,37 @@ try {
     while(!(Test-Path -LiteralPath (Join-Path $root 'ready')) -and (Get-Date) -lt $deadline){Start-Sleep -Milliseconds 200}
     if(!(Test-Path -LiteralPath (Join-Path $root 'ready'))){throw 'Test HTTPS server did not start'}
     $config.controllerUrl="https://localhost:$port"
-    $profile=Get-ManagedRepository -Controller $config.controllerUrl -Id $config.agentId -Token $expectedToken
+    # Exercise the actual GUI and its asynchronous, authenticated connection.
+    # Closing before Install must leave the existing task and files untouched.
+    $beforeGui=(Get-FileHash -LiteralPath $installedCfg -Algorithm SHA256).Hash
+    $window=New-SetupWindow -SetupRoot $PSScriptRoot
+    try {
+        $window.Show()
+        $window.Controls['connect'].PerformClick()
+        if($window.Controls['status'].Text -notmatch 'HTTPS'){throw 'GUI did not validate the controller address'}
+        $window.Controls['controller'].Text=$config.controllerUrl
+        $window.Controls['clientId'].Text=$config.agentId
+        $window.Controls['token'].Text=$expectedToken
+        if(!$window.Controls['token'].UseSystemPasswordChar){throw 'GUI enrollment token is visible'}
+        $window.Controls['connect'].PerformClick()
+        if(!$window.Tag.Worker -or $window.Controls['close'].Enabled){throw 'GUI did not enter its busy state'}
+        $window.Close()
+        if($window.IsDisposed){throw 'GUI closed during an operation'}
+        $deadline=(Get-Date).AddSeconds(40)
+        while($window.Tag.Worker -and (Get-Date) -lt $deadline){[Windows.Forms.Application]::DoEvents();Start-Sleep -Milliseconds 50}
+        if(!$window.Tag.Profile){throw ('GUI connection failed: '+$window.Controls['status'].Text)}
+        if($window.Controls['repository'].Text -notmatch 'Saved storage / Saved repository'){throw 'GUI did not display the saved repository'}
+        if($window.Controls['install'].Enabled -or !$window.Controls['addFolder'].Enabled){throw 'GUI allowed installation without folders'}
+        [void]$window.Controls['folders'].Items.Add($root)
+        $window.Controls['folders'].SelectedIndex=0
+        $window.Controls['removeFolder'].PerformClick()
+        if($window.Controls['folders'].Items.Count -or $window.Controls['install'].Enabled){throw 'GUI folder removal failed'}
+        $profile=$window.Tag.Profile
+        $window.Controls['controller'].Text='https://changed.example.invalid'
+        if($window.Tag.Profile -or $window.Controls['install'].Enabled){throw 'GUI reused stale credentials after connection settings changed'}
+        $window.Controls['close'].PerformClick()
+        if($beforeGui -ne (Get-FileHash -LiteralPath $installedCfg -Algorithm SHA256).Hash){throw 'Cancelling GUI setup changed the installed configuration'}
+    }finally{if(!$window.IsDisposed){$window.Dispose()}}
     $generated=Join-Path $root 'generated credentials'
     $credentials=Save-ManagedRepository -Profile $profile -Directory $generated
     foreach($name in $credentials.Keys){$config[$name]=$credentials[$name]}

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-rc.5] - 2026-10-31
+
+- Replace Windows setup console prompts with a native graphical window for enrollment, saved repository discovery, and folder selection.
+- Keep setup responsive during HTTPS provisioning and SYSTEM verification; display progress and failures in the window while preserving protected credentials and upgrade rollback.
+
 ## [0.1.0-rc.4] - 2026-10-31
 
 - Reuse controller-configured Restic SFTP repositories during Windows setup. Repository URLs, encryption passwords, SSH identities, and pinned host keys are retrieved automatically over authenticated HTTPS.
