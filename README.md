@@ -1,79 +1,121 @@
-# Fortress Backup
+<div align="center">
 
-Fortress is a self-hosted backup controller with a React interface and a Bun/Express backend. It supports Borg and Restic backup workflows, with Rsync and Rclone integrations and AI-assisted configuration also present in the project.
+# 🛡️ Fortress Backup
 
-Rsync, Rclone, and AI-assisted configuration have not completed the verification and stable testing recorded in `TODO.md`. Managed Windows clients are pre-production and retain the limitations listed below.
+**Your backup operations, brought together.**
 
-## Run locally
+A self-hosted controller for managing backup sources, storage destinations, and jobs from one web interface.
 
-### Prerequisites
+[![Controller CI](https://github.com/InSelfControll/FortressBackup/actions/workflows/fortress-controller.yml/badge.svg?branch=main)](https://github.com/InSelfControll/FortressBackup/actions/workflows/fortress-controller.yml)
+[![Windows agent CI](https://github.com/InSelfControll/FortressBackup/actions/workflows/windows-agent.yml/badge.svg?branch=main)](https://github.com/InSelfControll/FortressBackup/actions/workflows/windows-agent.yml)
+[![Built with Bun](https://img.shields.io/badge/runtime-Bun-14151a?logo=bun&logoColor=white)](https://bun.sh/)
+[![Interface](https://img.shields.io/badge/interface-React-149eca?logo=react&logoColor=white)](https://react.dev/)
 
-- Git
-- Bun. The production Dockerfile currently uses Bun 1.4.4.
-- Docker with Compose, only for container deployment
+[Get started](#get-started) · [Configure a backup](#configure-a-backup) · [Storage Box](#hetzner-storage-box) · [Security & recovery](#security--recovery) · [Contributing](#development--verification)
 
-The default SQLite setup does not require a separate database server.
+</div>
 
-Set `FORTRESS_BOOTSTRAP_TOKEN` to a random value of at least 32 characters in the environment used to start Fortress. Keep this value private. The first-run setup wizard requires the configured bootstrap token.
+---
+
+## A clearer view of your backups
+
+Fortress combines a React interface with a Bun/Express controller. Register a machine, connect a destination, and manage backup jobs without switching between separate tools for every task.
+
+| | What you can do |
+|---|---|
+| **Sources** | Register systems, assign saved SSH identities, verify host keys, and deploy supported tools. |
+| **Storage** | Configure SFTP, local/NFS, S3, and Backblaze B2 destinations for supported engines. |
+| **Jobs** | Create Borg, Restic, or Rsync jobs, run them manually, or opt in to a UTC schedule. |
+| **Recovery** | Browse Borg and Restic snapshots, select files, and restore them to a target system. |
+| **Visibility** | View job status and logs, check SSH connections, and monitor recent activity. |
+| **Administration** | Manage account security, GitHub SSO, configuration exports, and supported AI settings. |
+
+> **Project status:** Rsync and AI-assisted configuration need further verification. Rclone is not available for new jobs. Managed Windows clients are pre-production; see their [limitations](#managed-windows-clients).
+
+## Get started
+
+### Option 1 · Local development
+
+You'll need Git and Bun. The production image uses Bun 1.4.4. SQLite is the default database and does not require a separate server.
 
 ```bash
 git clone https://github.com/InSelfControll/FortressBackup.git
 cd FortressBackup
 bun install
+
+# Set a private, random token of at least 32 characters for first-run setup.
+export FORTRESS_BOOTSTRAP_TOKEN="$(openssl rand -hex 32)"
 bun run dev
 ```
 
-To run the backend and frontend in separate terminals, use:
+Open **[http://localhost:3001](http://localhost:3001)** for the development interface. Vite proxies API requests to the controller on port `9001`. Enter the bootstrap token in the setup wizard; you can retrieve it in the same terminal with `printf '%s\n' "$FORTRESS_BOOTSTRAP_TOKEN"`.
+
+To start the services separately, use `bun run dev:server` and `bun run dev:frontend` in terminals that have the bootstrap token available. Preserve the generated runtime configuration and database together.
+
+### Option 2 · Docker Compose
+
+The hardened [Fortress.yaml](Fortress.yaml) stack builds the production image, persists data in a named volume, runs as a non-root user with a read-only root filesystem, and binds port `9001` to localhost.
 
 ```bash
-bun run dev:server
-bun run dev:frontend
-```
-
-Open `http://localhost:9001` and complete the first-run setup wizard. Setup generates protected runtime configuration in the persistent data location. Preserve and restrict access to that configuration together with the database.
-
-## Production with Compose
-
-Use `Fortress.yaml` as the hardened Compose reference. It publishes Fortress only on loopback as `127.0.0.1:9001:9001`, runs as non-root UID/GID `1001:1001` with a read-only root filesystem, and mounts the `fortress-data` volume at `/app/data`.
-
-Set a private, random `FORTRESS_BOOTSTRAP_TOKEN` of at least 32 characters before starting the stack. Compose refuses to start without it.
-
-```bash
+# Set this in a private environment before starting Compose.
+export FORTRESS_BOOTSTRAP_TOKEN="$(openssl rand -hex 32)"
 docker compose -f Fortress.yaml up -d --build
 ```
 
-Open `http://localhost:9001` on the host. Non-local access requires a trusted TLS reverse proxy or a private access path. Do not publish port `9001` directly to an untrusted network.
+Open **[http://localhost:9001](http://localhost:9001)** and complete the setup wizard with the token. For access from another device, use a trusted TLS reverse proxy or a private access path. Do not expose the controller directly to an untrusted network.
 
-By default, Fortress identifies clients by their direct connection and ignores forwarding headers for login admission. When exactly one trusted reverse proxy connects to Fortress, set `TRUST_PROXY=1` in the controller environment so login limits use the client address supplied by that proxy. For Compose, add it to the service's `environment` mapping. Leave it unset for direct access or any other proxy topology.
+If exactly one trusted reverse proxy connects to Fortress, set `TRUST_PROXY=1` in the controller environment so login admission uses the client address supplied by that proxy. Leave it unset for direct access or other proxy arrangements.
 
-## Security and recovery
+## Configure a backup
 
-- Persist `/app/data` and do not grant writable access to unrelated users. The container stores generated runtime configuration, including JWT and credential-encryption material, in `/app/data/.env`.
-- Protect credential-encryption material and back it up independently. Losing it prevents decryption of stored credentials, so a database backup alone is not sufficient for recovery.
-- Keep the bootstrap token and generated runtime configuration out of source control and public logs.
-- Before production use, create a disposable repository and validate both backup and restore against it. Repeat restore validation after changes to repository, credential, client, or recovery configuration.
-- Managed Windows executables, Restic, enrollment tokens, credential files, and local configuration require the protections described in the Windows guide.
+1. **Add a source.** In **Systems**, register the machine and import a private key into **Identity Vault**. Assign the identity and a verified SSH host public key to the source.
+2. **Verify access.** Use **Check Connection** to verify SSH authentication and host identity. **Deploy Toolset** can install the selected supported engines.
+3. **Add storage.** Create a destination in **Storage Locations**. Local/NFS paths must be mounted and accessible where the selected engine runs.
+4. **Prepare the repository.** Initialize an encrypted Borg or Restic repository separately before the first backup, and save the same repository passphrase in the job.
+5. **Create a job.** Choose the source, paths, destination, and engine. Run it manually or explicitly enable automatic scheduling.
+6. **Verify recovery.** Test a backup and restore using a disposable repository before relying on the configuration.
 
-## Managed Windows clients (pre-production)
+SSH schedules use five-field cron expressions in **UTC**. The controller checks schedules once per minute and prevents overlapping runs of the same job. Existing jobs remain manual until automatic scheduling is enabled. Scheduling requires a saved source identity, verified host key, and repository credentials.
 
-Read [`agent/windows/MANAGED.md`](agent/windows/MANAGED.md) before enrolling a client. It is the canonical setup and operations guide.
+Retention fields record the intended policy. Ordinary backup runs do **not** automatically prune or delete archives.
 
-Managed clients initiate outbound HTTPS polling to the controller, so they do not require inbound Windows firewall rules. Enrollment returns the client token once, while the controller stores its hash. Repository settings, source paths, credentials, SSH verification, and the Restic executable remain in locally protected Windows configuration. The controller can queue only the allow-listed `backup`, `check`, and `snapshots` operations.
+### Hetzner Storage Box
 
-Duplicate-execution safeguards include one in-flight job per client, execution leases, an active-job marker that requires operator intervention after interruption, and replay of unacknowledged completion reports.
+Choose **SFTP Server** when adding a location and provide:
 
-The following production blockers remain:
+- Your Storage Box hostname and SSH port, normally **23**.
+- The account name and repository directory.
+- The verified SSH host public key.
+- An unencrypted, dedicated SSH private key whose matching public key is installed on the Storage Box.
 
-- No full remote policy provisioning. Backup sources, repository destinations, and credentials are not centrally editable.
-- No automatic enrollment-token rotation or client auto-update.
+A path such as `backups/source` is relative to the account's home. In an SFTP URL, a double slash before the path denotes an absolute path, for example `sftp://user@host:23//backups/source`. **Test Connection** checks authentication, host identity, and directory access without creating a repository.
+
+Borg and Rsync use native SSH transport with the saved destination identity and host key; SSHFS is not required for these workflows. Test backup and restore against your own Storage Box before production use.
+
+## Security & recovery
+
+- Protect the bootstrap token, database, and runtime configuration. The Compose stack stores generated configuration and credential-encryption material in `/app/data/.env`.
+- Back up encryption material independently and securely. A database backup alone cannot recover encrypted credentials if the encryption material is lost.
+- Repeat a restore test after changing repositories, credentials, clients, or recovery configuration.
+- Configuration exports contain metadata, **not private credentials**. Imports preserve credentials on matching records and keep new jobs on manual runs. An export is not a replacement for the protected database and runtime encryption material.
+- Database settings are preferences; saving them does not migrate or switch the active database. Use **Check Active Database** to query the running connection. GitHub is the implemented SSO provider; unavailable providers and storage engines are marked in the interface.
+
+## Managed Windows clients
+
+Managed Windows clients are **pre-production**. Read the [managed client guide](agent/windows/MANAGED.md) before enrollment.
+
+Clients poll the controller over outbound HTTPS. Enrollment displays a client token once, while the controller stores its hash. Backup sources, repository settings, credentials, SSH verification, and the Restic executable remain in protected local Windows configuration. The controller can queue `backup`, `check`, and `snapshots` operations.
+
+Execution leases, an active-job marker, and replay of unacknowledged completion reports provide duplicate-execution safeguards. Current limitations include:
+
+- No full remote provisioning of backup sources, repositories, or credentials.
+- No automatic enrollment-token rotation or client updates.
 - No file-level managed-client restore interface.
 - No completed end-to-end Windows VSS and Hetzner Storage Box restore test.
 
-## Contributor guide
+## Development & verification
 
-Read [`ARCH_README.md`](ARCH_README.md) for the internal architecture. The main source directories are `server/`, `client/`, `components/`, `src/routes/`, `agent/windows/`, `scripts/`, and `tests/`.
-
-Run the controller CI-equivalent checks before submitting changes:
+The main application lives in `server/`, `client/`, and `components/`. See the [architecture guide](ARCH_README.md), [interface QA notes](docs/interface-qa.md), and [project backlog](TODO.md) for implementation details and test boundaries.
 
 ```bash
 bun install --frozen-lockfile
@@ -81,23 +123,10 @@ bun audit --audit-level=high
 bun test
 bun run build
 bunx tsc --noEmit
+
+# Install Chromium once, then run the browser workflows.
 bunx playwright install chromium
 bun run test:ui
 ```
 
-
-## SSH backup operation
-
-Register a source in **Systems**, import an SSH identity in **Identity Vault**, and assign it to the source. Saving a source records its configuration. **Check Connection** verifies SSH authentication against its enrolled host key; **Deploy Toolset** installs only the selected supported engines.
-
-For a Hetzner Storage Box, choose **SFTP Server** in **Storage Locations**. Enter the Storage Box hostname, SSH port (normally `23`), account name, repository directory, verified SSH host public key, and an unencrypted dedicated SSH private key. Install the matching public key on the Storage Box. A directory such as `backups/source` is relative to the account's home; `//backups/source` in an SFTP URL denotes an absolute path. Connection testing logs in and checks the directory without creating or changing a repository.
-
-Initialize an encrypted Borg or Restic repository separately before its first backup, using the same repository passphrase you save in the job. Each backup engine uses the saved destination identity and host key. Borg and Rsync use native SSH transport; SSHFS is not required by these job workflows. NFS/local paths must be mounted and accessible where the selected engine runs. Snapshot browsing and restore are available for Borg and Restic.
-
-SSH jobs run manually unless **Run automatically on this UTC schedule** is enabled. The controller checks five-field cron schedules once per minute and prevents overlapping runs of the same job. Existing jobs migrate with automatic scheduling disabled. Scheduling requires a saved source SSH identity, verified host key, and repository credentials. Retention fields record the intended policy; ordinary backup runs do not automatically prune or delete archives.
-
-Settings save only after the controller accepts the change. **Security** changes the signed-in account password and revokes older sessions. Database preferences do not migrate or switch the active database; **Check Active Database** probes the controller's running connection. GitHub is the implemented SSO provider. Unsupported storage engines and providers are shown as unavailable.
-
-Configuration exports contain metadata without private credentials. Imports persist through the controller API, preserve credentials on matching existing records, and leave newly imported jobs on manual runs. For recovery or migration to a new controller, preserve the protected database and runtime encryption material separately; a metadata export does not contain SSH keys or repository passphrases.
-
-See [`docs/interface-qa.md`](docs/interface-qa.md) for browser coverage and remaining external integration checks.
+The browser suite uses a disposable controller and SQLite database. Some restore and live-event responses are simulated; external providers and real Storage Box recovery need their own integration environment.
