@@ -241,6 +241,7 @@ async function cancelManagedJobs(clientId:string,jobId?:string){
 router.post('/admin/:id/enable',authenticateToken,requireAdmin,async(req,res,next)=>{
  try{
   const agent=await lookup(req.params.id);if(!agent)return res.sendStatus(404);
+  if(agent.disabled)await run("UPDATE managed_jobs SET state='canceled',cancel_requested=1,finished_at=?,message='Old queued operation canceled when enrollment was re-enabled' WHERE client_id=? AND state='pending'",[new Date().toISOString(),agent.id]);
   await run('UPDATE managed_clients SET disabled=0,next_run_at=? WHERE id=?',[agent.schedule_minutes?new Date(Date.now()+agent.schedule_minutes*60000).toISOString():null,agent.id]);
   res.json({disabled:false});
  }catch(error){next(error)}
@@ -249,7 +250,7 @@ router.delete('/admin/:id',authenticateToken,requireAdmin,async(req,res,next)=>{
  try{
   const agent=await lookup(req.params.id);if(!agent)return res.sendStatus(404);
   const removed=await getOne(`DELETE FROM managed_clients WHERE id=? AND disabled=1
-   AND NOT EXISTS(SELECT 1 FROM managed_jobs WHERE client_id=? AND state IN ('pending','running')) RETURNING id`,[agent.id,agent.id]);
+   AND NOT EXISTS(SELECT 1 FROM managed_jobs WHERE client_id=? AND state='running') RETURNING id`,[agent.id,agent.id]);
   if(!removed)return res.status(409).json({error:'Disable this enrollment and wait for running jobs to stop before removing it'});
   res.json({removed:true});
  }catch(error){next(error)}
