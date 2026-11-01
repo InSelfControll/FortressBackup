@@ -66,7 +66,7 @@ function Update-ManagedRuntime([string]$SetupRoot,[object]$Profile,[string]$Cont
     if(!(Test-Path -LiteralPath $configPath)){return $false}
     $saved=Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
     if($saved.agentId -ne $Id -or $saved.controllerUrl.TrimEnd('/') -ne $Controller.TrimEnd('/')){return $false}
-    $changed=$saved.repositoryJobId -ne $Profile.repositoryJobId
+    $changed=[string]$saved.repositoryJobId -ne [string]$Profile.repositoryJobId
     foreach($name in @('fortress-agent.exe','restic.exe')){
         $installed=Join-Path $runtime $name
         if(!(Test-Path -LiteralPath $installed) -or (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath (Join-Path $SetupRoot $name) -Algorithm SHA256).Hash){$changed=$true}

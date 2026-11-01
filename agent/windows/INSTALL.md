@@ -74,8 +74,7 @@ restore can leave partial files there; inspect agent.log before using them.
 The dashboard offers the same controls under **Managed Clients → Browse backups
 and restore**. The laptop must be online and configured. Requests remain queued
 until the agent checks in; progress and the actual operation appear on the dashboard.
-After upgrading from an older version, open Configuration and **Save and connect**
-to update the background runtime and enable recovery. Clicking the app again
+After upgrading, open the app. Reconnecting automatically verifies and updates an older background runtime. If a backup is active, wait for it to finish and refresh the connection. Clicking the app again
 restores and focuses its existing native application window. No PowerShell console is launched to display it.
 
 ## Cancel and manage enrollments
