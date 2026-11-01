@@ -131,8 +131,14 @@ test('release publication waits for validation and verifies bundled executables'
     expect(packageScript).toContain(name);
   }
   expect(packageScript).toContain('installer.iss');
+  expect(packageScript).toContain('fortress.ico');
+  expect(packageScript).toContain('LUCIDE-LICENSE.txt');
   expect(step(release.jobs['package-windows'], 'Verify published installer lifecycle').run).toContain('test-installer.ps1');
   expect(step(windowsWorkflow.jobs.verify, 'Verify single-file application installer lifecycle').shell).toBe('powershell');
+  const scan = step(release.jobs['package-windows'], 'Scan release files and report publisher signatures');
+  expect(scan.run).toContain("$env:GITHUB_REF_NAME -notmatch '-'");
+  expect(scan.run).toContain('-RequireSigned:$requireSigned');
+  expect(release.jobs['package-windows'].steps.indexOf(scan)).toBeLessThan(release.jobs['package-windows'].steps.findIndex((candidate: any) => candidate.uses?.startsWith('actions/upload-artifact@')));
   expect(step(windowsWorkflow.jobs.verify, 'Verify setup with Windows PowerShell 5.1').shell).toBe('powershell');
   expect(step(release.jobs.controller, 'Require a version tag on main').run).toContain('git merge-base --is-ancestor HEAD origin/main');
 });

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-rc.7] - 2026-11-01
+
+- Apply the existing Fortress shield/check branding to Windows executable resources, installer/uninstaller, shortcuts, and the configuration window.
+- Add executable product/version metadata using native Windows build tools.
+- Scan release artifacts with Microsoft Defender and publish exact signature/scan status. Stable releases require timestamped signatures; unsigned prereleases remain explicitly identified.
+- Document the code-signing identity still needed for verified publisher signing and the limits of antivirus scans and SmartScreen reputation.
+
 ## [0.1.0-rc.6] - 2026-10-31
 
 - Add a single Windows installer with bundled app/agent/Restic, Program Files installation, Start menu and optional desktop shortcuts, and an Installed apps uninstall entry.

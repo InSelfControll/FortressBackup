@@ -13,6 +13,12 @@
 
 ## Fixes
 
+- Add the Fortress icon to the Windows app, installer, uninstaller, Start menu,
+  taskbar, and configuration window, with executable version information.
+- Scan release files with Microsoft Defender and publish signature/scan details
+  in `Windows-trust-report.json`. **This prerelease is unsigned**; no verified
+  signing identity is configured. SmartScreen may still warn about a new or
+  unrecognized download. A clean antivirus scan does not guarantee reputation.
 - Install the app first, then open **Fortress Backup** to configure enrollment,
   the saved repository, and local folders. Reopening loads existing settings.
   Upgrade preserves configuration; uninstall removes the task/runtime while

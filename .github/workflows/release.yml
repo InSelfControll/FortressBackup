@@ -74,11 +74,18 @@ jobs:
           $restic = Join-Path $upstream "restic_$($env:RESTIC_VERSION)_windows_amd64.exe"
           & ./agent/windows/package.ps1 -AgentDirectory ./agent-artifact -ResticPath $restic -Version $env:GITHUB_REF_NAME -OutputDirectory ./downloads
           if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
+      - name: Scan release files and report publisher signatures
+        shell: powershell
+        timeout-minutes: 10
+        run: |
+          $requireSigned = $env:GITHUB_REF_NAME -notmatch '-'
+          ./agent/windows/check-release.ps1 -Directory ./downloads -ReportPath ./downloads/Windows-trust-report.json -RequireSigned:$requireSigned
       - name: Verify published installer lifecycle
         shell: powershell
         timeout-minutes: 5
         run: |
-          ./agent/windows/test-installer.ps1 -InstallerPath "downloads/FortressBackup-Setup-$env:GITHUB_REF_NAME.exe"
+          $requireSigned = $env:GITHUB_REF_NAME -notmatch '-'
+          ./agent/windows/test-installer.ps1 -InstallerPath "downloads/FortressBackup-Setup-$env:GITHUB_REF_NAME.exe" -RequireSigned:$requireSigned
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: windows-downloads

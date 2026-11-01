@@ -22,6 +22,9 @@ OutputBaseFilename=FortressBackup-Setup-v{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 UninstallDisplayIcon={app}\FortressBackup.exe
+SetupIconFile={#BundleDir}\fortress.ico
+VersionInfoDescription=Fortress Backup Installer
+VersionInfoProductName=Fortress Backup
 CloseApplications=yes
 RestartApplications=no
 SetupLogging=yes
@@ -33,8 +36,8 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 Source: "{#BundleDir}\*"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{commonprograms}\Fortress Backup"; Filename: "{app}\FortressBackup.exe"; WorkingDir: "{app}"
-Name: "{commondesktop}\Fortress Backup"; Filename: "{app}\FortressBackup.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{commonprograms}\Fortress Backup"; Filename: "{app}\FortressBackup.exe"; WorkingDir: "{app}"; AppUserModelID: "InSelfControll.FortressBackup"
+Name: "{commondesktop}\Fortress Backup"; Filename: "{app}\FortressBackup.exe"; WorkingDir: "{app}"; AppUserModelID: "InSelfControll.FortressBackup"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\FortressBackup.exe"; Description: "Open Fortress Backup to configure this laptop"; Flags: postinstall nowait skipifsilent runascurrentuser
