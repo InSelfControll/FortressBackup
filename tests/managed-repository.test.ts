@@ -6,6 +6,7 @@ import path from 'node:path';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import {utils as sshUtils} from 'ssh2';
+import jobs from '../server/routes/jobs.js';
 import managedAgents from '../server/routes/managedAgents.js';
 import {initDatabase,closeDatabase} from '../server/db/connection.js';
 import {run,getOne} from '../server/db/helpers.js';
@@ -18,14 +19,14 @@ test('repository provisioning is scoped, TLS-only, redacted, revocable, and neve
  const signing=crypto.randomBytes(48).toString('hex');
  process.env.JWT_SECRET=signing;process.env.FORTRESS_CREDENTIAL_KEY=crypto.randomBytes(32).toString('hex');
  const folder=fs.mkdtempSync(path.join(os.tmpdir(),'fortress-provision-'));
- const app=express();app.set('trust proxy','loopback');app.use(express.json());app.use('/agents',managedAgents);
+ const app=express();app.set('trust proxy','loopback');app.use(express.json());app.use('/agents',managedAgents);app.use('/jobs',jobs);
  await initDatabase({type:'sqlite',filePath:path.join(folder,'data.db')});
  const server=app.listen(0,'127.0.0.1');
  try{
   const address=server.address();if(!address||typeof address==='string')throw new Error('Test server failed');
   const base='http://127.0.0.1:'+address.port+'/agents';
   const api=async(route:string,body:unknown,headers:Record<string,string>,method='POST')=>{
-   const response=await fetch(base+route,{method,headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});
+   const response=await fetch(route.startsWith('/jobs/')?base.replace(/\/agents$/,'')+route:base+route,{method,headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});
    return {status:response.status,headers:response.headers,data:await response.json() as any};
   };
   await run('INSERT INTO users(id,email,name,role,auth_type) VALUES(?,?,?,?,?)',['admin','admin@example.invalid','Admin','admin','local']);
@@ -72,6 +73,22 @@ test('repository provisioning is scoped, TLS-only, redacted, revocable, and neve
   expect(JSON.stringify(inventory.data)).not.toContain(enrolled.data.token);
   expect((await getOne<{count:number}>('SELECT count(*) AS count FROM managed_jobs'))?.count).toBe(0);
   expect((await getOne<{last_seen:string|null}>('SELECT last_seen FROM managed_clients WHERE id=?',[enrolled.data.id]))?.last_seen).toBeNull();
+  const capabilities=['recovery-v1','recovery-v2','cancel-v1'];
+  await api('/poll',{capabilities},auth);
+  const snapshotId='a'.repeat(64);
+  expect((await api('/jobs/'+jobId+'/restore',{managedAgentId:enrolled.data.id,snapshotId,paths:['/home/old/file.txt']},viewer)).status).toBe(403);
+  const recovery=await api('/jobs/'+jobId+'/restore',{managedAgentId:enrolled.data.id,snapshotId,paths:['/home/old/file.txt'],restorePath:'C:\\Windows'},admin);
+  expect(recovery.status).toBe(201);
+  const leased=await api('/poll',{capabilities},auth);
+  expect(leased.data.job).toMatchObject({id:recovery.data.id,operation:'restore',request:{allDevices:true,repositoryJobId:jobId,snapshotId,paths:['/home/old/file.txt']}});
+  expect(leased.data.job.request.restorePath).toBeUndefined();
+  expect((await getOne<any>('SELECT status FROM jobs WHERE id=?',[jobId])).status).toBe('Idle');
+  await api('/report',{id:recovery.data.id,success:false,message:'test fixture ended'},auth);
+  const differentId=crypto.randomUUID();
+  await saveJob({id:differentId,name:'Different repository password',tool:'Restic',destination_id:locationId,repo_password:JSON.stringify(encrypt(crypto.randomBytes(32).toString('hex'),signing)),priority:'Medium',status:'Idle'});
+  await api('/admin/'+second.data.id+'/repository',{repositoryJobId:differentId},admin,'PUT');
+  await api('/poll',{capabilities},secondAuth);
+  expect((await api('/jobs/'+jobId+'/restore',{managedAgentId:second.data.id,snapshotId},admin)).status).toBe(409);
   await api('/admin/'+enrolled.data.id+'/disable',{},admin);
   expect((await api('/setup',{},auth)).status).toBe(401);
  }finally{
