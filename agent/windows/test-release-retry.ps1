@@ -14,10 +14,20 @@ if(!$Scan -or $ScanType -ne 3 -or !$DisableRemediation){throw 'Scan protections 
 $global:LASTEXITCODE=0
 '@ | Set-Content -LiteralPath $scanner
  $env:ProgramData=$root;$env:ProgramFiles=$root
- foreach($case in @('transient','permanent','exhausted')){
+ foreach($case in @('transient','busy','restart','permanent','exhausted','service-exhausted','busy-exhausted')){
   & {
-   $state=@{attempts=0;sleeps=0};$nativeItems=Get-Command Get-ChildItem
-   function Get-Service {param($Name) [pscustomobject]@{Status='Running'}}
+   $state=@{attempts=0;sleeps=0;starts=0;waits=0;stopped=$false};$nativeItems=Get-Command Get-ChildItem
+   function Get-Service {
+    param($Name)
+    $service=[pscustomobject]@{Status=$(if($state.stopped){'Stopped'}else{'Running'})}
+    $service | Add-Member -MemberType ScriptMethod -Name WaitForStatus -Value {
+     param($Status,$Timeout)
+     if($Status -ne 'Running' -or $Timeout.TotalSeconds -ne 30 -or $state.stopped){throw 'Service readiness was not required'}
+     $state.waits++
+    }
+    $service
+   }
+   function Start-Service {param($Name) if($Name -ne 'WinDefend'){throw 'Unexpected service'};$state.starts++;$state.stopped=$false}
    function Get-ChildItem {
     [CmdletBinding()]param($Path,$LiteralPath,[switch]$File,[switch]$Recurse)
     if($Path){return [pscustomobject]@{FullName=$scanner}}
@@ -27,6 +37,8 @@ $global:LASTEXITCODE=0
     [CmdletBinding()]param()
     $state.attempts++
     if($case -eq 'permanent'){Write-Error 'fatal fixture' -ErrorId 'HRESULT 0x80070005' -ErrorAction Stop}
+    if($case -eq 'busy-exhausted' -or ($case -eq 'busy' -and $state.attempts -eq 1)){Write-Error 'Installer busy fixture' -ErrorId 'HRESULT 0x80070652' -ErrorAction Stop}
+    if($case -eq 'service-exhausted' -or ($case -eq 'restart' -and $state.attempts -eq 2)){$state.stopped=$true;Write-Error 'Service fixture' -ErrorId 'HRESULT 0x800106ba' -ErrorAction Stop}
     if($case -eq 'exhausted' -or $state.attempts -eq 1){Write-Error 'RPC fixture' -ErrorId 'HRESULT 0x800706be' -ErrorAction Stop}
    }
    function Get-MpComputerStatus {[pscustomobject]@{AMServiceEnabled=$true;AMEngineVersion='fixture';AntivirusSignatureVersion='fixture';AntivirusSignatureLastUpdated=[datetime]::UtcNow}}
@@ -35,8 +47,10 @@ $global:LASTEXITCODE=0
    try{& $check -Directory (Join-Path $root 'input') -ReportPath $report}catch{$failed=$true}
    $result=Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
    $marker=Join-Path $root 'scanned'
-   if($case -eq 'transient'){
-    if($failed -or $state.attempts -ne 2 -or $state.sleeps -ne 1 -or !(Test-Path -LiteralPath $marker) -or $result.defender.result -ne 'NoDetections'){throw 'Transient retry did not reach the required scan'}
+   if($case -in @('transient','busy','restart')){
+    $expected=if($case -eq 'restart'){3}else{2}
+    if($failed -or $state.attempts -ne $expected -or $state.sleeps -ne ($expected-1) -or $state.waits -ne $expected -or !(Test-Path -LiteralPath $marker) -or $result.defender.result -ne 'NoDetections'){throw 'Transient retry did not reach the required scan'}
+    if($case -eq 'restart' -and $state.starts -ne 1){throw 'Stopped Defender service was not restarted before updating'}
     Remove-Item -LiteralPath $marker
    }else{
     $expected=if($case -eq 'permanent'){1}else{3}
@@ -44,7 +58,7 @@ $global:LASTEXITCODE=0
    }
   }
  }
- Write-Output 'Transient RPC retry, retry exhaustion, and fatal update rejection verified'
+ Write-Output 'RPC/service restart/busy recovery, retry exhaustion, and fatal update rejection verified'
 }finally{
  $env:ProgramData=$originalData;$env:ProgramFiles=$originalPrograms
  if(Test-Path -LiteralPath $root){Remove-Item -LiteralPath $root -Recurse -Force}

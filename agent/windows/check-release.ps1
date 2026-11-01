@@ -34,17 +34,21 @@ try {
     if($RequireSigned -and ($unsigned.Count -or @($records | Where-Object {$_.signature -and !$_.signature.timestamped}).Count)){
         throw 'Stable releases require valid, timestamped Authenticode signatures on executable and PowerShell files. Configure a trusted code-signing identity first.'
     }
-    if((Get-Service WinDefend).Status -ne 'Running'){Start-Service WinDefend}
     # Defender platform updates can restart its CIM provider mid-request.
-    # Retry only transient RPC failures; an update must still succeed before scanning.
+    # Recheck readiness on every retry; platform updates can restart the service
+    # or briefly hold the Windows Installer lock (0x80070652).
+    # An update must still succeed before scanning.
     for($attempt=0;$attempt -lt 3;$attempt++){
         try {
+            $service=Get-Service WinDefend
+            if($service.Status -eq 'Stopped'){Start-Service WinDefend}
+            $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(30))
             Update-MpSignature
             $engine=Get-MpComputerStatus
             break
         }catch{
-            if($attempt -ge 2 -or $_.FullyQualifiedErrorId -notmatch '0x800706b[ae]'){throw}
-            Write-Host 'Defender RPC service is temporarily unavailable; retrying the signature update.'
+            if($attempt -ge 2 -or $_.FullyQualifiedErrorId -notmatch '0x800(706(b[ae]|52)|106ba)'){throw}
+            Write-Host 'Defender updater is temporarily unavailable or busy; waiting before retrying.'
             Start-Sleep -Seconds 10
         }
     }
