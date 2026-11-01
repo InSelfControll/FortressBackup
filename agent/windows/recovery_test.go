@@ -26,6 +26,13 @@ func TestRecoveryValidation(t *testing.T) {
 	if err := validateOperation(lease{ID: id, Operation: "restore", Request: operationRequest{SnapshotID: sid}}); err != nil {
 		t.Fatal(err)
 	}
+	pattern := literalInclude("document[1].txt")
+	if match, err := filepath.Match(pattern, "document[1].txt"); err != nil || !match {
+		t.Fatal("literal Windows filename was not matched", pattern, err)
+	}
+	if match, _ := filepath.Match(pattern, "document1.txt"); match {
+		t.Fatal("literal Windows filename expanded as a glob")
+	}
 	c := Config{Host: "this-host", AgentID: id}
 	if ownSnapshot(c, savedSnapshot{Hostname: "other-host"}) || ownSnapshot(c, savedSnapshot{Hostname: c.Host, Tags: []string{"fortress-agent:other"}}) {
 		t.Fatal("cross-client snapshot accepted")

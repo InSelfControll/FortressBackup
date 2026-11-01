@@ -149,8 +149,9 @@ func snapshotFor(ctx context.Context, c Config, id string) error {
 	return errors.New("snapshot does not belong to this laptop")
 }
 func literalInclude(value string) string {
-	// Restic include expressions are globs. Escape names containing metacharacters.
-	return strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`).Replace(value)
+	// Restic uses Windows filepath matching: backslashes are separators, not
+	// escapes. Character classes preserve literal bracket/wildcard characters.
+	return strings.NewReplacer(`*`, `[*]`, `?`, `[?]`, `[`, `[[]`).Replace(value)
 }
 func noReparseDirectories(directory string) error {
 	for current := filepath.Clean(directory); ; current = filepath.Dir(current) {
