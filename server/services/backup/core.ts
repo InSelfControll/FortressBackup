@@ -17,6 +17,7 @@ interface BackupProcessContext {
     jobId: string;
     runEpoch: number;
     signal?:AbortSignal;
+    stopUnconfirmed?:boolean;
 }
 
 interface RecordedProcessGroup {
@@ -36,14 +37,15 @@ export function cancelRecordedJob(jobId:string,epoch:number):boolean{
 }
 export async function withBackupProcessContext<T>(context: BackupProcessContext, operation: () => T): Promise<Awaited<T>> {
  const controller=new AbortController(),key=processRunKey(context.jobId,context.runEpoch);
+ const execution:BackupProcessContext={...context,signal:controller.signal};
  operationControllers.set(key,controller);
  const timer=setInterval(async()=>{
   try{const {getOne}=await import('../../db/helpers.js');const row=await getOne<{run_epoch:number;cancel_requested:number;status:string}>('SELECT run_epoch,cancel_requested,status FROM jobs WHERE id=?',[context.jobId]);
    if(row&&(row.cancel_requested||row.run_epoch!==context.runEpoch||row.status!=='Running'))controller.abort();
   }catch{/* A temporary database outage must not falsely cancel work. */}
  },1000);timer.unref?.();
- try{return await processContext.run({...context,signal:controller.signal},operation)}
- finally{clearInterval(timer);if(operationControllers.get(key)===controller)operationControllers.delete(key)}
+ try{return await processContext.run(execution,operation)}
+ finally{clearInterval(timer);if(operationControllers.get(key)===controller)operationControllers.delete(key);if(execution.stopUnconfirmed)throw Object.assign(new Error('Could not confirm the operation stopped; operator review is required'),{stopUnconfirmed:true})}
 }
 
 
@@ -203,7 +205,7 @@ export class BackupExecutor extends EventEmitter {
                 if(finished)return;
                 finished=true;cleanup();
                 try{await terminate()}catch{
-                  const context=executionContext;
+                  const context=executionContext;if(context)context.stopUnconfirmed=true;
                   if(context){try{const {run}=await import('../../db/helpers.js');await run("UPDATE jobs SET status='ReviewRequired' WHERE id=? AND run_epoch=? AND status='Running'",[context.jobId,context.runEpoch])}catch{/* No confirmed stop: keep the operation unresolved. */}}
                   reject(new Error('Could not confirm the operation stopped; operator review is required'));return;
                 }
@@ -231,6 +233,7 @@ export class BackupExecutor extends EventEmitter {
                 const child=spawn('/bin/sh',['-s'],{
                     stdio:['pipe','pipe','pipe'],detached:process.platform!=='win32'
                 });
+                const exited=new Promise<void>(resolve=>child.once('close',()=>resolve()));
                 const context=executionContext;
                 if(context && child.pid!==undefined && process.platform!=='win32'){
                     const recorded=recordProcessGroup(context.jobId,context.runEpoch,child.pid);
@@ -244,6 +247,8 @@ export class BackupExecutor extends EventEmitter {
                     }
                     try { process.kill(-child.pid,'SIGKILL'); }
                     catch { child.kill('SIGKILL'); }
+                    let limit:ReturnType<typeof setTimeout>|undefined;
+                    try{await Promise.race([exited,new Promise<void>((_,reject)=>{limit=setTimeout(()=>reject(new Error('Local stop confirmation timed out')),5000)})])}finally{if(limit)clearTimeout(limit)}
                 };
                 child.on('error',fail);
                 child.stdout.on('data',(chunk:Buffer)=>append('stdout',chunk));
@@ -253,7 +258,7 @@ export class BackupExecutor extends EventEmitter {
                 child.stdin.end(command);
             }else{
                 // A separate process group lets cancellation stop Restic and its SSH descendants.
-                this.client.exec(`setsid sh -c 'printf "FORTRESS_PROCESS_GROUP:%s\\n" "$$"; IFS= read -r allow; [ "$allow" = run ] && exec sh -s'`,(error,stream)=>{
+                this.client.exec(`setsid -w sh -c 'printf "FORTRESS_PROCESS_GROUP:%s\\n" "$$"; IFS= read -r allow; [ "$allow" = run ] && exec sh -s'`,(error,stream)=>{
                     if(error)return void fail(error);
                     if(finished){stream.close();return}
                     let pgid:number|undefined,header='';
@@ -261,9 +266,9 @@ export class BackupExecutor extends EventEmitter {
                         if(!pgid){stream.close();resolve();return}
                         const target=pgid;
                         if(target<=1){rejectStop(new Error('Invalid remote process group'));return}
-                        this.client.exec(`kill -9 -${target} 2>/dev/null; n=0; while kill -0 -${target} 2>/dev/null && [ "$n" -lt 20 ]; do n=$((n+1)); sleep 0.1; done; if ! kill -0 -${target} 2>/dev/null; then exit 0; fi; state=$(ps -eo pgid=,stat=) || exit 2; printf '%s\\n' "$state" | awk '$1==${target} && $2 !~ /^Z/ {alive=1} END {exit alive?1:0}'`,(err,control)=>{
+                        this.client.exec(`kill -TERM -${target} 2>/dev/null; n=0; while kill -0 -${target} 2>/dev/null && [ "$n" -lt 20 ]; do n=$((n+1)); sleep 0.1; done; kill -9 -${target} 2>/dev/null; n=0; while kill -0 -${target} 2>/dev/null && [ "$n" -lt 20 ]; do n=$((n+1)); sleep 0.1; done; if ! kill -0 -${target} 2>/dev/null; then exit 0; fi; state=$(ps -eo pgid=,stat=) || exit 2; printf '%s\\n' "$state" | awk '$1==${target} && $2 !~ /^Z/ {alive=1} END {exit alive?1:0}'`,(err,control)=>{
                             if(err){rejectStop(err);return}
-                            const limit=setTimeout(()=>{control.close();rejectStop(new Error('Stop confirmation timed out'))},5000);
+                            const limit=setTimeout(()=>{control.close();rejectStop(new Error('Stop confirmation timed out'))},7000);
                             control.on('data',()=>{});control.stderr.on('data',()=>{});
                             control.on('error',error=>{clearTimeout(limit);rejectStop(error)});
                             control.on('close',(code:number)=>{clearTimeout(limit);if(code===0)resolve();else rejectStop(new Error('Remote process group is still active'))});

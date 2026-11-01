@@ -10,7 +10,7 @@ import { closeDatabase, initDatabase } from '../server/db/connection.js';
 import { getOne, run } from '../server/db/helpers.js';
 import jobs from '../server/routes/jobs.js';
 import { decrypt } from '../server/encryption.js';
-import { BackupExecutor } from '../server/services/backup/core.js';
+import { BackupExecutor,withBackupProcessContext } from '../server/services/backup/core.js';
 import { listFiles, listSnapshots, restore } from '../server/services/backup/operations.js';
 
 const dummyConfig: any = {
@@ -500,23 +500,33 @@ test.skipIf(process.platform==='win32')('remote cancellation stops the entire pr
  const {spawn}=await import('node:child_process');const {EventEmitter}=await import('node:events');
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'fortress-remote-cancel-')),pidFile=path.join(root,'pid');
  const executor=new BackupExecutor(false);executor.setConnected(true);
- const children:ReturnType<typeof spawn>[]=[];
+ const children:ReturnType<typeof spawn>[]=[];let rejectStop=false;let uncertainGroup:number|undefined;
  const remote=spyOn(executor.getClient(),'exec').mockImplementation(((command:string,callback:any)=>{
-  const child=spawn('/bin/sh',['-c',command],{stdio:['pipe','pipe','pipe']});children.push(child);
+  if(rejectStop&&command.startsWith('kill -TERM')){callback(new Error('SSH control connection lost'));return undefined as any}
+  const child=spawn('/bin/sh',['-c',command.startsWith('setsid ')?'exec '+command:command],{stdio:['pipe','pipe','pipe'],detached:true});children.push(child);
   const stream:any=new EventEmitter();stream.stderr=child.stderr;stream.end=(text:string)=>child.stdin?.end(text);stream.close=()=>{child.stdin?.end()};
   child.stdout?.on('data',chunk=>stream.emit('data',chunk));child.on('close',code=>stream.emit('close',code));child.on('error',e=>stream.emit('error',e));
   callback(null,stream);
  }) as any);
  try{
   const control=new AbortController();
-  const work=executor.exec(`sleep 30 & p=$!; printf '%s' "$p" > '${pidFile}'; wait`,control.signal);
+  expect((await executor.exec('exit 7')).code).toBe(7);
+  const work=executor.exec(`trap 'touch "${root}/cleaned"' EXIT TERM; sleep 30 & p=$!; printf '%s' "$p" > '${pidFile}'; wait`,control.signal);
   for(let i=0;i<100&&!fs.existsSync(pidFile);i++)await Bun.sleep(10);
   expect(fs.existsSync(pidFile)).toBe(true);
   const pid=Number(fs.readFileSync(pidFile,'utf8'));control.abort();await expect(work).rejects.toThrow('aborted');
+  expect(fs.existsSync(path.join(root,'cleaned'))).toBe(true);
   try{const stat=fs.readFileSync('/proc/'+pid+'/stat','utf8');expect(stat.split(' ')[2]).toBe('Z')}catch(e:any){if(e.code!=='ENOENT')throw e}
   const early=new AbortController();early.abort();await expect(executor.exec(`touch '${root}/must-not-start'`,early.signal)).rejects.toThrow('aborted');
   expect(fs.existsSync(path.join(root,'must-not-start'))).toBe(false);
- }finally{remote.mockRestore();for(const child of children)child.kill('SIGKILL');fs.rmSync(root,{recursive:true,force:true})}
+  rejectStop=true;
+  const uncertainPid=path.join(root,'uncertain-pid'),abortUncertain=new AbortController();
+  const uncertain=withBackupProcessContext({jobId:'unconfirmed-stop',runEpoch:1},async()=>{try{await executor.exec(`printf '%s' "$$" > '${uncertainPid}'; sleep 30`,abortUncertain.signal)}catch{return false}});
+  for(let i=0;i<100&&!fs.existsSync(uncertainPid);i++)await Bun.sleep(10);
+  uncertainGroup=Number(fs.readFileSync(uncertainPid,'utf8'));abortUncertain.abort();
+  await expect(uncertain).rejects.toThrow('operator review is required');
+
+ }finally{if(uncertainGroup){try{process.kill(-uncertainGroup,'SIGKILL')}catch{}}remote.mockRestore();for(const child of children)child.kill('SIGKILL');fs.rmSync(root,{recursive:true,force:true})}
 },15000);
 
 test('canceling an SSH restore keeps its lease until stopping is acknowledged',async()=>{

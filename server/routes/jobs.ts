@@ -226,9 +226,9 @@ export async function executeSavedJob(jobId:string, credentials:Record<string,un
     } catch (error: any) {
         if (runEpoch !== null) {
             try {
-                const completed = await completeRunningJob(jobId, runEpoch, 'Failed');
+                const completed = error?.stopUnconfirmed?Boolean(await db.getOne("UPDATE jobs SET status='ReviewRequired' WHERE id=? AND run_epoch=? AND status='Running' RETURNING id",[jobId,runEpoch])):await completeRunningJob(jobId, runEpoch, 'Failed');
                 if (completed) {
-                    const message = 'Backup could not start. Check the saved source SSH identity, host key, and repository configuration.';
+                    const message = error?.stopUnconfirmed?'Cancellation could not be confirmed. Review the source process before rerunning.':'Backup could not start. Check the saved source SSH identity, host key, and repository configuration.';
                     await db.saveJobLogs(jobId,crypto.randomUUID(),[{type:'error',message,timestamp:new Date()}]);
                     broadcastJobLog(jobId,'error',message); notifyJobComplete(jobId,false);
                 }
@@ -380,7 +380,8 @@ router.post('/:id/restore', authenticateToken, requireAdmin, async (req, res) =>
         if((await db.getJob(jobId))?.status==='Canceled')return res.json({success:false,canceled:true,error:'Restore canceled',logs});
         res.status(result.success?200:500).json({success:result.success,...(result.success?{}:{error:result.errors.join(', ')}),logs});
     }catch(error){
-        await finish(false);
+        if((error as any)?.stopUnconfirmed&&epoch!==null){await db.run("UPDATE jobs SET status='ReviewRequired' WHERE id=? AND run_epoch=? AND status='Running'",[jobId,epoch]);epoch=null}
+        else await finish(false);
         res.status(500).json({error:error instanceof Error?error.message:'Restore failed'});
     }
 });
