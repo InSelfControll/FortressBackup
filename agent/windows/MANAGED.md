@@ -14,8 +14,8 @@ See [INSTALL.md](INSTALL.md) for installation and diagnostics.
 ## Trust model
 - Windows clients initiate HTTPS connections to the Fortress controller. No inbound Windows firewall rules needed.
 - The controller stores a SHA-256 hash of each randomly generated bearer token; enrollment returns the secret **once**.
-- Only controller JWT users with role `admin` can enroll, queue operations or disable an agent.
-- Jobs contain **only an allow-listed operation** (`backup`, `check`, `snapshots`).
+- Only controller JWT users with role `admin` can enroll, manage any client or disable an agent. The installed app can queue only fixed operations for its own authenticated identity.
+- Jobs contain **only an allow-listed operation** (`backup`, `check`, `snapshots`, `files`, `restore`); recovery requests contain validated snapshot IDs and file selections, never executable commands or arbitrary restore targets.
 - During enrollment, an administrator assigns an existing Restic SFTP repository. Setup downloads only that repository's address, encryption password, SSH identity and pinned host key over authenticated HTTPS; public inventory never returns them. Paths and the trusted executable remain local. Credentials are protected for SYSTEM and Administrators.
 - One in-flight job per client. A five-hour execution lease requires manual intervention after expiration to prevent automatic duplicate backups.
 
@@ -71,7 +71,7 @@ curl -sS -X POST "https://fortress.example.net/api/managed-agents/admin/ENROLLME
 ```
 
 ## Central management
-- Open **Managed Clients** in the Fortress admin dashboard to enroll clients, queue backup/check/snapshot operations, select a recurring schedule and revoke client access.
+- Open **Managed Clients** in the Fortress admin dashboard to enroll clients, queue backups and repository checks, browse saved versions, restore all or selected files, select a recurring schedule and revoke client access.
 - Client enrollment and job state use dedicated indexed database tables with an atomic job-claim operation and a unique constraint preventing overlapping active jobs.
 - The Windows agent stores a pending completion report beside its locally protected enrollment-token file and retries that report on the next polling run. The controller accepts duplicate completion acknowledgments safely.
 - Backups are scheduled in the controller; the Windows Task Scheduler runs the agent poller every minute.
@@ -82,7 +82,7 @@ curl -sS -X POST "https://fortress.example.net/api/managed-agents/admin/ENROLLME
 - Full and selected-file recovery is available from Managed Clients and the installed app. Results are paginated; detailed byte-level Restic progress is not yet streamed. Windows restores use a new protected per-job folder and never overwrite source files.
 - No automatic token rotation or transport-level client certificate authentication.
 - No end-to-end Windows VSS + Hetzner Storage Box restore test.
-- A complete security audit of all unrelated Fortress endpoints and a real Windows VSS restore test are still required.
+- A complete security audit of all unrelated Fortress endpoints and a restore drill against your own storage are still required. CI verifies VSS and real Restic full/selected-file recovery against disposable local repositories.
 - Cloud-to-cloud scripts are not yet controller-managed.
 
 ## Recovery safeguards

@@ -66,8 +66,17 @@ try {
             foreach($operation in @('snapshots','files','restore')){
                 $jobId=[guid]::NewGuid().ToString()
                 foreach($route in @('request','result')){
-                    $request=$http.GetContext()
-                    if($request.Request.RawUrl -ne ('/api/managed-agents/'+$route)){throw 'Recovery used an unexpected route'}
+                    do {
+                        $request=$http.GetContext()
+                        $background=$request.Request.RawUrl -in @('/api/managed-agents/poll','/api/managed-agents/heartbeat')
+                        if($background){
+                            $reader=New-Object IO.StreamReader($request.Request.InputStream);[void]$reader.ReadToEnd();$reader.Dispose()
+                            $bytes=[Text.Encoding]::UTF8.GetBytes('{"job":null,"ok":true}')
+                            $request.Response.ContentType='application/json';$request.Response.ContentLength64=$bytes.Length
+                            $request.Response.OutputStream.Write($bytes,0,$bytes.Length);$request.Response.Close()
+                        }
+                    }while($background)
+                    if($request.Request.RawUrl -ne ('/api/managed-agents/'+$route)){throw ('Recovery used an unexpected route: '+$request.Request.RawUrl)}
                     if($request.Request.Headers['Authorization'] -ne ('Bearer '+$expectedToken) -or $request.Request.Headers['X-Fortress-Agent-Id'] -ne $agentId){throw 'Recovery authentication missing'}
                     $reader=New-Object IO.StreamReader($request.Request.InputStream)
                     $body=$reader.ReadToEnd() | ConvertFrom-Json;$reader.Dispose()
