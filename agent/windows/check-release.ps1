@@ -35,7 +35,8 @@ try {
         throw 'Stable releases require valid, timestamped Authenticode signatures on executable and PowerShell files. Configure a trusted code-signing identity first.'
     }
     # Defender platform updates can restart its CIM provider mid-request.
-    # Recheck service readiness on every retry, including after a platform restart.
+    # Recheck readiness on every retry; platform updates can restart the service
+    # or briefly hold the Windows Installer lock (0x80070652).
     # An update must still succeed before scanning.
     for($attempt=0;$attempt -lt 3;$attempt++){
         try {
@@ -46,8 +47,8 @@ try {
             $engine=Get-MpComputerStatus
             break
         }catch{
-            if($attempt -ge 2 -or $_.FullyQualifiedErrorId -notmatch '0x800(706b[ae]|106ba)'){throw}
-            Write-Host 'Defender service is temporarily unavailable; waiting before retrying the signature update.'
+            if($attempt -ge 2 -or $_.FullyQualifiedErrorId -notmatch '0x800(706(b[ae]|52)|106ba)'){throw}
+            Write-Host 'Defender updater is temporarily unavailable or busy; waiting before retrying.'
             Start-Sleep -Seconds 10
         }
     }
