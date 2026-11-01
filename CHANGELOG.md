@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+- Recheck Defender service readiness after runner platform updates and retry the observed service-unavailable error. Successful signature updating and scanning remain required.
+
 ## [0.1.0-rc.10] - 2026-11-01
 
 - Re-enable disabled Windows enrollments or permanently remove them and their controller history while preserving repository backups.
