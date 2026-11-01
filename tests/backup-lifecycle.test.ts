@@ -495,3 +495,47 @@ test('restore owns the running lease, reports its operation, and preserves backu
   expect(after.last_run).toBe('original-backup-time');expect(after.size).toBe('42 MB');expect(after.stats).toBe('{}');
  }finally{release({stdout:'',stderr:'',code:1});exec.mockRestore();connect.mockRestore();disconnect.mockRestore();await stopJobApi(fixture)}
 },15000);
+
+test.skipIf(process.platform==='win32')('remote cancellation stops the entire process group and cannot start a command after early cancellation',async()=>{
+ const {spawn}=await import('node:child_process');const {EventEmitter}=await import('node:events');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'fortress-remote-cancel-')),pidFile=path.join(root,'pid');
+ const executor=new BackupExecutor(false);executor.setConnected(true);
+ const children:ReturnType<typeof spawn>[]=[];
+ const remote=spyOn(executor.getClient(),'exec').mockImplementation(((command:string,callback:any)=>{
+  const child=spawn('/bin/sh',['-c',command],{stdio:['pipe','pipe','pipe']});children.push(child);
+  const stream:any=new EventEmitter();stream.stderr=child.stderr;stream.end=(text:string)=>child.stdin?.end(text);stream.close=()=>{child.stdin?.end()};
+  child.stdout?.on('data',chunk=>stream.emit('data',chunk));child.on('close',code=>stream.emit('close',code));child.on('error',e=>stream.emit('error',e));
+  callback(null,stream);
+ }) as any);
+ try{
+  const control=new AbortController();
+  const work=executor.exec(`sleep 30 & p=$!; printf '%s' "$p" > '${pidFile}'; wait`,control.signal);
+  for(let i=0;i<100&&!fs.existsSync(pidFile);i++)await Bun.sleep(10);
+  expect(fs.existsSync(pidFile)).toBe(true);
+  const pid=Number(fs.readFileSync(pidFile,'utf8'));control.abort();await expect(work).rejects.toThrow('aborted');
+  try{const stat=fs.readFileSync('/proc/'+pid+'/stat','utf8');expect(stat.split(' ')[2]).toBe('Z')}catch(e:any){if(e.code!=='ENOENT')throw e}
+  const early=new AbortController();early.abort();await expect(executor.exec(`touch '${root}/must-not-start'`,early.signal)).rejects.toThrow('aborted');
+  expect(fs.existsSync(path.join(root,'must-not-start'))).toBe(false);
+ }finally{remote.mockRestore();for(const child of children)child.kill('SIGKILL');fs.rmSync(root,{recursive:true,force:true})}
+},15000);
+
+test('canceling an SSH restore keeps its lease until stopping is acknowledged',async()=>{
+ const fixture=await startJobApi();let release!:(value:any)=>void,started!:()=>void;
+ const began=new Promise<void>(resolve=>started=resolve),waiting=new Promise(resolve=>release=resolve);
+ const connect=spyOn(BackupExecutor.prototype,'connect').mockResolvedValue(true),disconnect=spyOn(BackupExecutor.prototype,'disconnect').mockImplementation(()=>{});
+ const execution=spyOn(BackupExecutor.prototype,'exec').mockImplementation(async(command:string)=>{if(command.includes(' restore ')){started();return await waiting as any}return {stdout:'',stderr:'',code:0}});
+ try{
+  await insertJob('cancel-restore','Success');
+  await run("INSERT INTO systems(id,name,host,username,port,type,status) VALUES('source','Source','dummy.invalid','dummy',22,'remote','online')");
+  await run("INSERT INTO locations(id,name,type,path) VALUES('destination','Storage','nfs','/tmp/repository')");
+  const headers={Authorization:'Bearer '+fixture.token,'Content-Type':'application/json'};
+  const work=fetch(fixture.base+'/cancel-restore/restore',{method:'POST',headers,body:JSON.stringify({snapshotId:'abcdef12',restorePath:'/tmp/canceled-restore'})});
+  await Promise.race([began,work.then(async r=>{throw new Error(await r.text())})]);
+  expect((await fetch(fixture.base+'/cancel-restore/cancel',{method:'POST',headers,body:'{}'})).status).toBe(202);
+  expect((await getOne<any>("SELECT status FROM jobs WHERE id='cancel-restore'")).status).toBe('Running');
+  expect((await fetch(fixture.base+'/cancel-restore/run',{method:'POST',headers,body:'{}'})).status).toBe(409);
+  release({stdout:'',stderr:'Operation aborted',code:1});
+  expect((await (await work).json() as any).canceled).toBe(true);
+  expect((await getOne<any>("SELECT status FROM jobs WHERE id='cancel-restore'")).status).toBe('Canceled');
+ }finally{release({stdout:'',stderr:'',code:1});execution.mockRestore();connect.mockRestore();disconnect.mockRestore();await stopJobApi(fixture)}
+});

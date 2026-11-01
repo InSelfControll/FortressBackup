@@ -15,7 +15,7 @@ export const managedClientStatus=(agent:ManagedAgent,now=Date.now()):string=>{
  return now-Date.parse(agent.lastSeen)<=180000?'Online':'Offline';
 };
 export const managedJobStatus=(job:ManagedAgentJob):string=>
- job.state==='pending'?'Queued — waiting for the Windows agent':job.state==='running'?'Running on the laptop':job.state==='success'?'Completed':'Failed';
+ job.state==='canceled'?'Canceled':job.cancelRequested?'Cancellation requested — waiting for the agent to stop':job.state==='pending'?'Queued — waiting for the Windows agent':job.state==='running'?'Running on the laptop':job.state==='success'?'Completed':'Failed';
 
 export const ManagedClientOverview:React.FC<{agents:ManagedAgent[];onOpen?:()=>void}>=({agents,onOpen})=><section className="card space-y-4" aria-label="Windows client activity">
  <div className="flex flex-wrap justify-between gap-3"><div><h2 className="font-semibold">Windows client activity</h2><p className="text-sm text-slate-400">Recent client check-ins and operations. Updates every 2 seconds.</p></div>{onOpen&&<button onClick={onOpen} className="text-sm text-indigo-300 underline">Open Managed Clients</button>}</div>
@@ -70,6 +70,14 @@ export const ManagedClients:React.FC=()=>{
   const r=await apiFetch('/managed-agents/admin/'+encodeURIComponent(id)+'/jobs',{method:'POST',body:JSON.stringify({operation})});
   if(r.error)setError(r.error);await refresh();setBusy(false);
  };
+ const lifecycle=async(agent:ManagedAgent,action:'enable'|'remove')=>{
+  if(action==='remove'&&!window.confirm('Permanently remove this enrollment, revoke its credentials, and remove controller job history? Repository backups will be preserved.'))return;
+  setBusy(true);setError('');const r=await apiFetch('/managed-agents/admin/'+encodeURIComponent(agent.id)+(action==='enable'?'/enable':''),{method:action==='enable'?'POST':'DELETE',...(action==='enable'?{body:'{}'}:{})});
+  if(r.error)setError(r.error);await refresh();setBusy(false);
+ };
+ const cancel=async(agent:ManagedAgent,job:ManagedAgentJob)=>{
+  setError('');const r=await apiFetch('/managed-agents/admin/'+agent.id+'/jobs/'+job.id+'/cancel',{method:'POST',body:'{}'});if(r.error)setError(r.error);await refresh();
+ };
  const schedule=async(id:string,minutes:number)=>{
   if(busy)return;
   setBusy(true);setError('');
@@ -109,11 +117,11 @@ export const ManagedClients:React.FC=()=>{
   {error&&<p role="alert" className="text-red-400">{error}</p>}
   <div className="space-y-3">{agents.map(agent=><article key={agent.id} className="rounded-xl border border-slate-700 bg-slate-900 p-4 space-y-3">
    <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold break-words">{agent.name}</h2><p className="text-xs text-slate-400 break-all">{agent.id}</p><p className="text-sm text-slate-300">{managedClientStatus(agent)}</p><p className="text-xs text-slate-400">Last check-in: {agent.lastSeen?new Date(agent.lastSeen).toLocaleString():'Never'}</p></div>
-   <div className="flex flex-wrap gap-2">{(['backup','check'] as const).map(op=><button key={op} disabled={busy||agent.disabled||agent.jobs.some(j=>j.state==='pending'||j.state==='running')} onClick={()=>job(agent.id,op)} className="px-3 py-2 rounded bg-slate-700 disabled:opacity-50">{op==='backup'?'Back up now':'Verify repository'}</button>)}<button disabled={busy||agent.disabled} onClick={()=>disable(agent.id)} className="px-3 py-2 rounded bg-red-900 disabled:opacity-50">Disable</button></div></div>
+   <div className="flex flex-wrap gap-2">{(['backup','check'] as const).map(op=><button key={op} disabled={busy||agent.disabled||agent.jobs.some(j=>j.state==='pending'||j.state==='running')} onClick={()=>job(agent.id,op)} className="px-3 py-2 rounded bg-slate-700 disabled:opacity-50">{op==='backup'?'Back up now':'Verify repository'}</button>)}{agent.disabled&&<><button disabled={busy} onClick={()=>void lifecycle(agent,'enable')} className="px-3 py-2 rounded bg-indigo-600">Enable</button><button disabled={busy||agent.jobs.some(j=>j.state==='running'||j.state==='pending')} onClick={()=>void lifecycle(agent,'remove')} className="px-3 py-2 rounded bg-red-900">Remove enrollment</button></>}<button disabled={busy||agent.disabled} onClick={()=>disable(agent.id)} className="px-3 py-2 rounded bg-red-900 disabled:opacity-50">Disable</button></div></div>
    {!agent.lastSeen&&<p className="text-sm text-amber-300">No backup has started. Waiting for the Windows agent to be installed, configured, and connected.</p>}
    <div className="flex flex-wrap gap-3 items-center text-sm"><label htmlFor={'repository-'+agent.id}>Backup repository</label><select id={'repository-'+agent.id} value={agent.repositoryJobId||''} disabled={busy||agent.disabled} onChange={event=>void assignRepository(agent.id,event.target.value)} className="max-w-full bg-slate-800 p-2 rounded"><option value="">Choose a saved repository</option>{repositories.map(repository=><option key={repository.id} value={repository.id}>{repositoryLabel(repository.id)}</option>)}</select>{agent.repositoryJobId?<span className="text-slate-400">Setup uses saved credentials. Rerun setup to apply repository changes.</span>:<span className="text-amber-300">Assign a repository before running Windows setup.</span>}</div>
    <div className="flex flex-wrap gap-3 items-center text-sm"><label htmlFor={'schedule-'+agent.id}>Backup schedule</label><select id={'schedule-'+agent.id} disabled={busy||agent.disabled} value={agent.scheduleMinutes||0} onChange={e=>void schedule(agent.id,Number(e.target.value))} className="bg-slate-800 p-2 rounded"><option value={0}>Manual</option><option value={60}>Hourly</option><option value={360}>Every 6 hours</option><option value={1440}>Daily</option><option value={10080}>Weekly</option></select><span className="text-slate-400">Next: {agent.nextRunAt||'Not scheduled'}</span></div>
-   <ManagedRestore agent={agent}/><div className="text-sm break-words space-y-1">{agent.jobs.map(j=><p key={j.id}><span className="font-medium">Restic · {operationLabel(j.operation)}</span> · {managedJobStatus(j)} · {new Date(j.createdAt).toLocaleString()} {j.message&&<span className="text-slate-400">{j.message}</span>}</p>)}</div>
+   <ManagedRestore agent={agent}/><div className="text-sm break-words space-y-1">{agent.jobs.map(j=><p key={j.id}><span className="font-medium">Restic · {operationLabel(j.operation)}</span> · {managedJobStatus(j)} · {new Date(j.createdAt).toLocaleString()} {j.message&&<span className="text-slate-400">{j.message}</span>}{['pending','running'].includes(j.state)&&<button disabled={!!j.cancelRequested} className="ml-3 underline text-amber-300 disabled:opacity-50" onClick={()=>void cancel(agent,j)}>{j.cancelRequested?'Cancel requested':'Cancel job'}</button>}</p>)}</div>
   </article>)}</div>
   <div className="flex items-center gap-4 text-sm">
    <button disabled={page===0} onClick={()=>setPage(p=>Math.max(0,p-1))} className="underline disabled:opacity-40">Previous</button>

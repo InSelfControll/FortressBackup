@@ -5,11 +5,15 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func TestRecoveryValidation(t *testing.T) {
@@ -93,6 +97,49 @@ func TestManagedRecoveryRoundTrip(t *testing.T) {
 		t.Fatalf("snapshots=%v error=%v", snapshots, err)
 	}
 	sid := snapshots[0].ID
+	replacement := c
+	replacement.Host = "replacement-laptop"
+	replacement.AgentID = "44444444-4444-4444-4444-444444444444"
+	replacement.AgentTokenFile = filepath.Join(t.TempDir(), "token")
+	own, err := savedSnapshots(context.Background(), replacement)
+	if err != nil || len(own) != 0 {
+		t.Fatal("replacement must not misidentify the old device", err)
+	}
+	old, err := savedSnapshots(context.Background(), replacement, true)
+	if err != nil || len(old) != 1 {
+		t.Fatal("old-device backups are not discoverable", err)
+	}
+	recovered, err := executeManaged(context.Background(), replacement, lease{ID: "55555555-5555-5555-5555-555555555555", Operation: "restore", Request: operationRequest{SnapshotID: sid, AllDevices: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredCount := 0
+	if err := filepath.WalkDir(recovered.(map[string]any)["restorePath"].(string), func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			recoveredCount++
+			original, err := os.ReadFile(filepath.Join(source, d.Name()))
+			if err != nil {
+				return err
+			}
+			restored, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			if string(original) != string(restored) {
+				t.Errorf("cross-device content differs: %s", p)
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if recoveredCount != 3 {
+		t.Fatal("replacement device recovery lost files", recoveredCount)
+	}
+
 	// Exercise the actual JSONL directory protocol, including Windows drive roots.
 	dir := "/" + strings.ReplaceAll(strings.ReplaceAll(source, ":", ""), "\\", "/")
 	listing, err := executeManaged(context.Background(), c, lease{Operation: "files", Request: operationRequest{SnapshotID: sid, Directory: dir}})
@@ -148,5 +195,56 @@ func TestManagedRecoveryRoundTrip(t *testing.T) {
 	}
 	if _, err := executeManaged(context.Background(), c, lease{ID: "33333333-3333-3333-3333-333333333333", Operation: "restore", Request: operationRequest{SnapshotID: sid}}); err == nil {
 		t.Fatal("reused a restore destination")
+	}
+}
+
+func TestCancellationStopsResticAndSSHDescendants(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(t.TempDir(), "child-pid")
+	t.Setenv("FORTRESS_TEST_CANCEL_HELPER", "parent")
+	t.Setenv("FORTRESS_TEST_CANCEL_PID", marker)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		result <- runRestic(ctx, Config{ResticPath: executable, Repository: "fixture", PasswordFile: "fixture"}, []string{"check"}, io.Discard)
+	}()
+	for attempt := 0; attempt < 100; attempt++ {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	data, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatal("fake SSH descendant did not start", err)
+	}
+	pid, err := strconv.Atoi(string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := syscall.OpenProcess(syscall.PROCESS_QUERY_INFORMATION, false, uint32(pid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.CloseHandle(handle)
+	cancel()
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("cancellation reported success")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("cancellation did not return")
+	}
+	var status uint32
+	if err := syscall.GetExitCodeProcess(handle, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status == 259 {
+		t.Fatal("SSH descendant survived cancellation")
 	}
 }

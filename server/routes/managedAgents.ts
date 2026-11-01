@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { getOne, query, run } from '../db/helpers.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import type {ManagedOperation,ManagedRequest} from '../../types';
-import {managedRequest,managedResult,recoveryCapability} from '../services/managedRecovery.js';
+import {managedRequest,managedResult,recoveryCapability,crossDeviceCapability,cancelCapability} from '../services/managedRecovery.js';
 import {managedRepository} from '../services/managedRepository.js';
 
 // Source folders and executable commands remain local. Setup credentials are
@@ -18,7 +18,8 @@ type Agent = {
 };
 type AgentJob = {
   id: string; client_id: string; operation: Operation;
-  state: 'pending' | 'running' | 'success' | 'failed'; created_at: string;
+  state: 'pending' | 'running' | 'success' | 'failed' | 'canceled';
+  cancel_requested?:number; created_at: string;
   started_at: string | null; finished_at: string | null; lease_until: string | null;
   message: string | null; request_json?:string|null; result_json?:string|null; has_result?:number;
 };
@@ -39,7 +40,7 @@ const publicAgent = ({ token_hash: _secret, ...safe }: Agent) => ({
 const publicJob = (j: AgentJob) => ({
   id: j.id, operation: j.operation, state: j.state,
   createdAt: j.created_at, startedAt: j.started_at,
-  finishedAt: j.finished_at, message: j.message, hasResult:!!(j.result_json||j.has_result)
+  finishedAt: j.finished_at,cancelRequested:!!j.cancel_requested, message: j.message, hasResult:!!(j.result_json||j.has_result)
 });
 const isConflict = (e: unknown) =>
   /unique|constraint|duplicate key/i.test(e instanceof Error ? e.message : String(e));
@@ -49,7 +50,7 @@ async function agentAuth(req: Request, res: Response, next: NextFunction) {
     const bearer = /^Bearer ([A-Za-z0-9_-]{32,256})$/.exec(req.get('authorization') ?? '')?.[1];
     if (!id || !bearer) return res.status(401).json({ error: 'Agent authentication required' });
     const agent = await lookup(id);
-    if (!agent || agent.disabled) return res.status(401).json({ error: 'Invalid agent identity' });
+    if (!agent || (agent.disabled&&!['/heartbeat','/report'].includes(req.path))) return res.status(401).json({ error: 'Invalid agent identity' });
     const a = Buffer.from(sha256(bearer), 'hex');
     const b = Buffer.from(agent.token_hash, 'hex');
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b))
@@ -93,7 +94,7 @@ router.get('/admin', authenticateToken, requireAdmin, async (req, res, next) => 
       return res.status(400).json({error:'Invalid pagination'});
     const agents=await query<Agent>(agentSelect+' ORDER BY m.created_at DESC LIMIT ? OFFSET ?',[limit,offset]);
     const recent=await query<AgentJob>(`
-      SELECT id,client_id,operation,state,created_at,started_at,finished_at,lease_until,message,CASE WHEN result_json IS NOT NULL THEN 1 ELSE 0 END AS has_result
+      SELECT id,client_id,operation,state,created_at,started_at,finished_at,lease_until,message,cancel_requested,CASE WHEN result_json IS NOT NULL THEN 1 ELSE 0 END AS has_result
       FROM (
         SELECT *,ROW_NUMBER() OVER(PARTITION BY client_id ORDER BY CASE WHEN state IN ('pending','running') THEN 0 ELSE 1 END,created_at DESC) AS rn
         FROM managed_jobs WHERE client_id IN (
@@ -131,8 +132,9 @@ router.put('/admin/:id/repository',authenticateToken,requireAdmin,async(req,res,
     const jobId=req.body?.repositoryJobId;
     if(typeof jobId!=='string'||!uuid.test(jobId))return res.status(400).json({error:'Invalid repository job'});
     try{await managedRepository(jobId)}catch(e){return res.status(400).json({error:e instanceof Error?e.message:'Repository not ready'})}
-    await run(`INSERT INTO managed_repositories(client_id,job_id) VALUES(?,?)
-      ON CONFLICT(client_id) DO UPDATE SET job_id=excluded.job_id`,[agent.id,jobId]);
+    const assigned=await getOne(`INSERT INTO managed_repositories(client_id,job_id) SELECT id,? FROM managed_clients WHERE id=? AND disabled=0
+      ON CONFLICT(client_id) DO UPDATE SET job_id=excluded.job_id RETURNING client_id`,[jobId,agent.id]);
+    if(!assigned)return res.status(409).json({error:'Client disabled or removed'});
     res.json(publicAgent((await lookup(agent.id))!));
   }catch(e){next(e)}
 });
@@ -150,7 +152,10 @@ router.post('/setup',async(req,res,next)=>{
   }catch(e){next(e)}
 });
 
+export async function enqueueManagedJob(agentId:string,body:any){const agent=await lookup(agentId);if(!agent||agent.disabled)return {status:409,body:{error:'Client unavailable or disabled'}};return enqueue(agent,body)}
+
 async function enqueue(agent:Agent,body:any){
+ if(agent.disabled)return {status:409,body:{error:'Client disabled'}};
  const operation=body?.operation;
  if(!['backup','check','snapshots','files','restore'].includes(operation))return {status:400,body:{error:'Unsupported operation'}};
  if((operation==='files'||operation==='restore')&&!JSON.parse(agent.capabilities||'[]').includes(recoveryCapability)){
@@ -158,9 +163,11 @@ async function enqueue(agent:Agent,body:any){
  }
  let request:ManagedRequest;
  try{request=managedRequest(operation,body?.request??{})}catch(error){return {status:400,body:{error:error instanceof Error?error.message:'Invalid operation'}}}
+ if(request.allDevices&&!JSON.parse(agent.capabilities||'[]').includes(crossDeviceCapability))return {status:409,body:{error:'Update the Windows agent to support recovery from another device'}};
  const job={id:crypto.randomUUID(),operation,createdAt:new Date().toISOString()};
  try{
-  await run(`INSERT INTO managed_jobs(id,client_id,operation,state,created_at,request_json) VALUES(?,?,?,'pending',?,?)`,[job.id,agent.id,operation,job.createdAt,JSON.stringify(request)]);
+  const inserted=await getOne(`INSERT INTO managed_jobs(id,client_id,operation,state,created_at,request_json) SELECT ?,id,?,'pending',?,? FROM managed_clients WHERE id=? AND disabled=0 RETURNING id`,[job.id,operation,job.createdAt,JSON.stringify(request),agent.id]);
+  if(!inserted)return {status:409,body:{error:'Client disabled or removed'}};
  }catch(error){if(isConflict(error))return {status:409,body:{error:'Client already has an active job'}};throw error}
  return {status:201,body:{...job,state:'pending'}};
 }
@@ -213,8 +220,43 @@ router.post('/admin/:id/disable', authenticateToken, requireAdmin, async (req, r
     const agent = await lookup(req.params.id);
     if (!agent) return res.sendStatus(404);
     await run('UPDATE managed_clients SET disabled=1 WHERE id=?', [agent.id]);
+    await cancelManagedJobs(agent.id);
     res.json({ disabled: true });
   } catch (e) { next(e); }
+});
+
+// Only terminal enrollments can be removed; repository files are never deleted.
+async function cancelManagedJobs(clientId:string,jobId?:string){
+ const suffix=jobId?' AND id=?':'';
+ const params=jobId?[clientId,jobId]:[clientId];
+ await run(`UPDATE managed_jobs SET cancel_requested=1,state=CASE WHEN state='pending' THEN 'canceled' ELSE state END,
+  finished_at=CASE WHEN state='pending' THEN ? ELSE finished_at END,message='Cancellation requested'
+  WHERE client_id=? AND state IN ('pending','running')${suffix}`,[new Date().toISOString(),...params]);
+}
+router.post('/admin/:id/enable',authenticateToken,requireAdmin,async(req,res,next)=>{
+ try{
+  const agent=await lookup(req.params.id);if(!agent)return res.sendStatus(404);
+  await run('UPDATE managed_clients SET disabled=0,next_run_at=? WHERE id=?',[agent.schedule_minutes?new Date(Date.now()+agent.schedule_minutes*60000).toISOString():null,agent.id]);
+  res.json({disabled:false});
+ }catch(error){next(error)}
+});
+router.delete('/admin/:id',authenticateToken,requireAdmin,async(req,res,next)=>{
+ try{
+  const agent=await lookup(req.params.id);if(!agent)return res.sendStatus(404);
+  const removed=await getOne(`DELETE FROM managed_clients WHERE id=? AND disabled=1
+   AND NOT EXISTS(SELECT 1 FROM managed_jobs WHERE client_id=? AND state IN ('pending','running')) RETURNING id`,[agent.id,agent.id]);
+  if(!removed)return res.status(409).json({error:'Disable this enrollment and wait for running jobs to stop before removing it'});
+  res.json({removed:true});
+ }catch(error){next(error)}
+});
+router.post('/admin/:id/jobs/:jobId/cancel',authenticateToken,requireAdmin,async(req,res,next)=>{
+ try{
+  const existing=await resultFor(req.params.id,req.params.jobId);if(!existing)return res.sendStatus(404);
+  await cancelManagedJobs(req.params.id,existing.id);res.json(await resultFor(req.params.id,existing.id));
+ }catch(error){next(error)}
+});
+router.post('/cancel',agentAuth,async(req,res,next)=>{
+ try{const id=(req as any).managedAgent;const existing=await resultFor(id,req.body?.id);if(!existing)return res.sendStatus(404);await cancelManagedJobs(id,existing.id);res.json(await resultFor(id,existing.id))}catch(error){next(error)}
 });
 
 // Installation verifies credentials without claiming a queued backup.
@@ -222,7 +264,9 @@ router.post('/heartbeat', agentAuth, async (req, res, next) => {
   try {
     await run('UPDATE managed_clients SET last_seen=? WHERE id=?',
       [new Date().toISOString(), (req as any).managedAgent]);
-    res.json({ ok: true });
+    const active=await getOne<{cancel_requested:number}>("SELECT cancel_requested FROM managed_jobs WHERE client_id=? AND id=? AND state='running'",[(req as any).managedAgent,req.body?.id??'']);
+    const agent=await lookup((req as any).managedAgent);
+    res.json({ok:true,cancel:!!active?.cancel_requested||!!agent?.disabled});
   } catch (e) { next(e); }
 });
 
@@ -231,7 +275,7 @@ router.post('/poll', agentAuth, async (req, res, next) => {
     const id = (req as any).managedAgent as string;
     const now = new Date().toISOString();
     const capabilities=req.body?.capabilities??[];
-    if(!Array.isArray(capabilities)||capabilities.length>8||!capabilities.every((value:unknown)=>value===recoveryCapability))return res.status(400).json({error:'Invalid capabilities'});
+    if(!Array.isArray(capabilities)||capabilities.length>8||!capabilities.every((value:unknown)=>[recoveryCapability,crossDeviceCapability,cancelCapability].includes(value as string)))return res.status(400).json({error:'Invalid capabilities'});
     await run('UPDATE managed_clients SET last_seen=?,capabilities=? WHERE id=?',[now,JSON.stringify([...new Set(capabilities)]),id]);
     if(!capabilities.includes(recoveryCapability))await run(`UPDATE managed_jobs SET state='failed',finished_at=?,message='Update the installed app and Save and connect before recovery'
       WHERE client_id=? AND state='pending' AND operation IN ('files','restore')`,[now,id]);
@@ -263,16 +307,16 @@ router.post('/report', agentAuth, async (req, res, next) => {
     const existing=await getOne<AgentJob>('SELECT * FROM managed_jobs WHERE id=? AND client_id=?',[id,clientId]);
     if(!existing)return res.status(409).json({error:'Job is not running'});
     let result=null;
-    try{if(success)result=managedResult(existing.operation,data,managedRequest(existing.operation,existing.request_json?JSON.parse(existing.request_json):{}))}catch(error){return res.status(400).json({error:error instanceof Error?error.message:'Invalid result'})}
+    try{if(success&&!existing.cancel_requested)result=managedResult(existing.operation,data,managedRequest(existing.operation,existing.request_json?JSON.parse(existing.request_json):{}))}catch(error){return res.status(400).json({error:error instanceof Error?error.message:'Invalid result'})}
     const row = await getOne<{ id: string }>(`
       UPDATE managed_jobs SET state=?,finished_at=?,message=?,result_json=?
       WHERE id=? AND client_id=? AND state='running' RETURNING id`,
-      [success ? 'success' : 'failed', new Date().toISOString(), message ?? '', result?JSON.stringify(result):null, id, clientId]);
+      [existing.cancel_requested?'canceled':success ? 'success' : 'failed', new Date().toISOString(), message ?? '', result?JSON.stringify(result):null, id, clientId]);
     if (!row) {
       // Repeated delivery after a lost acknowledgement must be safe.
       const prior = await getOne<{state: string}>(
         'SELECT state FROM managed_jobs WHERE id=? AND client_id=?', [id, clientId]);
-      if (prior?.state === (success ? 'success' : 'failed'))
+      if (prior?.state === 'canceled'||prior?.state === (success ? 'success' : 'failed'))
         return res.json({ ok: true, duplicate: true });
       return res.status(409).json({ error: 'Job is not running' });
     }

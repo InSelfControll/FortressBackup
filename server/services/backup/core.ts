@@ -16,6 +16,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 interface BackupProcessContext {
     jobId: string;
     runEpoch: number;
+    signal?:AbortSignal;
 }
 
 interface RecordedProcessGroup {
@@ -29,9 +30,22 @@ const recordedProcessGroups = new Map<string, Set<RecordedProcessGroup>>();
 
 const processRunKey = (jobId: string, runEpoch: number) => `${jobId}:${runEpoch}`;
 
-export function withBackupProcessContext<T>(context: BackupProcessContext, operation: () => T): T {
-    return processContext.run(context, operation);
+const operationControllers=new Map<string,AbortController>();
+export function cancelRecordedJob(jobId:string,epoch:number):boolean{
+ const controller=operationControllers.get(processRunKey(jobId,epoch));controller?.abort();return !!controller;
 }
+export async function withBackupProcessContext<T>(context: BackupProcessContext, operation: () => T): Promise<Awaited<T>> {
+ const controller=new AbortController(),key=processRunKey(context.jobId,context.runEpoch);
+ operationControllers.set(key,controller);
+ const timer=setInterval(async()=>{
+  try{const {getOne}=await import('../../db/helpers.js');const row=await getOne<{run_epoch:number;cancel_requested:number;status:string}>('SELECT run_epoch,cancel_requested,status FROM jobs WHERE id=?',[context.jobId]);
+   if(row&&(row.cancel_requested||row.run_epoch!==context.runEpoch||row.status!=='Running'))controller.abort();
+  }catch{/* A temporary database outage must not falsely cancel work. */}
+ },1000);timer.unref?.();
+ try{return await processContext.run({...context,signal:controller.signal},operation)}
+ finally{clearInterval(timer);if(operationControllers.get(key)===controller)operationControllers.delete(key)}
+}
+
 
 function recordProcessGroup(jobId: string, runEpoch: number, pgid: number): RecordedProcessGroup {
     const key = processRunKey(jobId, runEpoch);
@@ -170,12 +184,14 @@ export class BackupExecutor extends EventEmitter {
      * This is a compatibility bridge until fixed remote runners are deployed.
      */
     async exec(command: string, signal?: AbortSignal): Promise<{stdout:string;stderr:string;code:number}> {
+        const executionContext=processContext.getStore();
+        signal??=executionContext?.signal;
         if (!this.connected || command.length > 128 * 1024)
             throw new Error('Executor disconnected or script exceeds maximum size');
         this.log('info', 'Executing constrained backup operation');
         return new Promise((resolve,reject) => {
             let stdout='', stderr='', total=0, finished=false;
-            let terminate:()=>void=()=>{};
+            let terminate:()=>Promise<void>=async()=>{};
             let releaseRecordedGroup:()=>void=()=>{};
             const onAbort=()=>fail(new Error('Backup command aborted'));
             const cleanup=()=>{
@@ -183,9 +199,15 @@ export class BackupExecutor extends EventEmitter {
                 signal?.removeEventListener('abort',onAbort);
             };
             const timeout=setTimeout(()=>fail(new Error('Backup command timed out')), 6*60*60*1000);
-            const fail=(error:Error)=>{
+            const fail=async(error:Error)=>{
                 if(finished)return;
-                finished=true; cleanup(); terminate(); reject(error);
+                finished=true;cleanup();
+                try{await terminate()}catch{
+                  const context=executionContext;
+                  if(context){try{const {run}=await import('../../db/helpers.js');await run("UPDATE jobs SET status='ReviewRequired' WHERE id=? AND run_epoch=? AND status='Running'",[context.jobId,context.runEpoch])}catch{/* No confirmed stop: keep the operation unresolved. */}}
+                  reject(new Error('Could not confirm the operation stopped; operator review is required'));return;
+                }
+                reject(error);
             };
             const append=(kind:'stdout'|'stderr',chunk:Buffer)=>{
                 if(finished)return;
@@ -209,12 +231,12 @@ export class BackupExecutor extends EventEmitter {
                 const child=spawn('/bin/sh',['-s'],{
                     stdio:['pipe','pipe','pipe'],detached:process.platform!=='win32'
                 });
-                const context=processContext.getStore();
+                const context=executionContext;
                 if(context && child.pid!==undefined && process.platform!=='win32'){
                     const recorded=recordProcessGroup(context.jobId,context.runEpoch,child.pid);
                     releaseRecordedGroup=recorded.release;
                 }
-                terminate=()=>{
+                terminate=async()=>{
                     if(child.pid===undefined)return;
                     if(process.platform==='win32'){
                         spawn('taskkill',['/pid',String(child.pid),'/T','/F'],{stdio:'ignore'}).on('error',()=>{});
@@ -230,14 +252,35 @@ export class BackupExecutor extends EventEmitter {
                 child.stdin.on('error',()=>{});
                 child.stdin.end(command);
             }else{
-                this.client.exec('sh -s',(error,stream)=>{
-                    if(error)return fail(error);
-                    terminate=()=>stream.close();
-                    stream.on('data',(chunk:Buffer)=>append('stdout',chunk));
+                // A separate process group lets cancellation stop Restic and its SSH descendants.
+                this.client.exec(`setsid sh -c 'printf "FORTRESS_PROCESS_GROUP:%s\\n" "$$"; IFS= read -r allow; [ "$allow" = run ] && exec sh -s'`,(error,stream)=>{
+                    if(error)return void fail(error);
+                    if(finished){stream.close();return}
+                    let pgid:number|undefined,header='';
+                    const stopped=()=>new Promise<void>((resolve,rejectStop)=>{
+                        if(!pgid){stream.close();resolve();return}
+                        const target=pgid;
+                        if(target<=1){rejectStop(new Error('Invalid remote process group'));return}
+                        this.client.exec(`kill -9 -${target} 2>/dev/null; n=0; while kill -0 -${target} 2>/dev/null && [ "$n" -lt 20 ]; do n=$((n+1)); sleep 0.1; done; if ! kill -0 -${target} 2>/dev/null; then exit 0; fi; state=$(ps -eo pgid=,stat=) || exit 2; printf '%s\\n' "$state" | awk '$1==${target} && $2 !~ /^Z/ {alive=1} END {exit alive?1:0}'`,(err,control)=>{
+                            if(err){rejectStop(err);return}
+                            const limit=setTimeout(()=>{control.close();rejectStop(new Error('Stop confirmation timed out'))},5000);
+                            control.on('data',()=>{});control.stderr.on('data',()=>{});
+                            control.on('error',error=>{clearTimeout(limit);rejectStop(error)});
+                            control.on('close',(code:number)=>{clearTimeout(limit);if(code===0)resolve();else rejectStop(new Error('Remote process group is still active'))});
+                        });
+                    });
+                    terminate=stopped;
+                    stream.on('data',(chunk:Buffer)=>{
+                        if(pgid!==undefined){append('stdout',chunk);return}
+                        header+=chunk.toString('utf8');const newline=header.indexOf('\n');
+                        if(newline<0){if(header.length>128)void fail(new Error('Invalid remote process identity'));return}
+                        const match=/^FORTRESS_PROCESS_GROUP:([1-9][0-9]{0,9})$/.exec(header.slice(0,newline));
+                        if(!match){void fail(new Error('Remote process identity missing'));return}
+                        pgid=Number(match[1]);append('stdout',Buffer.from(header.slice(newline+1)));header='';if(!finished)stream.end('run\n'+command);
+                    });
                     stream.stderr.on('data',(chunk:Buffer)=>append('stderr',chunk));
-                    stream.on('close',done);
-                    stream.on('error',fail);
-                    stream.end(command);
+                    stream.on('close',done);stream.on('error',error=>void fail(error));
+
                 });
             }
         });

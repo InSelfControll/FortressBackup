@@ -50,7 +50,7 @@ try {
         $http.Start()
         [IO.File]::WriteAllText((Join-Path $root 'ready'),'ready')
         try {
-            foreach($route in @('setup','heartbeat')){
+            foreach($route in @('setup','setup','heartbeat')){
                 $request=$http.GetContext()
                 if($request.Request.HttpMethod -ne 'POST' -or $request.Request.RawUrl -ne ('/api/managed-agents/'+$route)){throw 'Setup tried to claim a job'}
                 if($request.Request.Headers['Authorization'] -ne ('Bearer '+$expectedToken) -or $request.Request.Headers['X-Fortress-Agent-Id'] -ne $agentId){throw 'Enrollment authentication missing'}
@@ -107,7 +107,7 @@ try {
     # Exercise the actual GUI and its asynchronous, authenticated connection.
     # Closing before Install must leave the existing task and files untouched.
     $beforeGui=(Get-FileHash -LiteralPath $installedCfg -Algorithm SHA256).Hash
-    $window=New-SetupWindow -SetupRoot $PSScriptRoot
+    $window=New-SetupWindow -SetupRoot $PSScriptRoot -AutoConnect:$false
     try {
         $window.Show()
         $window.Controls['controller'].Clear()
@@ -142,6 +142,18 @@ try {
         $window.Controls['close'].PerformClick()
         if($beforeGui -ne (Get-FileHash -LiteralPath $installedCfg -Algorithm SHA256).Hash){throw 'Cancelling GUI setup changed the installed configuration'}
     }finally{if(!$window.IsDisposed){$window.Dispose()}}
+    # A reopened configured app connects automatically without another button click.
+    $reopenConfig=Get-Content -LiteralPath $installedCfg -Raw | ConvertFrom-Json
+    $reopenConfig.controllerUrl=$config.controllerUrl
+    [IO.File]::WriteAllText($installedCfg,($reopenConfig | ConvertTo-Json -Depth 8),(New-Object Text.UTF8Encoding($false)))
+    $window=New-SetupWindow -SetupRoot $PSScriptRoot
+    try{
+        $window.Show()
+        $deadline=(Get-Date).AddSeconds(40)
+        while(!$window.Tag.Profile -and (Get-Date) -lt $deadline){[Windows.Forms.Application]::DoEvents();Start-Sleep -Milliseconds 50}
+        if(!$window.Tag.Profile){throw ('Saved enrollment did not reconnect automatically: '+$window.Controls['status'].Text)}
+        $window.Close()
+    }finally{if(!$window.IsDisposed){$window.Dispose()}}
     $generated=Join-Path $root 'generated credentials'
     $credentials=Save-ManagedRepository -Profile $profile -Directory $generated
     foreach($name in $credentials.Keys){$config[$name]=$credentials[$name]}
@@ -155,7 +167,7 @@ try {
     $savedConfig=Get-Content -LiteralPath $installedCfg -Raw|ConvertFrom-Json
     if($savedConfig.sftpKeyFile -ne (Join-Path $installed 'storage-key') -or $savedConfig.sftpKnownHostsFile -ne (Join-Path $installed 'known_hosts')){throw 'Storage credential paths were not rewritten for SYSTEM'}
     # Exercise recovery in the same actual WinForms window with saved credentials.
-    $window=New-SetupWindow -SetupRoot $PSScriptRoot
+    $window=New-SetupWindow -SetupRoot $PSScriptRoot -AutoConnect:$false
     function Wait-RecoveryUI([scriptblock]$Condition){
         $deadline=(Get-Date).AddSeconds(40)
         while(!( & $Condition) -and (Get-Date) -lt $deadline){[Windows.Forms.Application]::DoEvents();Start-Sleep -Milliseconds 50}

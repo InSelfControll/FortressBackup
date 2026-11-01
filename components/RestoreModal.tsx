@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Clock, Server, FolderInput, CheckCircle2, AlertTriangle, Loader2, RotateCcw, Search } from 'lucide-react';
+import {useManagedAgents} from '../client/api/queries';
+import {apiFetch,requireData} from '../client/api/client';
+import type {ManagedAgentJob} from '../types';
 import { BackupJob, System, Snapshot } from '../types';
 
 interface RestoreModalProps {
@@ -38,6 +41,8 @@ export const canStartRestore = (
 ) => restorePath.startsWith('/') && restorePath !== '/' && !restorePath.split('/').includes('..') && (fileSelectionMode === 'all' || selectedFiles.length > 0);
 
 export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen, onClose }) => {
+    const managedAgents=useManagedAgents();
+    const [managedJob,setManagedJob]=useState<ManagedAgentJob|null>(null);
     const [step, setStep] = useState<'snapshots' | 'config' | 'restoring' | 'result'>('snapshots');
     const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
     const [loading, setLoading] = useState(false);
@@ -53,13 +58,14 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
 
     const [restorePath, setRestorePath] = useState('');
     const [targetSystemId, setTargetSystemId] = useState('');
+    const windows=targetSystemId.startsWith('windows:');
     const [restoreLogs, setRestoreLogs] = useState<string[]>([]);
     const [restoreSuccess, setRestoreSuccess] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
             fetchSnapshots();
-            setRestorePath('');
+            setRestorePath('');setManagedJob(null);
             setTargetSystemId(job.sourceId);
             setStep('snapshots');
             setError(null);
@@ -146,8 +152,17 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
         );
     };
 
+    useEffect(()=>{
+      if(!isOpen||step!=='restoring'||!managedJob||!['pending','running'].includes(managedJob.state))return;
+      let disposed=false;const timer=setInterval(async()=>{
+       try{const result=requireData(await apiFetch<ManagedAgentJob>('/managed-agents/admin/'+targetSystemId.slice(8)+'/jobs/'+managedJob.id));if(disposed)return;setManagedJob(result);
+        setRestoreLogs([result.cancelRequested?'Cancellation requested':result.state==='pending'?'Queued; waiting for the Windows agent':result.state==='running'?'Restoring on the Windows device':result.message||result.state]);
+        if(!['pending','running'].includes(result.state)){setRestoreSuccess(result.state==='success');setError(result.state==='success'?null:result.state==='canceled'?'Restore canceled':result.message||'Restore failed');if(result.result?.restorePath)setRestoreLogs(['Restored on the Windows device to: '+result.result.restorePath]);setStep('result')}
+       }catch(e){if(!disposed)setError(e instanceof Error?e.message:'Could not read Windows restore status')}
+      },2000);return()=>{disposed=true;clearInterval(timer)};
+    },[isOpen,step,managedJob?.id,managedJob?.state,targetSystemId]);
     const handleRestore = async () => {
-        if (!selectedSnapshot || !canStartRestore(restorePath, fileSelectionMode, selectedFiles)) return;
+        if (!selectedSnapshot || !canStartRestore(windows?'/managed-recovery':restorePath, fileSelectionMode, selectedFiles)) return;
 
         if (step === 'restoring') return;
         setStep('restoring');
@@ -171,6 +186,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                 selectedFiles
             });
 
+            if(windows){delete payload.systemId;delete payload.restorePath;payload.managedAgentId=targetSystemId.slice(8)}
             const res = await fetch(`/api/jobs/${job.id}/restore`, {
                 method: 'POST',
                 headers,
@@ -186,6 +202,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
 
             const data = await res.json();
 
+            if(windows&&data.id){setManagedJob(data);setRestoreLogs(['Restore queued for Windows; waiting for the agent to check in.']);return}
             if (data.success) {
                 setRestoreSuccess(true);
                 setStep('result');
@@ -225,6 +242,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                     <button onClick={onClose} aria-label="Close dialog" className="p-3 shrink-0 text-slate-400 hover:text-white"><X size={20} /></button>
                 </div>
 
+                {managedJob&&step==='restoring'&&<button className="m-4 btn-secondary" disabled={managedJob.cancelRequested} onClick={async()=>{try{setManagedJob(requireData(await apiFetch<ManagedAgentJob>('/managed-agents/admin/'+targetSystemId.slice(8)+'/jobs/'+managedJob.id+'/cancel',{method:'POST',body:'{}'})))}catch(e){setError(e instanceof Error?e.message:'Cancellation failed')}}}>Cancel restore</button>}
                 {/* Content */}
                 <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
                     {step === 'snapshots' && (
@@ -291,9 +309,9 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                                                 onChange={e => setTargetSystemId(e.target.value)}
                                                 className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500 appearance-none text-sm"
                                             >
-                                                {systems.map(sys => (
+                                                <optgroup label="Linux / SSH systems">{systems.map(sys => (
                                                     <option key={sys.id} value={sys.id}>{sys.name} ({sys.host})</option>
-                                                ))}
+                                                ))}</optgroup><optgroup label="Windows managed devices">{(managedAgents.data||[]).filter(agent=>!agent.disabled).map(agent=><option key={agent.id} value={'windows:'+agent.id}>{agent.name} (Windows{agent.lastSeen?'':' — awaiting setup'})</option>)}</optgroup>
                                             </select>
                                         </div>
                                     </div>
@@ -304,7 +322,8 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                                             <FolderInput className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                                             <input
                                                 type="text"
-                                                value={restorePath}
+                                                readOnly={windows}
+                                                value={windows?'New protected recovery folder on the Windows device':restorePath}
                                                 onChange={e => setRestorePath(e.target.value)}
                                                 className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
                                                 placeholder="/tmp/restored_files"
@@ -442,7 +461,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                         {step === 'config' && (
                             <button
                                 onClick={handleRestore}
-                                disabled={!canStartRestore(restorePath, fileSelectionMode, selectedFiles)}
+                                disabled={!canStartRestore(windows?'/managed-recovery':restorePath, fileSelectionMode, selectedFiles)}
                                 className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-2"
                             >
                                 <RotateCcw size={16} /> Start Restore

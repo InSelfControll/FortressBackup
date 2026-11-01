@@ -120,7 +120,7 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     expect(disabled.status).toBe(200);
     const deniedAfterDisable=await api('/poll',{},auth);
     expect(deniedAfterDisable.status).toBe(401);
-    expect((await api('/heartbeat',{},auth)).status).toBe(401);
+    expect((await api('/heartbeat',{},auth)).data.cancel).toBe(true);
   } finally {
     await new Promise<void>(resolve=>server.close(()=>resolve()));
     await closeDatabase();
@@ -129,3 +129,37 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     else process.env.JWT_SECRET = previousJwtSecret;
   }
 },30000);
+
+test('disabled enrollments can be re-enabled or removed, with cancellation acknowledged before removal',async()=>{
+ const previous=process.env.JWT_SECRET;process.env.JWT_SECRET=crypto.randomBytes(48).toString('hex');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'fortress-lifecycle-'));
+ await initDatabase({type:'sqlite',filePath:path.join(dir,'db')});
+ await run("INSERT INTO users(id,email,name,role,auth_type) VALUES('admin','admin@example.invalid','Admin','admin','local')");
+ const app=express();app.use(express.json());app.use('/api/managed-agents',managedAgentsRouter);const server=app.listen(0,'127.0.0.1');
+ const address=server.address() as any;const base='http://127.0.0.1:'+address.port+'/api/managed-agents';
+ const headers={Authorization:'Bearer '+jwt.sign({id:'admin',role:'admin',authEpoch:0},process.env.JWT_SECRET),'Content-Type':'application/json'};
+ const request=async(route:string,body:any={},auth=headers,method='POST')=>{const response=await fetch(base+route,{method,headers:auth,...(method==='GET'?{}:{body:JSON.stringify(body)})});let data:any;try{data=await response.json()}catch{}return {status:response.status,data}};
+ try{
+  const e=(await request('/admin/enroll',{name:'Lifecycle device'})).data;
+  const auth={...headers,Authorization:'Bearer '+e.token,'X-Fortress-Agent-Id':e.id};
+  const queued=(await request('/admin/'+e.id+'/jobs',{operation:'backup'})).data;
+  expect((await request('/admin/'+e.id+'/jobs/'+queued.id+'/cancel')).data.state).toBe('canceled');
+  await request('/poll',{capabilities:['recovery-v1','recovery-v2','cancel-v1']},auth);
+  const active=(await request('/request',{operation:'restore',request:{snapshotId:'a'.repeat(64),allDevices:true}},auth)).data;
+  expect(active.id).toBeTruthy();await request('/poll',{capabilities:['recovery-v1','recovery-v2','cancel-v1']},auth);
+  await request('/admin/'+e.id+'/jobs/'+active.id+'/cancel');
+  expect((await request('/heartbeat',{id:active.id},auth)).data.cancel).toBe(true);
+  expect((await request('/request',{operation:'backup'},auth)).status).toBe(409);
+  await request('/admin/'+e.id+'/disable');
+  expect((await request('/admin/'+e.id,{},headers,'DELETE')).status).toBe(409);
+  expect((await request('/report',{id:active.id,success:false,message:'Canceled'},auth)).status).toBe(200);
+  expect((await request('/admin/'+e.id+'/jobs/'+active.id,{},headers,'GET')).data.state).toBe('canceled');
+  expect((await request('/result',{id:active.id},auth)).status).toBe(401);
+  expect((await request('/admin/'+e.id+'/enable')).status).toBe(200);
+  expect((await request('/poll',{capabilities:['recovery-v1','recovery-v2','cancel-v1']},auth)).status).toBe(200);
+  expect((await request('/admin/'+e.id,{},headers,'DELETE')).status).toBe(409);
+  await request('/admin/'+e.id+'/disable');expect((await request('/admin/'+e.id,{},headers,'DELETE')).status).toBe(200);
+  expect((await request('/poll',{},auth)).status).toBe(401);
+  expect(await query('SELECT id FROM managed_jobs WHERE client_id=?',[e.id])).toHaveLength(0);
+ }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));await closeDatabase();fs.rmSync(dir,{recursive:true,force:true});if(previous===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=previous}
+});

@@ -32,7 +32,7 @@ installs protected credentials, and checks storage and controller access as
 SYSTEM before starting the background agent. Errors and progress stay visible.
 Closing the app before saving leaves your current backup configuration unchanged.
 
-Reopen Fortress Backup to edit folders later. It loads the existing connection,
+Reopen Fortress Backup to edit folders later. It automatically validates the saved connection and loads the
 masked enrollment token, and selected folders. Saving folder changes preserves
 existing exclusions, host name, timeout, and VSS settings.
 
@@ -56,7 +56,7 @@ separate temporary source copies used to read files consistently during backup.
 
 In the installed app, choose **Backups / Restore**, then **Load saved backups**.
 This opens inside the existing window and uses the saved controller credentials.
-Choose a saved backup, select a folder and click **Open folder** to browse, and check individual files
+Select **Include backups from old / other devices** to recover a previous device from this same repository, even if its enrollment was removed. The replacement device must have this repository assigned and configured. Choose a saved backup, select a folder and click **Open folder** to browse, and check individual files
 or folders. Use **Restore selected** or **Restore entire backup**. A checked folder
 includes its contents; up to 100 selections are allowed per restore. Selections
 remain checked when you navigate between folders. **Clear selection** resets them.
@@ -72,7 +72,19 @@ and restore**. The laptop must be online and configured. Requests remain queued
 until the agent checks in; progress and the actual operation appear on the dashboard.
 After upgrading from an older version, open Configuration and **Save and connect**
 to update the background runtime and enable recovery. Clicking the app again
-restores and focuses its existing window.
+restores and focuses its existing native application window. No PowerShell console is launched to display it.
+
+## Cancel and manage enrollments
+
+Use **Cancel operation** in recovery, **Cancel job** in Managed Clients, or the
+cancel control on an active SSH job. Queued jobs cancel immediately. Running jobs
+show cancellation requested until the agent stops them; an offline device must
+check in before it can acknowledge the request. Upgrade old agents for running
+job cancellation. Partial restore files can remain in the new recovery folder.
+
+Disabled enrollments have **Enable** and **Remove enrollment** actions in Managed
+Clients. Removal revokes the controller token and deletes controller history; it
+never deletes Restic snapshots. Disable and stop active jobs before removal.
 
 ## Upgrade and uninstall
 

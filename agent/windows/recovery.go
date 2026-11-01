@@ -19,6 +19,7 @@ import (
 )
 
 type operationRequest struct {
+	AllDevices bool     `json:"allDevices,omitempty"`
 	SnapshotID string   `json:"snapshotId,omitempty"`
 	Directory  string   `json:"directory,omitempty"`
 	Offset     int      `json:"offset,omitempty"`
@@ -58,6 +59,9 @@ func validSnapshotPath(value string) bool {
 	return true
 }
 func validateOperation(job lease) error {
+	if job.Request.AllDevices && job.Operation != "snapshots" && job.Operation != "files" && job.Operation != "restore" {
+		return errors.New("invalid backup scope")
+	}
 	if job.Operation != "backup" && job.Operation != "check" && job.Operation != "snapshots" && job.Operation != "files" && job.Operation != "restore" {
 		return errors.New("unsupported operation")
 	}
@@ -118,8 +122,13 @@ func ownSnapshot(c Config, snapshot savedSnapshot) bool {
 	}
 	return true
 }
-func savedSnapshots(ctx context.Context, c Config) ([]savedSnapshot, error) {
-	data, err := resticOutput(ctx, c, "snapshots", "--json", "--host", c.Host)
+func savedSnapshots(ctx context.Context, c Config, scope ...bool) ([]savedSnapshot, error) {
+	allDevices := len(scope) > 0 && scope[0]
+	args := []string{"snapshots", "--json"}
+	if !allDevices {
+		args = append(args, "--host", c.Host)
+	}
+	data, err := resticOutput(ctx, c, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -129,15 +138,15 @@ func savedSnapshots(ctx context.Context, c Config) ([]savedSnapshot, error) {
 	}
 	result := make([]savedSnapshot, 0)
 	for _, snapshot := range all {
-		if ownSnapshot(c, snapshot) && snapshotPattern.MatchString(snapshot.ID) {
+		if (allDevices || ownSnapshot(c, snapshot)) && snapshotPattern.MatchString(snapshot.ID) {
 			result = append(result, snapshot)
 		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Time > result[j].Time })
 	return result, nil
 }
-func snapshotFor(ctx context.Context, c Config, id string) error {
-	all, err := savedSnapshots(ctx, c)
+func snapshotFor(ctx context.Context, c Config, id string, allDevices bool) error {
+	all, err := savedSnapshots(ctx, c, allDevices)
 	if err != nil {
 		return err
 	}
@@ -198,7 +207,7 @@ func executeManaged(ctx context.Context, c Config, job lease) (any, error) {
 		return nil, execute(ctx, c, job.Operation)
 	}
 	if job.Operation == "snapshots" {
-		all, err := savedSnapshots(ctx, c)
+		all, err := savedSnapshots(ctx, c, job.Request.AllDevices)
 		if err != nil {
 			return nil, err
 		}
@@ -216,7 +225,7 @@ func executeManaged(ctx context.Context, c Config, job lease) (any, error) {
 		}
 		return map[string]any{"snapshots": page, "offset": job.Request.Offset, "hasMore": job.Request.Offset+len(page) < len(all)}, nil
 	}
-	if err := snapshotFor(ctx, c, job.Request.SnapshotID); err != nil {
+	if err := snapshotFor(ctx, c, job.Request.SnapshotID, job.Request.AllDevices); err != nil {
 		return nil, err
 	}
 	if job.Operation == "files" {

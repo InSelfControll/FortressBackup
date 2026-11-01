@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -159,6 +160,12 @@ func runRestic(ctx context.Context, c Config, arguments []string, output io.Writ
 	}
 	args = append(args, arguments...)
 	cmd := exec.CommandContext(ctx, c.ResticPath, args...)
+	cmd.Cancel = func() error {
+		killer := exec.Command(filepath.Join(os.Getenv("SystemRoot"), "System32", "taskkill.exe"), "/PID", strconv.Itoa(cmd.Process.Pid), "/T", "/F")
+		killer.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		return killer.Run()
+	}
+	cmd.WaitDelay = 5 * time.Second
 	cmd.Stdin = nil
 	cmd.Stdout = output
 	cmd.Stderr = os.Stderr

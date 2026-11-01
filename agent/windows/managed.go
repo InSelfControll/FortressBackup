@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -111,6 +112,8 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	var poll pollResponse
+	var stopped atomic.Bool
+	var cancelRun context.CancelFunc
 	request := func(route string, payload any) error {
 		data, err := json.Marshal(payload)
 		if err != nil {
@@ -134,6 +137,18 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 		}
 		if res.StatusCode != http.StatusOK {
 			return fmt.Errorf("controller returned HTTP %d", res.StatusCode)
+		}
+		if route == "/heartbeat" {
+			var state struct {
+				Cancel bool `json:"cancel"`
+			}
+			if err := json.Unmarshal(response, &state); err != nil {
+				return err
+			}
+			if state.Cancel && cancelRun != nil {
+				stopped.Store(true)
+				cancelRun()
+			}
 		}
 		if route == "/poll" {
 			return json.Unmarshal(response, &poll)
@@ -173,7 +188,7 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 			return err
 		}
 	}
-	if err := request("/poll", map[string]any{"capabilities": []string{"recovery-v1"}}); err != nil {
+	if err := request("/poll", map[string]any{"capabilities": []string{"recovery-v1", "recovery-v2", "cancel-v1"}}); err != nil {
 		return err
 	}
 	active, err := readPending(activePath)
@@ -197,12 +212,13 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 	}
 	jobctx, cancel := context.WithTimeout(ctx, time.Duration(c.TimeoutMinutes)*time.Minute)
 	defer cancel()
+	cancelRun = cancel
 	fmt.Fprintln(os.Stdout, time.Now().Format(time.RFC3339), "Running operation:", poll.Job.Operation, "job:", poll.Job.ID)
 	stopHeartbeat := make(chan struct{})
 	heartbeatDone := make(chan struct{})
 	go func() {
 		defer close(heartbeatDone)
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
@@ -211,7 +227,7 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 			case <-jobctx.Done():
 				return
 			case <-ticker.C:
-				_ = request("/heartbeat", map[string]string{})
+				_ = request("/heartbeat", map[string]string{"id": poll.Job.ID})
 			}
 		}
 	}()
@@ -222,6 +238,11 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 	if result != nil {
 		message = poll.Job.Operation + " operation failed; see the laptop agent log"
 		fmt.Fprintln(os.Stderr, result)
+	}
+	if stopped.Load() {
+		message = "Operation canceled; partial restore files, if any, are in the protected recovery directory"
+		result = context.Canceled
+		data = nil
 	}
 	report := pendingReport{ID: poll.Job.ID, Success: result == nil, Message: message}
 	if data != nil && result == nil {

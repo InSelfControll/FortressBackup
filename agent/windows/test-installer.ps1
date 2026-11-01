@@ -62,14 +62,13 @@ try {
     $application=Start-Process -FilePath (Join-Path $appRoot 'FortressBackup.exe') -PassThru
     $deadline=(Get-Date).AddSeconds(30)
     while((Get-Date) -lt $deadline){
-        $child=Get-CimInstance Win32_Process -Filter "ParentProcessId = $($application.Id)" | Select-Object -First 1
-        if($child){
-            $guiProcess=Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
-            if($guiProcess -and $guiProcess.MainWindowTitle -eq 'Fortress Backup'){break}
-        }
+        $application.Refresh()
+        $guiProcess=$application
+        if($guiProcess.MainWindowTitle -eq 'Fortress Backup'){break}
         Start-Sleep -Milliseconds 200
     }
     if(!$guiProcess -or $guiProcess.MainWindowTitle -ne 'Fortress Backup'){throw 'Installed app did not open its configuration window'}
+    if(@(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($application.Id)" | Where-Object {$_.Name -match '^(powershell|pwsh|conhost)\.exe$'}).Count){throw 'Application opened a PowerShell or console child window'}
     $existingWindow=$guiProcess.MainWindowHandle
     $second=Start-Process -FilePath (Join-Path $appRoot 'FortressBackup.exe') -PassThru
     if(!$second.WaitForExit(15000) -or $second.ExitCode -ne 0){throw 'Second app launch did not reuse the existing window'}

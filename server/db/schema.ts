@@ -23,9 +23,9 @@ const managedTablesDDL = `
     );
     CREATE TABLE IF NOT EXISTS managed_jobs (
       id TEXT PRIMARY KEY,
-      client_id TEXT NOT NULL REFERENCES managed_clients(id),
+      client_id TEXT NOT NULL REFERENCES managed_clients(id) ON DELETE CASCADE,
       operation TEXT NOT NULL CHECK (operation IN ('backup','check','snapshots','files','restore')),
-      state TEXT NOT NULL CHECK (state IN ('pending','running','success','failed')),
+      state TEXT NOT NULL CHECK (state IN ('pending','running','success','failed','canceled')),
       created_at TEXT NOT NULL,
       started_at TEXT,
       finished_at TEXT,
@@ -33,7 +33,8 @@ const managedTablesDDL = `
       schedule_slot TEXT,
       message TEXT,
       request_json TEXT,
-      result_json TEXT
+      result_json TEXT,
+      cancel_requested INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_managed_jobs_client ON managed_jobs(client_id,created_at);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_managed_active ON managed_jobs(client_id)
@@ -145,22 +146,33 @@ export const createTables = () => {
   const managedColumns = sqliteDb.prepare('PRAGMA table_info(managed_jobs)').all() as {name:string}[];
   if (!managedColumns.some(column=>column.name==='schedule_slot')) sqliteDb.exec('ALTER TABLE managed_jobs ADD COLUMN schedule_slot TEXT');
   const oldManaged = sqliteDb.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='managed_jobs'").get() as {sql:string};
-  if (!oldManaged.sql.includes("'restore'")) {
+  if (!oldManaged.sql.includes("'canceled'")) {
     sqliteDb.transaction(()=>{
+      sqliteDb!.exec('DROP TRIGGER IF EXISTS managed_client_cleanup');
       sqliteDb!.exec('ALTER TABLE managed_jobs RENAME TO managed_jobs_legacy');
       sqliteDb!.exec(managedTablesDDL.slice(managedTablesDDL.indexOf('    CREATE TABLE IF NOT EXISTS managed_jobs')));
-      sqliteDb!.exec(`INSERT INTO managed_jobs(id,client_id,operation,state,created_at,started_at,finished_at,lease_until,schedule_slot,message)
-        SELECT id,client_id,operation,state,created_at,started_at,finished_at,lease_until,schedule_slot,message FROM managed_jobs_legacy`);
+      const previous = (sqliteDb!.prepare('PRAGMA table_info(managed_jobs_legacy)').all() as {name:string}[]).map(column=>column.name);
+      const columns = (sqliteDb!.prepare('PRAGMA table_info(managed_jobs)').all() as {name:string}[]).map(column=>column.name).filter(name=>previous.includes(name)).join(',');
+      sqliteDb!.exec(`INSERT INTO managed_jobs(${columns}) SELECT ${columns} FROM managed_jobs_legacy`);
       sqliteDb!.exec('DROP TABLE managed_jobs_legacy');
       // The old table owned the named indexes until it was dropped.
       sqliteDb!.exec(managedTablesDDL.slice(managedTablesDDL.indexOf('    CREATE INDEX')));
     })();
   }
+  // Legacy databases do not enable foreign_keys globally. Keep enrollment removal
+  // atomic without changing unrelated legacy table behavior.
+  sqliteDb.exec(`DROP TRIGGER IF EXISTS managed_client_cleanup;
+    CREATE TRIGGER managed_client_cleanup AFTER DELETE ON managed_clients BEGIN
+      DELETE FROM managed_jobs WHERE client_id=OLD.id;
+      DELETE FROM managed_repositories WHERE client_id=OLD.id;
+    END;`);
   const clients = sqliteDb.prepare('PRAGMA table_info(managed_clients)').all() as {name:string}[];
   if (!clients.some(column=>column.name==='capabilities')) sqliteDb.exec("ALTER TABLE managed_clients ADD COLUMN capabilities TEXT NOT NULL DEFAULT '[]'");
   const jobActivity = sqliteDb.prepare('PRAGMA table_info(jobs)').all() as {name:string}[];
   if (!jobActivity.some(column=>column.name==='operation')) sqliteDb.exec("ALTER TABLE jobs ADD COLUMN operation TEXT NOT NULL DEFAULT 'backup'");
   if (!jobActivity.some(column=>column.name==='operation_at')) sqliteDb.exec('ALTER TABLE jobs ADD COLUMN operation_at TEXT');
+
+  if (!jobActivity.some(column=>column.name==='cancel_requested')) sqliteDb.exec('ALTER TABLE jobs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0');
 
   // Schema Migration: Add ssh_key_id to systems if missing
   try {
@@ -306,13 +318,19 @@ export const createTablesPostgres = async () => {
   await pgPool.query("ALTER TABLE managed_clients ADD COLUMN IF NOT EXISTS capabilities TEXT NOT NULL DEFAULT '[]'");
   await pgPool.query('ALTER TABLE managed_jobs ADD COLUMN IF NOT EXISTS request_json TEXT');
   await pgPool.query('ALTER TABLE managed_jobs ADD COLUMN IF NOT EXISTS result_json TEXT');
+  await pgPool.query('ALTER TABLE managed_jobs ADD COLUMN IF NOT EXISTS cancel_requested INTEGER NOT NULL DEFAULT 0');
   await pgPool.query("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS operation TEXT NOT NULL DEFAULT 'backup'");
   await pgPool.query('ALTER TABLE jobs ADD COLUMN IF NOT EXISTS operation_at TEXT');
+  await pgPool.query('ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cancel_requested INTEGER NOT NULL DEFAULT 0');
   const migration = await pgPool.connect();
   try {
     await migration.query('BEGIN');
     await migration.query('ALTER TABLE managed_jobs DROP CONSTRAINT IF EXISTS managed_jobs_operation_check');
     await migration.query("ALTER TABLE managed_jobs ADD CONSTRAINT managed_jobs_operation_check CHECK(operation IN ('backup','check','snapshots','files','restore'))");
+    await migration.query('ALTER TABLE managed_jobs DROP CONSTRAINT IF EXISTS managed_jobs_state_check');
+    await migration.query("ALTER TABLE managed_jobs ADD CONSTRAINT managed_jobs_state_check CHECK(state IN ('pending','running','success','failed','canceled'))");
+    await migration.query('ALTER TABLE managed_jobs DROP CONSTRAINT IF EXISTS managed_jobs_client_id_fkey');
+    await migration.query('ALTER TABLE managed_jobs ADD CONSTRAINT managed_jobs_client_id_fkey FOREIGN KEY(client_id) REFERENCES managed_clients(id) ON DELETE CASCADE');
     await migration.query('COMMIT');
   } catch(error) {await migration.query('ROLLBACK');throw error} finally {migration.release()}
 

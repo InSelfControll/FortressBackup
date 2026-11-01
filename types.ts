@@ -11,6 +11,7 @@ export enum JobStatus {
   RUNNING = 'Running',
   SUCCESS = 'Success',
   FAILED = 'Failed',
+  CANCELED = 'Canceled',
   REVIEW_REQUIRED = 'ReviewRequired',
   WARNING = 'Warning'
 }
@@ -110,13 +111,14 @@ export interface Location {
 }
 
 export type ManagedOperation = 'backup' | 'check' | 'snapshots' | 'files' | 'restore';
-export interface ManagedRequest {snapshotId?:string;directory?:string;offset?:number;paths?:string[]}
+export interface ManagedRequest {allDevices?:boolean;snapshotId?:string;directory?:string;offset?:number;paths?:string[]}
 export interface ManagedFile {path:string;name:string;type:'file'|'dir'|'symlink';size?:number}
 export interface ManagedResult {snapshots?:Snapshot[];entries?:ManagedFile[];directory?:string;offset?:number;hasMore?:boolean;restorePath?:string;snapshotId?:string}
 export interface ManagedAgentJob {
   id: string;
   operation: ManagedOperation;
-  state: 'pending' | 'running' | 'success' | 'failed';
+  state: 'pending' | 'running' | 'success' | 'failed' | 'canceled';
+  cancelRequested?:boolean;
   createdAt: string;
   startedAt?: string | null;
   finishedAt?: string | null;
@@ -158,6 +160,7 @@ export interface BackupJob {
   status: JobStatus;
   operation?: 'backup' | 'restore';
   operationAt?: string;
+  cancelRequested?:boolean;
   nextRun: string;
   size?: string;
   stats?: {
