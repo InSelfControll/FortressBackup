@@ -84,7 +84,8 @@ jobs:
         shell: powershell
         timeout-minutes: 5
         run: |
-          ./agent/windows/test-installer.ps1 -InstallerPath "downloads/FortressBackup-Setup-$env:GITHUB_REF_NAME.exe"
+          $requireSigned = $env:GITHUB_REF_NAME -notmatch '-'
+          ./agent/windows/test-installer.ps1 -InstallerPath "downloads/FortressBackup-Setup-$env:GITHUB_REF_NAME.exe" -RequireSigned:$requireSigned
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: windows-downloads

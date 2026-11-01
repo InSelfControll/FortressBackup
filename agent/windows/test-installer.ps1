@@ -1,6 +1,6 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$InstallerPath)
+param([Parameter(Mandatory)][string]$InstallerPath,[switch]$RequireSigned)
 $ErrorActionPreference='Stop'
 $InstallerPath=(Resolve-Path -LiteralPath $InstallerPath).Path
 $appRoot=Join-Path $env:ProgramFiles 'FortressBackup'
@@ -25,6 +25,12 @@ try {
     foreach($name in @('FortressBackup.exe','fortress-agent.exe')){
         $info=[Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $appRoot $name))
         if($info.ProductName -ne 'Fortress Backup' -or !$info.FileVersion -or $info.OriginalFilename -ne $name){throw "Executable version metadata missing: $name"}
+    }
+    if($RequireSigned){
+        foreach($file in Get-ChildItem -LiteralPath $appRoot -File | Where-Object {$_.Extension -in @('.exe','.ps1')}){
+            $signature=Get-AuthenticodeSignature -LiteralPath $file.FullName
+            if($signature.Status -ne 'Valid' -or !$signature.TimeStamperCertificate){throw "Installed payload lacks a valid timestamped signature: $($file.Name)"}
+        }
     }
     # Verify the installed app and both installer programs expose the brand icon.
     foreach($path in @((Join-Path $appRoot 'FortressBackup.exe'),(Join-Path $appRoot 'fortress-agent.exe'),(Join-Path $appRoot 'unins000.exe'),$InstallerPath)){
