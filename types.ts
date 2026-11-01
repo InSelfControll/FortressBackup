@@ -109,14 +109,21 @@ export interface Location {
   hasSecretKey?: boolean;
 }
 
+export type ManagedOperation = 'backup' | 'check' | 'snapshots' | 'files' | 'restore';
+export interface ManagedRequest {snapshotId?:string;directory?:string;offset?:number;paths?:string[]}
+export interface ManagedFile {path:string;name:string;type:'file'|'dir'|'symlink';size?:number}
+export interface ManagedResult {snapshots?:Snapshot[];entries?:ManagedFile[];directory?:string;offset?:number;hasMore?:boolean;restorePath?:string;snapshotId?:string}
 export interface ManagedAgentJob {
   id: string;
-  operation: 'backup' | 'check' | 'snapshots';
+  operation: ManagedOperation;
   state: 'pending' | 'running' | 'success' | 'failed';
   createdAt: string;
   startedAt?: string | null;
   finishedAt?: string | null;
   message?: string | null;
+  hasResult?: boolean;
+  result?: ManagedResult | null;
+  request?: ManagedRequest | null;
 }
 
 export interface ManagedAgent {
@@ -130,6 +137,7 @@ export interface ManagedAgent {
   repositoryJobId?: string | null;
   repositoryName?: string | null;
   storageName?: string | null;
+  capabilities?: string[];
   jobs: ManagedAgentJob[];
 }
 
@@ -148,6 +156,8 @@ export interface BackupJob {
   hasRepoPassword?: boolean;
   lastRun?: string;
   status: JobStatus;
+  operation?: 'backup' | 'restore';
+  operationAt?: string;
   nextRun: string;
   size?: string;
   stats?: {

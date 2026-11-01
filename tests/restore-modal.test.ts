@@ -60,3 +60,9 @@ test('allows Start Restore with a destination and a valid selection mode', () =>
 test('does not offer root as an original-path restore destination', () => {
   expect(modal.canStartRestore?.('/', 'all', [])).toBe(false);
 });
+
+test('Restic restores selected filenames literally rather than expanding patterns',async()=>{
+ const {buildResticRestoreCommand}=await import('../server/services/backup/restic');
+ const command=buildResticRestoreCommand({tool:'restic',destinationType:'nfs',destinationPath:'/repository'} as any,'abcdef12','/recovered',['/home/document[1]*?.txt']);
+ expect(command).toContain("--include '/home/document\\[1]\\*\\?.txt'");
+});

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-rc.8] - 2026-11-01
+
+- Show the actual running backup, repository check, backup listing, file browsing, or restore operation on the dashboard; track SSH restores without replacing backup statistics.
+- Add full and selected-file restores for managed Windows clients in both the dashboard and the installed app. Reuse the saved connection and fixed outbound job queue, with bounded results and per-client snapshot ownership.
+- Restore Windows files into a new protected folder per job, preserving original files; escape literal filenames containing pattern characters.
+- Reopen and focus the existing Windows application window on repeated launches. Add backup/snapshot explanations and in-window recovery controls.
+- Preserve existing clients, jobs, schedules, credentials, and repositories during the schema upgrade. Older Windows runtimes must be upgraded with Save and connect before recovery is available.
+
 ## [0.1.0-rc.7] - 2026-11-01
 
 - Apply the existing Fortress shield/check branding to Windows executable resources, installer/uninstaller, shortcuts, and the configuration window.

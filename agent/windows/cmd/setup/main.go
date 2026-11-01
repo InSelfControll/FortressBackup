@@ -8,14 +8,36 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
 func main() {
+	name, _ := syscall.UTF16PtrFromString("Local\\InSelfControll.FortressBackup.Window")
+	mutex, _, mutexErr := syscall.NewLazyDLL("kernel32.dll").NewProc("CreateMutexW").Call(0, 0, uintptr(unsafe.Pointer(name)))
+	if mutex == 0 {
+		os.Exit(1)
+	}
+	defer syscall.CloseHandle(syscall.Handle(mutex))
+	if mutexErr == syscall.ERROR_ALREADY_EXISTS {
+		title, _ := syscall.UTF16PtrFromString("Fortress Backup")
+		user32 := syscall.NewLazyDLL("user32.dll")
+		// The first launch may still be waiting for administrator consent.
+		for attempt := 0; attempt < 300; attempt++ {
+			window, _, _ := user32.NewProc("FindWindowW").Call(0, uintptr(unsafe.Pointer(title)))
+			if window != 0 {
+				user32.NewProc("ShowWindowAsync").Call(window, 9) // SW_RESTORE
+				user32.NewProc("SetForegroundWindow").Call(window)
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		return
+	}
 	executable, err := os.Executable()
 	if err == nil {
 		root := filepath.Dir(executable)
-		for _, name := range []string{"setup.ps1", "setup-ui.ps1", "provision.ps1", "install-task.ps1", "fortress-agent.exe", "restic.exe", "SHA256SUMS"} {
+		for _, name := range []string{"setup.ps1", "setup-ui.ps1", "recovery-ui.ps1", "provision.ps1", "install-task.ps1", "fortress-agent.exe", "restic.exe", "SHA256SUMS"} {
 			if info, statErr := os.Stat(filepath.Join(root, name)); statErr != nil || info.IsDir() {
 				err = os.ErrNotExist
 				break

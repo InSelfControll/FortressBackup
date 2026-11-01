@@ -465,3 +465,33 @@ test('security headers deny framing with CSP and a legacy fallback', async () =>
         await new Promise<void>(resolve => server.close(() => resolve()));
     }
 });
+
+test('restore owns the running lease, reports its operation, and preserves backup statistics',async()=>{
+ const fixture=await startJobApi();
+ const connect=spyOn(BackupExecutor.prototype,'connect').mockResolvedValue(true);
+ const disconnect=spyOn(BackupExecutor.prototype,'disconnect').mockImplementation(()=>{});
+ let release!:(v:any)=>void,started!:()=>void;
+ const waiting=new Promise(resolve=>{release=resolve});
+ const began=new Promise<void>(resolve=>{started=resolve});
+ const exec=spyOn(BackupExecutor.prototype,'exec').mockImplementation(async(command:string)=>{
+  if(command.includes(' restore ')){started();return await waiting as any}
+  return {stdout:'',stderr:'',code:0};
+ });
+ try{
+  await insertJob('restore-activity','Success');
+  await run("UPDATE jobs SET last_run='original-backup-time',size='42 MB',stats='{}' WHERE id='restore-activity'");
+  await run("INSERT INTO systems(id,name,host,username,port,type,status) VALUES('source','Source','dummy.invalid','dummy',22,'remote','online')");
+  await run("INSERT INTO locations(id,name,type,path) VALUES('destination','Storage','nfs','/tmp/repository')");
+  const headers={Authorization:'Bearer '+fixture.token,'Content-Type':'application/json'};
+  const pending=fetch(fixture.base+'/restore-activity/restore',{method:'POST',headers,body:JSON.stringify({snapshotId:'abcdef12',restorePath:'/tmp/recovered',paths:['/home/dummy/file.txt']})});
+  await Promise.race([began,pending.then(async response=>{throw new Error('Restore ended before execution: '+await response.text())})]);
+  const row=await getOne<any>("SELECT * FROM jobs WHERE id='restore-activity'");
+  expect(row.status).toBe('Running');expect(row.operation).toBe('restore');
+  expect((await fetch(fixture.base+'/restore-activity/run',{method:'POST',headers,body:'{}'})).status).toBe(409);
+  release({stdout:'restored',stderr:'',code:0});
+  expect((await pending).status).toBe(200);
+  const after=await getOne<any>("SELECT * FROM jobs WHERE id='restore-activity'");
+  expect(after.status).toBe('Success');expect(after.operation).toBe('restore');
+  expect(after.last_run).toBe('original-backup-time');expect(after.size).toBe('42 MB');expect(after.stats).toBe('{}');
+ }finally{release({stdout:'',stderr:'',code:1});exec.mockRestore();connect.mockRestore();disconnect.mockRestore();await stopJobApi(fixture)}
+},15000);

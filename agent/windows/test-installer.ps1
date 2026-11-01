@@ -18,7 +18,7 @@ if((Test-Path -LiteralPath $appRoot) -or (Test-Path -LiteralPath $dataRoot)){thr
 try {
     # Installation must work offline, without configuring/enrolling an agent.
     Invoke-TestInstaller $InstallerPath 'fortress-install.log'
-    foreach($name in @('FortressBackup.exe','fortress-agent.exe','restic.exe','setup.ps1','setup-ui.ps1','provision.ps1','install-task.ps1','uninstall-task.ps1','SHA256SUMS','unins000.exe','fortress.ico','LUCIDE-LICENSE.txt')){
+    foreach($name in @('FortressBackup.exe','fortress-agent.exe','restic.exe','setup.ps1','setup-ui.ps1','recovery-ui.ps1','provision.ps1','install-task.ps1','uninstall-task.ps1','SHA256SUMS','unins000.exe','fortress.ico','LUCIDE-LICENSE.txt')){
         if(!(Test-Path -LiteralPath (Join-Path $appRoot $name))){throw "Installer omitted $name"}
     }
     Add-Type -AssemblyName System.Drawing
@@ -70,6 +70,13 @@ try {
         Start-Sleep -Milliseconds 200
     }
     if(!$guiProcess -or $guiProcess.MainWindowTitle -ne 'Fortress Backup'){throw 'Installed app did not open its configuration window'}
+    $existingWindow=$guiProcess.MainWindowHandle
+    $second=Start-Process -FilePath (Join-Path $appRoot 'FortressBackup.exe') -PassThru
+    if(!$second.WaitForExit(15000) -or $second.ExitCode -ne 0){throw 'Second app launch did not reuse the existing window'}
+    $guiProcess.Refresh()
+    if($guiProcess.HasExited -or $guiProcess.MainWindowHandle -ne $existingWindow){throw 'Second launch replaced the existing window'}
+    $children=@(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($second.Id)")
+    if($children.Count){throw 'Second launch opened another configuration process'}
     if(!$guiProcess.CloseMainWindow()){throw 'Installed app could not close normally'}
     if(!$application.WaitForExit(15000) -or $application.ExitCode -ne 0){throw 'Closing configuration did not exit cleanly'}
     $application=$null;$guiProcess=$null
@@ -100,6 +107,9 @@ try {
         if($window.Controls['controller'].Text -ne $config.controllerUrl -or $window.Controls['clientId'].Text -ne $config.agentId -or $window.Controls['token'].Text -ne $secret){throw 'Reopening the app did not load saved enrollment'}
         if($window.Controls['folders'].Items.Count -ne 1 -or $window.Controls['folders'].Items[0] -ne $env:RUNNER_TEMP){throw 'Reopening the app did not load saved folders'}
         if(!$window.Controls['token'].UseSystemPasswordChar){throw 'Saved token is visible'}
+        if(!$window.Controls['recovery'] -or !$window.Controls['backups']){throw 'Restore controls missing from installed app'}
+        $window.Controls['backups'].PerformClick()
+        if(!$window.Controls['recovery'].Visible -and $window.Visible){throw 'Restore panel did not open in the same window'}
     }finally{$window.Dispose()}
     # Exercise the shared configuration writer without starting a backup task.
     $writerFixture=Join-Path $env:RUNNER_TEMP ('configuration-writer-'+[guid]::NewGuid().ToString('N'))

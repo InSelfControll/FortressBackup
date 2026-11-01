@@ -12,6 +12,8 @@ export const toAPIJob = (job: any) => {
         lastRun: job.last_run ?? job.lastRun,
         nextRun: job.next_run ?? job.nextRun,
         scheduleEnabled: Boolean(job.schedule_enabled),
+        operation: job.operation||'backup',
+        operationAt: job.operation_at||job.last_run,
         hasRepoPassword: Boolean(job.repo_password || job.repoPassword),
         sourceId: job.source_id,
         destinationId: job.destination_id,

@@ -96,6 +96,6 @@ export const buildResticRestoreCommand = (
     config: BackupJobConfig, snapshotId: string, restorePath: string, paths?: string[]
 ): string => {
     absoluteRestorePath(restorePath);
-    const includes = paths?.map(path => ` --include ${sh(path)}`).join('') || '';
+    const includes = paths?.map(path => ` --include ${sh(path.replace(/[\\*?\[]/g, '\\$&'))}`).join('') || '';
     return `${resticPrefix(config)} restore ${sh(validSnapshot(snapshotId))} --target ${sh(restorePath)}${includes}`;
 };

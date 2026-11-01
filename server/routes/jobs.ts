@@ -160,7 +160,7 @@ export async function executeSavedJob(jobId:string, credentials:Record<string,un
         }
 
         const leased = await db.getOne<{run_epoch:number}>(`
-            UPDATE jobs SET status='Running',run_epoch=COALESCE(run_epoch,0)+1
+            UPDATE jobs SET status='Running',operation='backup',operation_at=CURRENT_TIMESTAMP,run_epoch=COALESCE(run_epoch,0)+1
             WHERE id=? AND COALESCE(status,'Idle') IN ('Idle','Success','Failed','Warning') RETURNING run_epoch`,[jobId]);
         if (!leased) return {status:409,body:{error:'Backup is already running or requires operator review'}};
         runEpoch = leased.run_epoch;
@@ -327,47 +327,35 @@ router.get('/:id/snapshots/:snapshotId/files', authenticateToken, requireAdmin, 
 
 // Restore a snapshot
 router.post('/:id/restore', authenticateToken, requireAdmin, async (req, res) => {
+    const jobId=req.params.id;
+    let epoch:number|null=null;
+    const logs:BackupExecutionLog[]=[];
+    const finish=async(success:boolean)=>{
+        if(epoch===null)return;
+        const completed=await db.getOne(`UPDATE jobs SET status=?,operation_at=? WHERE id=? AND status='Running' AND run_epoch=? RETURNING id`,[success?'Success':'Failed',new Date().toISOString(),jobId,epoch]);
+        if(completed)notifyJobComplete(jobId,success);
+    };
     try {
-        const jobId = req.params.id;
-        const { snapshotId, restorePath, systemId, paths } = req.body; // paths optional
-
-        if (!snapshotId || !restorePath) {
-            return res.status(400).json({ error: 'snapshotId and restorePath are required' });
-        }
-        if (paths !== undefined && (!Array.isArray(paths) || paths.length === 0)) {
-            return res.status(400).json({ error: 'paths must contain at least one restore selection' });
-        }
-
-        const job = await db.getJob(jobId);
-        if (!job) return res.status(404).json({ error: 'Job not found' });
-
-        const {sshConfig,jobConfig}=await buildJobExecutionContext(job, {}, systemId);
-        const restoreConfig={...jobConfig,snapshotId,restorePath,paths};
-
-        const logs: BackupExecutionLog[] = [];
-
-        // This runs the restore
-        const result = await runRestoreJob(sshConfig, restoreConfig, (log) => {
-            if(logs.length>=2000) logs.shift();
+        const {snapshotId,restorePath,systemId,paths}=req.body??{};
+        if(typeof snapshotId!=='string'||typeof restorePath!=='string'||paths!==undefined&&(!Array.isArray(paths)||!paths.length||paths.length>100||!paths.every(path=>typeof path==='string'&&path.length<=4096)))return res.status(400).json({error:'Choose a snapshot, restore folder, and valid file selection'});
+        const job=await db.getJob(jobId);
+        if(!job)return res.status(404).json({error:'Job not found'});
+        const lease=await db.getOne<{run_epoch:number}>(`UPDATE jobs SET status='Running',operation='restore',operation_at=?,run_epoch=COALESCE(run_epoch,0)+1
+            WHERE id=? AND COALESCE(status,'Idle') IN ('Idle','Success','Failed','Warning') RETURNING run_epoch`,[new Date().toISOString(),jobId]);
+        if(!lease)return res.status(409).json({error:'An operation is already running or requires operator review'});
+        epoch=lease.run_epoch;
+        const {sshConfig,jobConfig}=await buildJobExecutionContext(job,{},systemId);
+        const result=await withBackupProcessContext({jobId,runEpoch:epoch},()=>runRestoreJob(sshConfig,{...jobConfig,snapshotId,restorePath,paths},log=>{
+            if(logs.length>=2000)logs.shift();
             appendBoundedJobLog(logs,log);
-            console.log(`[Restore] [${log.type}] ${log.message}`);
-            broadcastJobLog(jobId, log.type as any, '[RESTORE] ' + log.message);
-        });
-
-        // Save logs
-        const runId = crypto.randomUUID();
-        await db.saveJobLogs(jobId, runId, logs);
-
-        if (!result.success) {
-            return res.status(500).json({ success: false, error: result.errors.join(', '), logs });
-        }
-
-        // Happy Path: Restore Success
-        res.json({ success: true, logs });
-
-    } catch (error: any) {
-        console.error('[Restore] Error:', error);
-        res.status(500).json({ error: error.message });
+            broadcastJobLog(jobId,log.type as any,'[RESTORE] '+log.message);
+        }));
+        await db.saveJobLogs(jobId,crypto.randomUUID(),logs);
+        await finish(result.success);
+        res.status(result.success?200:500).json({success:result.success,...(result.success?{}:{error:result.errors.join(', ')}),logs});
+    }catch(error){
+        await finish(false);
+        res.status(500).json({error:error instanceof Error?error.message:'Restore failed'});
     }
 });
 

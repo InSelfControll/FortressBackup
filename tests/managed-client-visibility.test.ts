@@ -18,7 +18,7 @@ test('client status distinguishes enrollment, check-in, long-running jobs, and r
  expect(managedClientStatus(agent,now)).toBe('Awaiting setup');
  expect(managedClientStatus({...agent,lastSeen:new Date(now-60000).toISOString()},now)).toBe('Online');
  expect(managedClientStatus({...agent,lastSeen:new Date(now-240000).toISOString()},now)).toBe('Offline');
- expect(managedClientStatus({...agent,lastSeen:'2026-10-31T10:00:00Z',jobs:[{...agent.jobs[0],state:'running'}]},now)).toBe('Job running');
+ expect(managedClientStatus({...agent,lastSeen:'2026-10-31T10:00:00Z',jobs:[{...agent.jobs[0],state:'running'}]},now)).toBe('Backup running');
  expect(managedClientStatus({...agent,disabled:true},now)).toBe('Disabled');
 });
 
@@ -61,4 +61,13 @@ test('a single configured repository is selected automatically without exposing 
   expect(html).toContain('retrieves this repository&#x27;s saved encryption password');
   expect(html).toContain('Assign a repository before running Windows setup.');
  }finally{client.clear()}
+});
+
+test('current activity prioritizes an active restore over a newer completed backup',async()=>{
+ const {currentManagedJob}=await import('../components/ManagedRestore');
+ const jobs:ManagedAgent['jobs']=[{...agent.jobs[0],state:'success'},{...agent.jobs[0],id:'restore',operation:'restore',state:'running'}];
+ expect(currentManagedJob(jobs)?.operation).toBe('restore');
+ const html=renderToStaticMarkup(React.createElement(ManagedClientOverview,{agents:[{...agent,jobs}]}));
+ expect(html).toContain('Restore running');
+ expect(html).toContain('Restore: Running on the laptop');
 });

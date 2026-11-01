@@ -24,6 +24,8 @@ function Start-SetupOperation($State,[scriptblock]$Work,[object[]]$Arguments){
     }catch{$worker.Dispose();$State.Worker=$null;throw}
 }
 
+. (Join-Path $PSScriptRoot 'recovery-ui.ps1')
+
 function New-SetupWindow([string]$SetupRoot){
     # PS 5.1 event closures do not retain script-scoped function lookup.
     $startOperation=${function:Start-SetupOperation}
@@ -85,7 +87,7 @@ function New-SetupWindow([string]$SetupRoot){
     }.GetNewClosure()
     $controller.Add_TextChanged($changed);$id.Add_TextChanged($changed);$token.Add_TextChanged($changed)
     $close.Add_Click({$form.Close()}.GetNewClosure())
-    $form.Add_FormClosing({param($sender,$event) if($state.Worker){$event.Cancel=$true}}.GetNewClosure())
+    $form.Add_FormClosing({param($sender,$event) if($state.Worker -or $state.RecoveryWorker){$event.Cancel=$true}}.GetNewClosure())
     $connect.Add_Click({
         $address=$controller.Text.Trim().TrimEnd('/')
         $uri=$null;$parsedId=[guid]::Empty
@@ -143,7 +145,7 @@ function New-SetupWindow([string]$SetupRoot){
         $failed=$false
         try {
             $result=$state.Worker.EndInvoke($state.Pending)
-            if($state.Worker.HadErrors){throw $state.Worker.Streams.Error[0].Exception}
+            if($state.Worker.Streams.Error.Count -gt 0){throw $state.Worker.Streams.Error[0].Exception}
             if($state.Stage -eq 'connect'){
                 $state.Profile=$result[0]
                 $form.AcceptButton=$install
@@ -187,6 +189,12 @@ function New-SetupWindow([string]$SetupRoot){
             $status.Text='Your existing configuration is loaded. Click Connect to refresh the saved repository and edit folders.'
         }catch{$status.Text='Existing settings could not be loaded. Enter enrollment credentials to configure this laptop again.'}
     }
+    $recoveryPanel=Add-RecoveryPanel $form $state
+    $recoveryButton=Add-SetupControl Button backups 'Backups / Restore' 20 558 180 33
+    $recoveryButton.Add_Click({
+        if($state.Worker){return}
+        $recoveryPanel.Visible=$true;$recoveryPanel.BringToFront();$form.AcceptButton=$null
+    }.GetNewClosure())
     $timer.Start()
     return $form
 }

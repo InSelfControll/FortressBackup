@@ -39,6 +39,7 @@ const mode = (filePath: string) => fs.statSync(filePath).mode & 0o777;
 
 beforeEach(() => {
   spyOn(Pool.prototype, 'query').mockResolvedValue({ rows: [], rowCount: 0 } as never);
+  spyOn(Pool.prototype, 'connect').mockResolvedValue({query:async()=>({rows:[],rowCount:0}),release:()=>{}} as never);
   spyOn(Pool.prototype, 'end').mockResolvedValue(undefined as never);
 });
 
