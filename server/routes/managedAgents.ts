@@ -294,7 +294,7 @@ router.post('/poll', agentAuth, async (req, res, next) => {
     // Atomic compare-and-claim; unique partial index enforces one active job.
     const job = await getOne<{ id: string; operation: Operation }>(`
       UPDATE managed_jobs SET state='running', started_at=?, lease_until=?
-      WHERE id=(SELECT id FROM managed_jobs WHERE client_id=? AND state='pending' ORDER BY created_at LIMIT 1)
+      WHERE id=(SELECT j.id FROM managed_jobs j JOIN managed_clients c ON c.id=j.client_id WHERE j.client_id=? AND j.state='pending' AND c.disabled=0 ORDER BY j.created_at LIMIT 1)
         AND state='pending'
       RETURNING id,operation,request_json`,
       [now, new Date(Date.now()+5*60*60*1000).toISOString(), id]);

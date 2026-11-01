@@ -136,6 +136,10 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 			return err
 		}
 		if res.StatusCode != http.StatusOK {
+			if route == "/heartbeat" && cancelRun != nil && (res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden) {
+				stopped.Store(true)
+				cancelRun()
+			}
 			return fmt.Errorf("controller returned HTTP %d", res.StatusCode)
 		}
 		if route == "/heartbeat" {
@@ -144,6 +148,9 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 			}
 			if err := json.Unmarshal(response, &state); err != nil {
 				return err
+			}
+			if state.Cancel && cancelRun == nil {
+				return errors.New("enrollment disabled")
 			}
 			if state.Cancel && cancelRun != nil {
 				stopped.Store(true)
@@ -231,6 +238,7 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 			}
 		}
 	}()
+	_ = request("/heartbeat", map[string]string{"id": poll.Job.ID})
 	data, result := executeManaged(jobctx, c, *poll.Job)
 	close(stopHeartbeat)
 	<-heartbeatDone

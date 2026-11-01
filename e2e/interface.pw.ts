@@ -260,7 +260,7 @@ test('managed backups browse and restore selected files and the full saved versi
 });
 
 test('enrollments can be enabled, cancellation waits for acknowledgment, and removal preserves repositories',async({page})=>{
- const source=(await api('/systems'))[0],storage=(await api('/locations')).find((l:any)=>l.type==='sftp');
+ const source=(await api('/systems'))[0],storage=(await api('/locations')).find((l:any)=>l.type==='sftp')||await api('/locations','POST',{name:'Recovery fixture storage',type:'sftp',path:'sftp://backup@storage.example.invalid:23/repository',secretKey:key,hostPublicKey:hostKey});
  const repo=await api('/jobs','POST',{name:'Lifecycle saved repository',tool:'Restic',sourceId:source.id,sourcePaths:['/home'],destinationId:storage.id,repoPassword:crypto.randomBytes(32).toString('hex')});
  const enrollment=await api('/managed-agents/admin/enroll','POST',{name:'Lifecycle Windows',repositoryJobId:repo.id});
  const agent=async(route:string,body:any)=>{const r=await fetch(base+'/api/managed-agents/'+route,{method:'POST',headers:{Authorization:'Bearer '+enrollment.token,'X-Fortress-Agent-Id':enrollment.id,'Content-Type':'application/json'},body:JSON.stringify(body)});return {status:r.status,data:await r.json()}};
@@ -281,7 +281,7 @@ test('enrollments can be enabled, cancellation waits for acknowledgment, and rem
 });
 
 test('dashboard restores old-device snapshots on Windows without the original source being online',async({page})=>{
- const source=(await api('/systems'))[0],storage=(await api('/locations')).find((l:any)=>l.type==='sftp');
+ const source=(await api('/systems'))[0],storage=(await api('/locations')).find((l:any)=>l.type==='sftp')||await api('/locations','POST',{name:'Recovery fixture storage',type:'sftp',path:'sftp://backup@storage.example.invalid:23/repository',secretKey:key,hostPublicKey:hostKey});
  const repo=await api('/jobs','POST',{name:'Old device recovery repository',tool:'Restic',sourceId:source.id,sourcePaths:['/home'],destinationId:storage.id,repoPassword:crypto.randomBytes(32).toString('hex')});
  const old=await api('/managed-agents/admin/enroll','POST',{name:'Old removed device',repositoryJobId:repo.id});await api('/managed-agents/admin/'+old.id+'/disable','POST',{});await api('/managed-agents/admin/'+old.id,'DELETE');
  const enrollment=await api('/managed-agents/admin/enroll','POST',{name:'Replacement Windows',repositoryJobId:repo.id});

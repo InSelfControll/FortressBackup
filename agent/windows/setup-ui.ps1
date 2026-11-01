@@ -79,7 +79,7 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
     $form.CancelButton=$close
     $changed={
         if($state.Profile -and !$state.Worker){
-            $state.Profile=$null;$state.Token=''
+            $state.Profile=$null;$state.Token='';$connect.Text='Connect'
             $install.Enabled=$false;$add.Enabled=$false
             $form.AcceptButton=$connect
             $repository.Text='Connection settings changed. Click Connect to load your saved repository.'
@@ -147,7 +147,7 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
             $result=$state.Worker.EndInvoke($state.Pending)
             if($state.Worker.Streams.Error.Count -gt 0){throw $state.Worker.Streams.Error[0].Exception}
             if($state.Stage -eq 'connect'){
-                $state.Profile=$result[0]
+                $state.Profile=$result[0];$connect.Text='Refresh connection'
                 $form.AcceptButton=$install
                 $repository.Text='Saved repository: '+$state.Profile.storageName+' / '+$state.Profile.repositoryName
                 $status.Text='Connected. Choose the folders you want to back up, then click Save and connect.'
@@ -185,7 +185,7 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
             $id.Text=[string]$existing.agentId
             if($existing.agentTokenFile){$token.Text=[IO.File]::ReadAllText([string]$existing.agentTokenFile).Trim()}
             foreach($source in $existing.sources){if($source -and !$folders.Items.Contains([string]$source)){[void]$folders.Items.Add([string]$source)}}
-            $status.Text='Your existing configuration is loaded. Click Connect to refresh the saved repository and edit folders.'
+            $status.Text='Your saved configuration is loaded. The connection will be validated automatically; your background agent remains independent of this window.'
         }catch{$status.Text='Existing settings could not be loaded. Enter enrollment credentials to configure this laptop again.'}
     }
     $recoveryPanel=Add-RecoveryPanel $form $state
