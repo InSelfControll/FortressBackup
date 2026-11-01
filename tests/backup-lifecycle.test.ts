@@ -484,7 +484,7 @@ test('restore owns the running lease, reports its operation, and preserves backu
   await run("INSERT INTO locations(id,name,type,path) VALUES('destination','Storage','nfs','/tmp/repository')");
   const headers={Authorization:'Bearer '+fixture.token,'Content-Type':'application/json'};
   const pending=fetch(fixture.base+'/restore-activity/restore',{method:'POST',headers,body:JSON.stringify({snapshotId:'abcdef12',restorePath:'/tmp/recovered',paths:['/home/dummy/file.txt']})});
-  await Promise.race([began,pending.then(async response=>{throw new Error('Restore ended before execution: '+await response.text())})]);
+  await Promise.race([began,pending.then(async response=>{throw new Error('Restore ended before execution: '+await response.clone().text())})]);
   const row=await getOne<any>("SELECT * FROM jobs WHERE id='restore-activity'");
   expect(row.status).toBe('Running');expect(row.operation).toBe('restore');
   expect((await fetch(fixture.base+'/restore-activity/run',{method:'POST',headers,body:'{}'})).status).toBe(409);
@@ -530,7 +530,7 @@ test('canceling an SSH restore keeps its lease until stopping is acknowledged',a
   await run("INSERT INTO locations(id,name,type,path) VALUES('destination','Storage','nfs','/tmp/repository')");
   const headers={Authorization:'Bearer '+fixture.token,'Content-Type':'application/json'};
   const work=fetch(fixture.base+'/cancel-restore/restore',{method:'POST',headers,body:JSON.stringify({snapshotId:'abcdef12',restorePath:'/tmp/canceled-restore'})});
-  await Promise.race([began,work.then(async r=>{throw new Error(await r.text())})]);
+  await Promise.race([began,work.then(async r=>{throw new Error(await r.clone().text())})]);
   expect((await fetch(fixture.base+'/cancel-restore/cancel',{method:'POST',headers,body:'{}'})).status).toBe(202);
   expect((await getOne<any>("SELECT status FROM jobs WHERE id='cancel-restore'")).status).toBe('Running');
   expect((await fetch(fixture.base+'/cancel-restore/run',{method:'POST',headers,body:'{}'})).status).toBe(409);

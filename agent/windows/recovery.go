@@ -19,11 +19,12 @@ import (
 )
 
 type operationRequest struct {
-	AllDevices bool     `json:"allDevices,omitempty"`
-	SnapshotID string   `json:"snapshotId,omitempty"`
-	Directory  string   `json:"directory,omitempty"`
-	Offset     int      `json:"offset,omitempty"`
-	Paths      []string `json:"paths,omitempty"`
+	RepositoryJobID string   `json:"repositoryJobId,omitempty"`
+	AllDevices      bool     `json:"allDevices,omitempty"`
+	SnapshotID      string   `json:"snapshotId,omitempty"`
+	Directory       string   `json:"directory,omitempty"`
+	Offset          int      `json:"offset,omitempty"`
+	Paths           []string `json:"paths,omitempty"`
 }
 type savedSnapshot struct {
 	ID       string   `json:"id"`
@@ -200,6 +201,9 @@ func lockOperations(c Config) (func(), error) {
 	return func() { syscall.CloseHandle(handle) }, nil
 }
 func executeManaged(ctx context.Context, c Config, job lease) (any, error) {
+	if job.Request.AllDevices && (c.RepositoryJobID == "" || c.RepositoryJobID != job.Request.RepositoryJobID) {
+		return nil, errors.New("repository assignment changed; Save and connect before recovery")
+	}
 	if err := validateOperation(job); err != nil {
 		return nil, err
 	}

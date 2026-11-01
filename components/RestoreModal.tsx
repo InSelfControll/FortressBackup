@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Clock, Server, FolderInput, CheckCircle2, AlertTriangle, Loader2, RotateCcw, Search } from 'lucide-react';
+import {ManagedRestore} from './ManagedRestore';
 import {useManagedAgents} from '../client/api/queries';
 import {apiFetch,requireData} from '../client/api/client';
 import type {ManagedAgentJob} from '../types';
@@ -59,6 +60,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
     const [restorePath, setRestorePath] = useState('');
     const [targetSystemId, setTargetSystemId] = useState('');
     const windows=targetSystemId.startsWith('windows:');
+    const recoveryDevice=managedAgents.data?.find(agent=>'windows:'+agent.id===targetSystemId);
     const [restoreLogs, setRestoreLogs] = useState<string[]>([]);
     const [restoreSuccess, setRestoreSuccess] = useState(false);
 
@@ -243,9 +245,10 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                 </div>
 
                 {managedJob&&step==='restoring'&&<button className="m-4 btn-secondary" disabled={managedJob.cancelRequested} onClick={async()=>{try{setManagedJob(requireData(await apiFetch<ManagedAgentJob>('/managed-agents/admin/'+targetSystemId.slice(8)+'/jobs/'+managedJob.id+'/cancel',{method:'POST',body:'{}'})))}catch(e){setError(e instanceof Error?e.message:'Cancellation failed')}}}>Cancel restore</button>}
+                {step==='snapshots'&&<div className="px-4 pt-4"><label className="block text-sm">Restore destination device<select aria-label="Restore destination device" value={targetSystemId} onChange={e=>setTargetSystemId(e.target.value)} className="block w-full bg-slate-800 p-2 rounded"><optgroup label="Linux / SSH systems">{systems.map(system=><option key={system.id} value={system.id}>{system.name} (SSH)</option>)}</optgroup><optgroup label="Windows managed devices">{(managedAgents.data||[]).filter(agent=>!agent.disabled).map(agent=><option key={agent.id} value={'windows:'+agent.id}>{agent.name} (Windows)</option>)}</optgroup></select></label><p className="text-sm text-slate-400 mt-2">Choose a Windows recovery device to browse this repository even when the original device is offline.</p></div>}
                 {/* Content */}
                 <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
-                    {step === 'snapshots' && (
+                    {step==='snapshots'&&windows&&recoveryDevice?<div className="space-y-4"><h4>Restore on {recoveryDevice.name}</h4>{recoveryDevice.repositoryJobId!==job.id?<p role="alert">Assign “{job.name}” as this device's saved repository in Managed Clients, then Save and connect on that device before recovering these backups.</p>:<ManagedRestore agent={recoveryDevice} open/>}</div>:step === 'snapshots' && (
                         <div className="space-y-4">
                             <h4 className="text-sm font-medium text-slate-400 uppercase tracking-widest">Select a saved backup (snapshot)</h4><p className="text-sm text-slate-400">A backup saves a snapshot: a version of your files at that time. Choose one to restore all files or selected files and folders.</p>
                             {loading ? (

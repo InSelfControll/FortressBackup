@@ -42,7 +42,7 @@ function Install-ManagedSetup([string]$SetupRoot,[object]$Profile,[string]$Contr
         $tokenPath=Join-Path $temporary 'agent-token.txt'
         [IO.File]::WriteAllText($tokenPath,$Token,$utf8)
         $configPath=Join-Path $temporary 'agent.json'
-        $config=@{resticPath=(Join-Path $SetupRoot 'restic.exe');repository=$credentials.repository;passwordFile=$credentials.passwordFile;sftpKeyFile=$credentials.sftpKeyFile;sftpKnownHostsFile=$credentials.sftpKnownHostsFile;sources=@($Sources | Select-Object -Unique);excludes=@();host=$env:COMPUTERNAME;timeoutMinutes=240;useVSS=$true;controllerUrl=$Controller;agentId=$Id;agentTokenFile=$tokenPath}
+        $config=@{repositoryJobId=[string]$Profile.repositoryJobId;resticPath=(Join-Path $SetupRoot 'restic.exe');repository=$credentials.repository;passwordFile=$credentials.passwordFile;sftpKeyFile=$credentials.sftpKeyFile;sftpKnownHostsFile=$credentials.sftpKnownHostsFile;sources=@($Sources | Select-Object -Unique);excludes=@();host=$env:COMPUTERNAME;timeoutMinutes=240;useVSS=$true;controllerUrl=$Controller;agentId=$Id;agentTokenFile=$tokenPath}
         $existingPath=Join-Path $env:ProgramData 'FortressBackup\agent.json'
         if(Test-Path -LiteralPath $existingPath){
             $existing=Get-Content -LiteralPath $existingPath -Raw | ConvertFrom-Json

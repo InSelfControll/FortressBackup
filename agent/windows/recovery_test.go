@@ -85,7 +85,7 @@ func TestManagedRecoveryRoundTrip(t *testing.T) {
 	if err := os.WriteFile(pass, []byte("ephemeral-test-password"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	c := Config{ResticPath: restic, Repository: filepath.Join(root, "repository"), PasswordFile: pass, Host: "recovery-test-host", AgentID: "11111111-1111-1111-1111-111111111111", AgentTokenFile: filepath.Join(root, "token"), Sources: []string{source}}
+	c := Config{RepositoryJobID: "66666666-6666-6666-6666-666666666666", ResticPath: restic, Repository: filepath.Join(root, "repository"), PasswordFile: pass, Host: "recovery-test-host", AgentID: "11111111-1111-1111-1111-111111111111", AgentTokenFile: filepath.Join(root, "token"), Sources: []string{source}}
 	if err := runRestic(context.Background(), c, []string{"init"}, os.Stdout); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestManagedRecoveryRoundTrip(t *testing.T) {
 	if err != nil || len(old) != 1 {
 		t.Fatal("old-device backups are not discoverable", err)
 	}
-	recovered, err := executeManaged(context.Background(), replacement, lease{ID: "55555555-5555-5555-5555-555555555555", Operation: "restore", Request: operationRequest{SnapshotID: sid, AllDevices: true}})
+	recovered, err := executeManaged(context.Background(), replacement, lease{ID: "55555555-5555-5555-5555-555555555555", Operation: "restore", Request: operationRequest{SnapshotID: sid, RepositoryJobID: c.RepositoryJobID, AllDevices: true}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,7 +7,7 @@ import type {ManagedAgent,ManagedAgentJob,ManagedOperation,ManagedRequest,Manage
 export const operationLabel=(operation:ManagedOperation)=>({backup:'Backup',check:'Repository check',snapshots:'List saved backups',files:'Browse backup files',restore:'Restore'}[operation]);
 export const currentManagedJob=(jobs:ManagedAgentJob[])=>jobs.find(j=>j.state==='running')||jobs.find(j=>j.state==='pending')||jobs[0];
 
-export function ManagedRestore({agent}:{agent:ManagedAgent}){
+export function ManagedRestore({agent,open=false}:{agent:ManagedAgent;open?:boolean}){
  const client=useQueryClient();
  const [job,setJob]=useState<ManagedAgentJob|null>(null),[error,setError]=useState('');
  const [snapshots,setSnapshots]=useState<Snapshot[]>([]),[snapshot,setSnapshot]=useState('');
@@ -48,7 +48,7 @@ export function ManagedRestore({agent}:{agent:ManagedAgent}){
   return()=>{disposed=true;clearInterval(timer)};
  },[job?.id,job?.state,endpoint,client]);
  const browse=(id:string,dir='/')=>{setPage(null);setFiles([]);void start('files',{snapshotId:id,directory:dir})};
- return <details className="rounded-lg border border-slate-600 p-3 space-y-3">
+ return <details open={open||undefined} className="rounded-lg border border-slate-600 p-3 space-y-3">
   <summary className="cursor-pointer font-medium">Browse backups and restore</summary>
   <p className="text-sm text-slate-400">A backup saves your files as a snapshot: a version you can restore later. Listing snapshots does not create a backup. Restore all files or select individual files and folders.</p>
   {!supported?<p className="text-amber-300 text-sm">Install the latest Windows app, then click Save and connect to enable restore on this laptop.</p>:<>

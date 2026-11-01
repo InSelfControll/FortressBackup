@@ -23,14 +23,15 @@ import (
 )
 
 type Config struct {
-	ResticPath     string   `json:"resticPath"`
-	Repository     string   `json:"repository"`
-	PasswordFile   string   `json:"passwordFile"`
-	Sources        []string `json:"sources"`
-	Excludes       []string `json:"excludes"`
-	Host           string   `json:"host"`
-	TimeoutMinutes int      `json:"timeoutMinutes"`
-	UseVSS         bool     `json:"useVSS"`
+	RepositoryJobID string   `json:"repositoryJobId,omitempty"`
+	ResticPath      string   `json:"resticPath"`
+	Repository      string   `json:"repository"`
+	PasswordFile    string   `json:"passwordFile"`
+	Sources         []string `json:"sources"`
+	Excludes        []string `json:"excludes"`
+	Host            string   `json:"host"`
+	TimeoutMinutes  int      `json:"timeoutMinutes"`
+	UseVSS          bool     `json:"useVSS"`
 	// Optional path to SSH configuration with pinned known_hosts and an SSH key.
 	SSHCommand         string `json:"sshCommand"`
 	ControllerURL      string `json:"controllerUrl"`

@@ -258,3 +258,49 @@ test('managed backups browse and restore selected files and the full saved versi
  await agent('report',{id:job.id,success:true,data:{snapshotId,restorePath:full}});
  await expect(card.getByText('Files restored on the laptop to: '+full,{exact:true})).toBeVisible();
 });
+
+test('enrollments can be enabled, cancellation waits for acknowledgment, and removal preserves repositories',async({page})=>{
+ const source=(await api('/systems'))[0],storage=(await api('/locations')).find((l:any)=>l.type==='sftp');
+ const repo=await api('/jobs','POST',{name:'Lifecycle saved repository',tool:'Restic',sourceId:source.id,sourcePaths:['/home'],destinationId:storage.id,repoPassword:crypto.randomBytes(32).toString('hex')});
+ const enrollment=await api('/managed-agents/admin/enroll','POST',{name:'Lifecycle Windows',repositoryJobId:repo.id});
+ const agent=async(route:string,body:any)=>{const r=await fetch(base+'/api/managed-agents/'+route,{method:'POST',headers:{Authorization:'Bearer '+enrollment.token,'X-Fortress-Agent-Id':enrollment.id,'Content-Type':'application/json'},body:JSON.stringify(body)});return {status:r.status,data:await r.json()}};
+ await go(page,'Managed Clients');const card=page.getByRole('heading',{name:'Lifecycle Windows',exact:true}).locator('xpath=ancestor::article');
+ page.once('dialog',d=>d.accept());await card.getByRole('button',{name:'Disable',exact:true}).click();await expect(card.getByRole('button',{name:'Enable',exact:true})).toBeVisible();
+ await card.getByRole('button',{name:'Enable',exact:true}).click();await expect(card.getByRole('button',{name:'Disable',exact:true})).toBeEnabled();
+ await card.getByRole('button',{name:'Back up now',exact:true}).click();
+ const running=(await agent('poll',{capabilities:['recovery-v1','recovery-v2','cancel-v1']})).data.job;
+ await expect(card.getByRole('button',{name:'Cancel job',exact:true})).toBeVisible();await card.getByRole('button',{name:'Cancel job',exact:true}).click();
+ expect((await agent('heartbeat',{id:running.id})).data.cancel).toBe(true);
+ expect((await api('/managed-agents/admin/'+enrollment.id)).jobs.find((j:any)=>j.id===running.id).state).toBe('running');
+ await agent('report',{id:running.id,success:false,message:'Operation canceled'});
+ await expect(card.getByText(/Backup.*Canceled/)).toBeVisible();
+ page.once('dialog',d=>d.accept());await card.getByRole('button',{name:'Disable',exact:true}).click();
+ page.once('dialog',d=>d.accept());await card.getByRole('button',{name:'Remove enrollment',exact:true}).click();await expect(page.getByRole('heading',{name:'Lifecycle Windows',exact:true})).toHaveCount(0);
+ expect((await agent('poll',{})).status).toBe(401);expect((await api('/jobs')).some((j:any)=>j.id===repo.id)).toBe(true);
+ await api('/jobs/'+repo.id,'DELETE');
+});
+
+test('dashboard restores old-device snapshots on Windows without the original source being online',async({page})=>{
+ const source=(await api('/systems'))[0],storage=(await api('/locations')).find((l:any)=>l.type==='sftp');
+ const repo=await api('/jobs','POST',{name:'Old device recovery repository',tool:'Restic',sourceId:source.id,sourcePaths:['/home'],destinationId:storage.id,repoPassword:crypto.randomBytes(32).toString('hex')});
+ const old=await api('/managed-agents/admin/enroll','POST',{name:'Old removed device',repositoryJobId:repo.id});await api('/managed-agents/admin/'+old.id+'/disable','POST',{});await api('/managed-agents/admin/'+old.id,'DELETE');
+ const enrollment=await api('/managed-agents/admin/enroll','POST',{name:'Replacement Windows',repositoryJobId:repo.id});
+ const agent=async(route:string,body:any)=>{const r=await fetch(base+'/api/managed-agents/'+route,{method:'POST',headers:{Authorization:'Bearer '+enrollment.token,'X-Fortress-Agent-Id':enrollment.id,'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw new Error(JSON.stringify(data));return data};
+ const capabilities=['recovery-v1','recovery-v2','cancel-v1'];await agent('poll',{capabilities});
+ await page.route('**/api/jobs/'+repo.id+'/snapshots',route=>route.fulfill({status:503,json:{error:'Original source is offline'}}));
+ await go(page,'Backup Jobs');const jobCard=page.getByRole('heading',{name:repo.name,exact:true}).locator('xpath=ancestor::div[contains(@class,"group")][1]');await jobCard.getByTitle('Restore',{exact:true}).click();
+ const modal=page.getByRole('dialog',{name:'Restore backup'});await modal.getByLabel('Restore destination device').selectOption('windows:'+enrollment.id);
+ await modal.getByRole('button',{name:'Load saved backups',exact:true}).click();
+ let job:any;await expect.poll(async()=>{job=(await agent('poll',{capabilities})).job;return job?.operation}).toBe('snapshots');
+ expect(job.request.allDevices).toBe(true);expect(job.request.repositoryJobId).toBe(repo.id);
+ const snapshotId='b'.repeat(64);await agent('report',{id:job.id,success:true,data:{snapshots:[{id:snapshotId,time:'2026-11-01T00:00:00Z',hostname:'Old removed device',paths:['/home']}],offset:0,hasMore:false}});
+ await modal.getByLabel('Saved backup',{exact:true}).selectOption(snapshotId);
+ await expect.poll(async()=>{job=(await agent('poll',{capabilities})).job;return job?.operation}).toBe('files');
+ await agent('report',{id:job.id,success:true,data:{snapshotId,directory:'/',offset:0,hasMore:false,entries:[{name:'old-document.txt',path:'/old-document.txt',type:'file',size:7}]}});
+ await modal.getByLabel('Select old-document.txt').check();await modal.getByRole('button',{name:'Restore selected (1)',exact:true}).click();
+ await expect.poll(async()=>{job=(await agent('poll',{capabilities})).job;return job?.operation}).toBe('restore');
+ expect(job.request.paths).toEqual(['/old-document.txt']);expect(job.request.allDevices).toBe(true);
+ const target='C:\\ProgramData\\FortressBackup\\restores\\'+job.id;await agent('report',{id:job.id,success:true,data:{snapshotId,restorePath:target}});
+ await expect(modal.getByText('Files restored on the laptop to: '+target,{exact:true})).toBeVisible();await modal.getByRole('button',{name:'Close dialog',exact:true}).click();
+ await api('/managed-agents/admin/'+enrollment.id+'/disable','POST',{});await api('/managed-agents/admin/'+enrollment.id,'DELETE');await api('/jobs/'+repo.id,'DELETE');
+});

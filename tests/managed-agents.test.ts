@@ -145,7 +145,8 @@ test('disabled enrollments can be re-enabled or removed, with cancellation ackno
   const queued=(await request('/admin/'+e.id+'/jobs',{operation:'backup'})).data;
   expect((await request('/admin/'+e.id+'/jobs/'+queued.id+'/cancel')).data.state).toBe('canceled');
   await request('/poll',{capabilities:['recovery-v1','recovery-v2','cancel-v1']},auth);
-  const active=(await request('/request',{operation:'restore',request:{snapshotId:'a'.repeat(64),allDevices:true}},auth)).data;
+  expect((await request('/request',{operation:'restore',request:{snapshotId:'a'.repeat(64),allDevices:true}},auth)).status).toBe(409);
+  const active=(await request('/request',{operation:'restore',request:{snapshotId:'a'.repeat(64)}},auth)).data;
   expect(active.id).toBeTruthy();await request('/poll',{capabilities:['recovery-v1','recovery-v2','cancel-v1']},auth);
   await request('/admin/'+e.id+'/jobs/'+active.id+'/cancel');
   expect((await request('/heartbeat',{id:active.id},auth)).data.cancel).toBe(true);

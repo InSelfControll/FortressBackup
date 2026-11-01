@@ -148,7 +148,7 @@ router.post('/setup',async(req,res,next)=>{
     const agent=await lookup((req as any).managedAgent);
     if(!agent?.repository_job_id)return res.status(409).json({error:'Choose a saved repository for this laptop in Managed Clients first'});
     const profile=await managedRepository(agent.repository_job_id);
-    res.json(profile);
+    res.json({...profile,repositoryJobId:agent.repository_job_id});
   }catch(e){next(e)}
 });
 
@@ -164,6 +164,11 @@ async function enqueue(agent:Agent,body:any){
  let request:ManagedRequest;
  try{request=managedRequest(operation,body?.request??{})}catch(error){return {status:400,body:{error:error instanceof Error?error.message:'Invalid operation'}}}
  if(request.allDevices&&!JSON.parse(agent.capabilities||'[]').includes(crossDeviceCapability))return {status:409,body:{error:'Update the Windows agent to support recovery from another device'}};
+ if(request.allDevices){
+  const binding=await getOne<{job_id:string}>('SELECT job_id FROM managed_repositories WHERE client_id=?',[agent.id]);
+  if(!binding)return {status:409,body:{error:'Assign a repository and Save and connect on the recovery device first'}};
+  request.repositoryJobId=binding.job_id;
+ }
  const job={id:crypto.randomUUID(),operation,createdAt:new Date().toISOString()};
  try{
   const inserted=await getOne(`INSERT INTO managed_jobs(id,client_id,operation,state,created_at,request_json) SELECT ?,id,?,'pending',?,? FROM managed_clients WHERE id=? AND disabled=0 RETURNING id`,[job.id,operation,job.createdAt,JSON.stringify(request),agent.id]);

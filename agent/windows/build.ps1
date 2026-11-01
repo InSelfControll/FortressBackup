@@ -65,7 +65,8 @@ END
         if($LASTEXITCODE -ne 0){throw 'Agent build failed'}
         $compiler=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
         $automation=[Management.Automation.PowerShell].Assembly.Location
-        & $compiler /nologo /target:winexe /platform:x64 /optimize+ /win32res:(Join-Path $work 'FortressBackup.exe.res') /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:$automation /out:FortressBackup.exe (Join-Path $PSScriptRoot 'app\Program.cs')
+        $compilerArguments=@('/nologo','/target:winexe','/platform:x64','/optimize+',('/win32res:'+(Join-Path $work 'FortressBackup.exe.res')),'/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll',('/reference:'+$automation),'/out:FortressBackup.exe',(Join-Path $PSScriptRoot 'app\Program.cs'))
+        & $compiler @compilerArguments
         if($LASTEXITCODE -ne 0){throw 'Native Windows app build failed'}
     }finally{Pop-Location}
     foreach($binary in $binaries){
