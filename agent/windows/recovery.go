@@ -19,6 +19,7 @@ import (
 )
 
 type operationRequest struct {
+	Repository      string   `json:"repository,omitempty"`
 	RepositoryJobID string   `json:"repositoryJobId,omitempty"`
 	AllDevices      bool     `json:"allDevices,omitempty"`
 	SnapshotID      string   `json:"snapshotId,omitempty"`
@@ -201,7 +202,7 @@ func lockOperations(c Config) (func(), error) {
 	return func() { syscall.CloseHandle(handle) }, nil
 }
 func executeManaged(ctx context.Context, c Config, job lease) (any, error) {
-	if job.Request.AllDevices && (c.RepositoryJobID == "" || c.RepositoryJobID != job.Request.RepositoryJobID) {
+	if job.Request.AllDevices && (c.RepositoryJobID == "" || c.RepositoryJobID != job.Request.RepositoryJobID || c.Repository != job.Request.Repository) {
 		return nil, errors.New("repository assignment changed; Save and connect before recovery")
 	}
 	if err := validateOperation(job); err != nil {

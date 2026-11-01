@@ -168,6 +168,7 @@ async function enqueue(agent:Agent,body:any){
   const binding=await getOne<{job_id:string}>('SELECT job_id FROM managed_repositories WHERE client_id=?',[agent.id]);
   if(!binding)return {status:409,body:{error:'Assign a repository and Save and connect on the recovery device first'}};
   request.repositoryJobId=binding.job_id;
+  try{request.repository=(await managedRepository(binding.job_id)).repository}catch(error){return {status:409,body:{error:error instanceof Error?error.message:'Repository is not ready'}}}
  }
  const job={id:crypto.randomUUID(),operation,createdAt:new Date().toISOString()};
  try{

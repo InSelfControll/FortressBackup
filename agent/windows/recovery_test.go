@@ -109,7 +109,7 @@ func TestManagedRecoveryRoundTrip(t *testing.T) {
 	if err != nil || len(old) != 1 {
 		t.Fatal("old-device backups are not discoverable", err)
 	}
-	recovered, err := executeManaged(context.Background(), replacement, lease{ID: "55555555-5555-5555-5555-555555555555", Operation: "restore", Request: operationRequest{SnapshotID: sid, RepositoryJobID: c.RepositoryJobID, AllDevices: true}})
+	recovered, err := executeManaged(context.Background(), replacement, lease{ID: "55555555-5555-5555-5555-555555555555", Operation: "restore", Request: operationRequest{SnapshotID: sid, Repository: c.Repository, RepositoryJobID: c.RepositoryJobID, AllDevices: true}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -111,7 +111,7 @@ export interface Location {
 }
 
 export type ManagedOperation = 'backup' | 'check' | 'snapshots' | 'files' | 'restore';
-export interface ManagedRequest {repositoryJobId?:string;allDevices?:boolean;snapshotId?:string;directory?:string;offset?:number;paths?:string[]}
+export interface ManagedRequest {repository?:string;repositoryJobId?:string;allDevices?:boolean;snapshotId?:string;directory?:string;offset?:number;paths?:string[]}
 export interface ManagedFile {path:string;name:string;type:'file'|'dir'|'symlink';size?:number}
 export interface ManagedResult {snapshots?:Snapshot[];entries?:ManagedFile[];directory?:string;offset?:number;hasMore?:boolean;restorePath?:string;snapshotId?:string}
 export interface ManagedAgentJob {
