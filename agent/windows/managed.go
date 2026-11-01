@@ -204,7 +204,7 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 		if err := execute(ctx, c, "snapshots"); err != nil {
 			return fmt.Errorf("repository access check failed: %w", err)
 		}
-		if err := request("/heartbeat", map[string]string{}); err != nil {
+		if err := request("/heartbeat", map[string]any{"capabilities": []string{"recovery-v1", "recovery-v2", "cancel-v1"}}); err != nil {
 			return fmt.Errorf("controller connection check failed: %w", err)
 		}
 		fmt.Fprintln(os.Stdout, "Repository accessible; enrollment authenticated. No queued job claimed.")

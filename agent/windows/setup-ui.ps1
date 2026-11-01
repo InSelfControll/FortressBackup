@@ -62,7 +62,7 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
     $token.UseSystemPasswordChar=$true
     $connect=Add-SetupControl Button connect 'Connect' 490 215 140 33
     $repository=Add-SetupControl Label repository 'Saved repository: connect to load your assigned storage.' 20 258 610 43
-    [void](Add-SetupControl Label folderLabel 'Folders to back up' 20 308 460 25)
+    [void](Add-SetupControl Label folderLabel 'Backup folders' 20 308 460 25)
     $folders=Add-SetupControl ListBox folders '' 20 337 455 115
     $folders.HorizontalScrollbar=$true
     $add=Add-SetupControl Button addFolder 'Add folder...' 490 337 140 33
@@ -105,13 +105,16 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
             param($root,$address,$clientId,$secret)
             $ErrorActionPreference='Stop'
             . (Join-Path $root 'provision.ps1')
-            Get-ManagedRepository -Controller $address -Id $clientId -Token $secret
+            $profile=Get-ManagedRepository -Controller $address -Id $clientId -Token $secret
+            $updated=Update-ManagedRuntime -SetupRoot $root -Profile $profile -Controller $address -Id $clientId -Token $secret
+            $profile | Add-Member -NotePropertyName runtimeUpdated -NotePropertyValue $updated -Force
+            return $profile
         } @($SetupRoot,$state.Controller,$state.Id,$state.Token)
     }.GetNewClosure())
     $add.Add_Click({
         $picker=New-Object Windows.Forms.FolderBrowserDialog
         try {
-            $picker.Description='Choose a folder to back up'
+            $picker.Description='Choose a backup folder'
             $picker.ShowNewFolderButton=$false
             if($picker.ShowDialog($form) -eq [Windows.Forms.DialogResult]::OK -and !$folders.Items.Contains($picker.SelectedPath)){
                 [void]$folders.Items.Add($picker.SelectedPath)
@@ -150,7 +153,7 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
                 $state.Profile=$result[0];$connect.Text='Refresh connection'
                 $form.AcceptButton=$install
                 $repository.Text='Saved repository: '+$state.Profile.storageName+' / '+$state.Profile.repositoryName
-                $status.Text='Connected. Choose the folders you want to back up, then click Save and connect.'
+                $status.Text=if($state.Profile.runtimeUpdated){'Connected. Background agent updated and verified. Open Snapshots to browse saved backups.'}else{'Connected. Choose backup folders, then click Save and connect to save changes.'}
             }else{
                 $status.Text='Configured and connected. Open Managed Clients to start a backup and follow its progress. Saving the configuration does not mean a backup has completed.'
                 $close.Text='Finish'
@@ -160,7 +163,7 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
             $failed=$true
             if($state.Stage -eq 'connect'){
                 $repository.Text='Saved repository: could not connect.'
-                $status.Text='Connection failed. Check HTTPS/DNS, enrollment credentials, and the assigned repository in Managed Clients.'
+                $status.Text='Connection or runtime update failed: '+$_.Exception.Message+' Check HTTPS/DNS and Managed Clients. If a backup is running, retry after it finishes.'
             }else{
                 $errorDetail=$_.Exception
                 while($errorDetail.InnerException){$errorDetail=$errorDetail.InnerException}
@@ -189,10 +192,17 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
         }catch{$status.Text='Existing settings could not be loaded. Enter enrollment credentials to configure this laptop again.'}
     }
     $recoveryPanel=Add-RecoveryPanel $form $state
-    $recoveryButton=Add-SetupControl Button backups 'Backups / Restore' 20 558 180 33
+    $recoveryButton=Add-SetupControl Button backups 'Snapshots' 20 558 180 33
     $recoveryButton.Add_Click({
         if($state.Worker){return}
         $recoveryPanel.Visible=$true;$recoveryPanel.BringToFront();$form.AcceptButton=$null
+        $recoveryPanel.Controls['load'].PerformClick()
+    }.GetNewClosure())
+    $backupButton=Add-SetupControl Button backupNow 'Backup now' 20 600 180 33
+    $backupButton.Add_Click({
+        if($state.Worker){return}
+        $recoveryPanel.Visible=$true;$recoveryPanel.BringToFront();$form.AcceptButton=$null
+        $recoveryPanel.Controls['backup'].PerformClick()
     }.GetNewClosure())
     Set-FortressTheme $form $recoveryPanel
     if($AutoConnect -and $controller.Text -and $id.Text -and $token.Text){$form.Add_Shown({if(!$state.Worker){$connect.PerformClick()}}.GetNewClosure())}
@@ -221,7 +231,7 @@ function Set-FortressTheme($Form,$Recovery){
       folderLabel=@(235,405,480,28);folders=@(235,442,505,140)
       addFolder=@(755,442,155,38);removeFolder=@(755,491,155,38)
       progress=@(235,602,675,8);status=@(235,625,675,50)
-      install=@(20,410,185,44);close=@(20,470,185,40);backups=@(20,176,185,44)
+      install=@(20,410,185,44);close=@(20,470,185,40);backups=@(20,176,185,44);backupNow=@(20,235,185,44)
     }
     foreach($name in $placements.Keys){$c=$Form.Controls[$name];if($c){$b=$placements[$name];$c.SetBounds($b[0],$b[1],$b[2],$b[3])}}
     $Form.Controls['heading'].Text='Device protection'
@@ -229,7 +239,7 @@ function Set-FortressTheme($Form,$Recovery){
     $Form.Controls['intro'].Text='Configure folders, browse saved versions, and recover files. Once configured, the agent runs independently of this window.'
     $brand=New-Object Windows.Forms.Label;$brand.Name='brand';$brand.Text='FORTRESS'+"`n"+'BACKUP';$brand.SetBounds(22,30,185,75);$brand.Font=New-Object Drawing.Font('Segoe UI',17,[Drawing.FontStyle]::Bold);$Form.Controls.Add($brand)
     $nav=New-Object Windows.Forms.Label;$nav.Text='DEVICE SETTINGS';$nav.SetBounds(24,133,185,25);$nav.ForeColor=$muted;$Form.Controls.Add($nav)
-    $hint=New-Object Windows.Forms.Label;$hint.Text='Encrypted backups'+"`n"+'Saved versions'+"`n"+'File recovery';$hint.SetBounds(24,265,180,95);$hint.ForeColor=$muted;$Form.Controls.Add($hint)
+    $hint=New-Object Windows.Forms.Label;$hint.Text='Encrypted backups'+"`n"+'Saved versions'+"`n"+'File recovery';$hint.SetBounds(24,305,180,95);$hint.ForeColor=$muted;$Form.Controls.Add($hint)
     $Recovery.Dock='None';$Recovery.SetBounds(215,12,710,718);$Recovery.AutoScroll=$true;$Recovery.AutoScrollMinSize=New-Object Drawing.Size(690,620);$Recovery.Anchor='Top,Bottom,Left,Right'
     $style={param($container)
       foreach($c in $container.Controls){

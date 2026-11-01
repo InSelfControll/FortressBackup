@@ -2,7 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.1.0-rc.11] - 2026-11-01
+
+- Update an older Windows SYSTEM runtime automatically when the installed app reconnects, preserving configured backup folders and credentials.
+- Add visible Backup now and Snapshots controls, automatically load saved versions, and show actionable controller conflicts.
+- Use “Backup” consistently in the app and dashboard action labels.
 
 - Recheck Defender service readiness after runner platform updates and retry observed service-unavailable/installer-busy errors. Successful signature updating and scanning remain required.
 
@@ -73,7 +77,11 @@ All notable changes to this project will be documented in this file.
 - Show Windows client setup, check-ins, and queued operations on the dashboard with automatic refresh.
 - Publish tested controller archives and Windows x64 bundles, executables, installers, configuration examples, guides, licenses, and checksums through version-tag releases.
 
-## [Unreleased] - 2024-12-25
+## [0.1.0-rc.11] - 2026-11-01
+
+- Update an older Windows SYSTEM runtime automatically when the installed app reconnects, preserving configured backup folders and credentials.
+- Add visible Backup now and Snapshots controls, automatically load saved versions, and show actionable controller conflicts.
+- Use “Backup” consistently in the app and dashboard action labels. - 2024-12-25
 
 ### Added
 - **MacOS Support**: Added platform detection for Darwin to use `umount` instead of `fusermount` for SSHFS support.

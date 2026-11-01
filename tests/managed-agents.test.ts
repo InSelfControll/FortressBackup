@@ -42,6 +42,7 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     expect(queue.status).toBe(201);
     expect((await api('/heartbeat',{}, {'Content-Type':'application/json'})).status).toBe(401);
     expect((await api('/heartbeat',{},auth)).status).toBe(200);
+    expect((await api('/heartbeat',{capabilities:['unsupported']},auth)).status).toBe(400);
     const beforePoll=await api('/admin/'+id,undefined,adminHeaders,'GET');
     expect(beforePoll.data.lastSeen).toBeTruthy();
     expect(beforePoll.data.jobs[0].state).toBe('pending');
@@ -64,10 +65,11 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     expect(listing.data[0].jobs[0].state).toBe('success');
     expect(JSON.stringify(listing.data)).not.toContain(enrollment.data.token);
     expect(JSON.stringify(listing.data)).not.toContain('token_hash');
-    // Recovery capabilities come from the running agent, not enrollment or heartbeat.
+    // Enrollment does not claim runtime support; verified preflight can announce it without polling.
     const sid='a'.repeat(64);
     expect((await api('/admin/'+id+'/jobs',{operation:'restore',request:{snapshotId:sid}})).status).toBe(409);
-    await api('/poll',{capabilities:['recovery-v1']},auth);
+    expect((await api('/heartbeat',{capabilities:['recovery-v1']},auth)).status).toBe(200);
+    expect((await api('/admin/'+id,undefined,adminHeaders,'GET')).data.capabilities).toEqual(['recovery-v1']);
     expect((await api('/request',{operation:'restore',request:{snapshotId:sid,paths:[]}},auth)).status).toBe(400);
     expect((await api('/request',{operation:'files',request:{snapshotId:sid,directory:'/../Windows'}},auth)).status).toBe(400);
     const list=await api('/request',{operation:'snapshots',request:{offset:0,command:'forbidden'}},auth);

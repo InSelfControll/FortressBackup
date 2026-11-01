@@ -269,8 +269,10 @@ router.post('/cancel',agentAuth,async(req,res,next)=>{
 // Installation verifies credentials without claiming a queued backup.
 router.post('/heartbeat', agentAuth, async (req, res, next) => {
   try {
-    await run('UPDATE managed_clients SET last_seen=? WHERE id=?',
-      [new Date().toISOString(), (req as any).managedAgent]);
+    const capabilities=req.body?.capabilities;
+    if(capabilities!==undefined&&(!Array.isArray(capabilities)||capabilities.length>8||!capabilities.every((value:unknown)=>[recoveryCapability,crossDeviceCapability,cancelCapability].includes(value as string))))return res.status(400).json({error:'Invalid capabilities'});
+    await run('UPDATE managed_clients SET last_seen=?,capabilities=COALESCE(?,capabilities) WHERE id=?',
+      [new Date().toISOString(), capabilities===undefined?null:JSON.stringify([...new Set(capabilities)]), (req as any).managedAgent]);
     const active=await getOne<{cancel_requested:number}>("SELECT cancel_requested FROM managed_jobs WHERE client_id=? AND id=? AND state='running'",[(req as any).managedAgent,req.body?.id??'']);
     const agent=await lookup((req as any).managedAgent);
     res.json({ok:true,cancel:!!active?.cancel_requested||!!agent?.disabled});
