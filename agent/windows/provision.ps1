@@ -46,6 +46,7 @@ function Install-ManagedSetup([string]$SetupRoot,[object]$Profile,[string]$Contr
         $existingPath=Join-Path $env:ProgramData 'FortressBackup\agent.json'
         if(Test-Path -LiteralPath $existingPath){
             $existing=Get-Content -LiteralPath $existingPath -Raw | ConvertFrom-Json
+            if($existing.agentId -ne $Id){$config.previousAgentId=[string]$existing.agentId}elseif($existing.PSObject.Properties['previousAgentId']){$config.previousAgentId=[string]$existing.previousAgentId}
             foreach($name in @('excludes','host','timeoutMinutes','useVSS')){
                 if($existing.PSObject.Properties[$name]){$config[$name]=$existing.$name}
             }

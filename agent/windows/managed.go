@@ -27,6 +27,7 @@ type pollResponse struct {
 	Job *lease `json:"job"`
 }
 type pendingReport struct {
+	AgentID string          `json:"agentId,omitempty"`
 	ID      string          `json:"id"`
 	Success bool            `json:"success"`
 	Message string          `json:"message"`
@@ -102,6 +103,42 @@ func agentCredentials(c Config) (string, string, error) {
 	return strings.TrimRight(c.ControllerURL, "/") + "/api/managed-agents", token, nil
 }
 
+// Configuration changes can replace an enrollment. Preserve old local audit
+// records without letting its unacknowledged report block the new identity.
+func reconcileEnrollmentState(c Config) error {
+	directory := filepath.Dir(c.AgentTokenFile)
+	ownerPath := filepath.Join(directory, "fortress-enrollment-owner.json")
+	owner, err := readPending(ownerPath)
+	if err != nil {
+		return err
+	}
+	previous := c.PreviousAgentID
+	if owner != nil {
+		previous = owner.ID
+	}
+	for _, name := range []string{"fortress-pending-report.json", "fortress-active-job.json"} {
+		file := filepath.Join(directory, name)
+		record, err := readPending(file)
+		if err != nil {
+			return err
+		}
+		if record == nil {
+			continue
+		}
+		stale := record.AgentID != "" && record.AgentID != c.AgentID || record.AgentID == "" && previous != "" && previous != c.AgentID
+		if stale {
+			if err := os.Rename(file, file+".previous-"+fmt.Sprint(time.Now().UnixNano())); err != nil {
+				return err
+			}
+			fmt.Fprintln(os.Stdout, "Archived local state for a previous enrollment")
+		}
+	}
+	if owner == nil || owner.ID != c.AgentID {
+		return writePending(ownerPath, pendingReport{ID: c.AgentID, AgentID: c.AgentID, Message: "Local state owner"})
+	}
+	return nil
+}
+
 func managedOnce(ctx context.Context, c Config, preflight bool) error {
 	endpoint, token, err := agentCredentials(c)
 	if err != nil {
@@ -173,6 +210,9 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 		fmt.Fprintln(os.Stdout, "Repository accessible; enrollment authenticated. No queued job claimed.")
 		return nil
 	}
+	if err := reconcileEnrollmentState(c); err != nil {
+		return err
+	}
 	// Report files contain no encryption keys or remote commands. Restrict the
 	// directory ACL to the task identity and Administrators.
 	pendingPath := filepath.Join(filepath.Dir(c.AgentTokenFile), "fortress-pending-report.json")
@@ -214,7 +254,7 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 	if err := validateOperation(*poll.Job); err != nil {
 		return err
 	}
-	if err := writePending(activePath, pendingReport{ID: poll.Job.ID, Message: "running"}); err != nil {
+	if err := writePending(activePath, pendingReport{AgentID: c.AgentID, ID: poll.Job.ID, Message: "running"}); err != nil {
 		return fmt.Errorf("cannot persist active-job marker: %w", err)
 	}
 	jobctx, cancel := context.WithTimeout(ctx, time.Duration(c.TimeoutMinutes)*time.Minute)
@@ -252,7 +292,7 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 		result = context.Canceled
 		data = nil
 	}
-	report := pendingReport{ID: poll.Job.ID, Success: result == nil, Message: message}
+	report := pendingReport{AgentID: c.AgentID, ID: poll.Job.ID, Success: result == nil, Message: message}
 	if data != nil && result == nil {
 		report.Data, _ = json.Marshal(data)
 	}

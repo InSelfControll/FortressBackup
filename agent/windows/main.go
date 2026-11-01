@@ -23,6 +23,7 @@ import (
 )
 
 type Config struct {
+	PreviousAgentID string   `json:"previousAgentId,omitempty"`
 	RepositoryJobID string   `json:"repositoryJobId,omitempty"`
 	ResticPath      string   `json:"resticPath"`
 	Repository      string   `json:"repository"`

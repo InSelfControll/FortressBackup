@@ -248,3 +248,38 @@ func TestCancellationStopsResticAndSSHDescendants(t *testing.T) {
 		t.Fatal("SSH descendant survived cancellation")
 	}
 }
+
+func TestReenrollmentDoesNotStrandNewJobsBehindOldLocalState(t *testing.T) {
+	root := t.TempDir()
+	c := Config{AgentID: "new-enrollment", PreviousAgentID: "old-enrollment", AgentTokenFile: filepath.Join(root, "token")}
+	for _, name := range []string{"fortress-pending-report.json", "fortress-active-job.json"} {
+		if err := writePending(filepath.Join(root, name), pendingReport{ID: "old-job", Message: "legacy record"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := reconcileEnrollmentState(c); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"fortress-pending-report.json", "fortress-active-job.json"} {
+		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
+			t.Fatal("previous enrollment state was not archived", name, err)
+		}
+		archived, err := filepath.Glob(filepath.Join(root, name+".previous-*"))
+		if err != nil || len(archived) != 1 {
+			t.Fatal("previous audit record lost", err)
+		}
+	}
+	// A subsequent run must retain the current identity's pending report, even
+	// when an older runtime wrote a legacy record without the optional agent ID.
+	pending := filepath.Join(root, "fortress-pending-report.json")
+	if err := writePending(pending, pendingReport{ID: "current-job", Message: "current"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconcileEnrollmentState(c); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := readPending(pending)
+	if err != nil || saved == nil || saved.ID != "current-job" {
+		t.Fatal("current pending report was discarded", err)
+	}
+}
