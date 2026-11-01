@@ -3,8 +3,8 @@
 param([ValidatePattern('^v\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$')][string]$Version='v0.1.0-dev')
 $ErrorActionPreference='Stop'
 $resourceCompiler=Get-ChildItem -Path (Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin\*\x64\rc.exe') | Sort-Object FullName -Descending | Select-Object -First 1
-$converter=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\cvtres.exe'
-if(!$resourceCompiler -or !(Test-Path -LiteralPath $converter)){throw 'Windows SDK Resource Compiler and .NET Framework resource converter are required to build the Windows app.'}
+$converter=(Get-Command windres.exe -ErrorAction SilentlyContinue).Source
+if(!$resourceCompiler -or !$converter){throw 'Windows SDK Resource Compiler and MinGW-w64 windres are required to build the Windows app.'}
 $work=Join-Path $env:TEMP ('FortressResources-'+[guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($work) | Out-Null
 $icon=(Join-Path $PSScriptRoot 'assets\fortress.ico').Replace('\','\\')
@@ -53,7 +53,8 @@ END
 "@ | Set-Content -LiteralPath $resource -Encoding Unicode
         & $resourceCompiler.FullName /nologo "/fo$compiled" $resource
         if($LASTEXITCODE -ne 0){throw 'Windows icon/version resource compilation failed'}
-        & $converter /NOLOGO /MACHINE:X64 "/OUT:$object" $compiled
+        # GNU windres produces the COFF resource object supported by Go's linker.
+        & $converter --input-format=res --output-format=coff --target=pe-x86-64 --input $compiled --output $object
         if($LASTEXITCODE -ne 0){throw 'Windows resource conversion failed'}
     }
     Push-Location $PSScriptRoot
