@@ -11,6 +11,12 @@ and Windows **Installed apps**. You can open configuration after Finish or skip
 it and configure later. Installing the app does not enroll a client or start an
 unconfigured backup task.
 
+The app and installer now use the Fortress shield/check icon. Current prereleases
+are **unsigned** because no verified signing identity is configured. A clean
+Defender scan does not guarantee that SmartScreen will recognize a new download.
+See [Windows publisher trust](https://github.com/InSelfControll/FortressBackup/blob/main/docs/WINDOWS-TRUST.md) and the release's
+`Windows-trust-report.json` for signature and scan results.
+
 ## Configure the installed app
 
 Open **Fortress Backup** from the Start menu. Enter the trusted HTTPS controller

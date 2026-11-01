@@ -74,6 +74,12 @@ jobs:
           $restic = Join-Path $upstream "restic_$($env:RESTIC_VERSION)_windows_amd64.exe"
           & ./agent/windows/package.ps1 -AgentDirectory ./agent-artifact -ResticPath $restic -Version $env:GITHUB_REF_NAME -OutputDirectory ./downloads
           if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
+      - name: Scan release files and report publisher signatures
+        shell: powershell
+        timeout-minutes: 10
+        run: |
+          $requireSigned = $env:GITHUB_REF_NAME -notmatch '-'
+          ./agent/windows/check-release.ps1 -Directory ./downloads -ReportPath ./downloads/Windows-trust-report.json -RequireSigned:$requireSigned
       - name: Verify published installer lifecycle
         shell: powershell
         timeout-minutes: 5

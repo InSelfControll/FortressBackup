@@ -21,12 +21,19 @@ from source is optional. Enrollment alone does not install the agent.
 cd agent/windows
 go test ./...
 go vet ./...
-go build -trimpath -o fortress-agent.exe .
+.\build.ps1 -Version v0.1.0-dev
 ```
 
 The GitHub Actions Windows workflow builds the executable and tests task
 registration. It does not substitute for a complete restore test against your
 own backup destination.
+
+`build.ps1` uses the Windows SDK Resource Compiler and the .NET Framework
+resource converter to embed the icon and version information in both binaries.
+It writes artifact checksums and removes generated resource objects afterward.
+The editable icon is `assets/fortress.svg`; `assets/fortress.ico` includes
+16, 24, 32, 48, 64, 128, and 256 pixel sizes. The shield/check artwork reuses the
+dashboard's Lucide icon and includes its license.
 
 ## Critical security constraints
 

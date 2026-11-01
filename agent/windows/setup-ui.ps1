@@ -1,6 +1,16 @@
 #requires -Version 5.1
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+if(!('FortressWindowsShell' -as [type])){
+    Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+public static class FortressWindowsShell {
+    [DllImport("shell32.dll", CharSet=CharSet.Unicode)]
+    public static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+}
+'@
+}
+[void][FortressWindowsShell]::SetCurrentProcessExplicitAppUserModelID('InSelfControll.FortressBackup')
 
 # Network and SYSTEM verification run away from the UI thread. Secrets stay in
 # memory and protected files, never command-line arguments or the status display.
@@ -19,6 +29,9 @@ function New-SetupWindow([string]$SetupRoot){
     $startOperation=${function:Start-SetupOperation}
     [Windows.Forms.Application]::EnableVisualStyles()
     $form=New-Object Windows.Forms.Form
+    $iconPath=Join-Path $SetupRoot 'fortress.ico'
+    if(!(Test-Path -LiteralPath $iconPath)){$iconPath=Join-Path $SetupRoot 'assets\fortress.ico'}
+    $form.Icon=New-Object Drawing.Icon($iconPath)
     $form.Text='Fortress Backup'
     $form.ClientSize=New-Object Drawing.Size(650,605)
     $form.StartPosition='CenterScreen'

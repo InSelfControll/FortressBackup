@@ -18,8 +18,30 @@ if((Test-Path -LiteralPath $appRoot) -or (Test-Path -LiteralPath $dataRoot)){thr
 try {
     # Installation must work offline, without configuring/enrolling an agent.
     Invoke-TestInstaller $InstallerPath 'fortress-install.log'
-    foreach($name in @('FortressBackup.exe','fortress-agent.exe','restic.exe','setup.ps1','setup-ui.ps1','provision.ps1','install-task.ps1','uninstall-task.ps1','SHA256SUMS','unins000.exe')){
+    foreach($name in @('FortressBackup.exe','fortress-agent.exe','restic.exe','setup.ps1','setup-ui.ps1','provision.ps1','install-task.ps1','uninstall-task.ps1','SHA256SUMS','unins000.exe','fortress.ico','LUCIDE-LICENSE.txt')){
         if(!(Test-Path -LiteralPath (Join-Path $appRoot $name))){throw "Installer omitted $name"}
+    }
+    Add-Type -AssemblyName System.Drawing
+    foreach($name in @('FortressBackup.exe','fortress-agent.exe')){
+        $info=[Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $appRoot $name))
+        if($info.ProductName -ne 'Fortress Backup' -or !$info.FileVersion -or $info.OriginalFilename -ne $name){throw "Executable version metadata missing: $name"}
+    }
+    # Verify the installed app and both installer programs expose the brand icon.
+    foreach($path in @((Join-Path $appRoot 'FortressBackup.exe'),(Join-Path $appRoot 'fortress-agent.exe'),(Join-Path $appRoot 'unins000.exe'),$InstallerPath)){
+        $icon=[Drawing.Icon]::ExtractAssociatedIcon($path)
+        try {
+            $bitmap=$icon.ToBitmap()
+            try {
+                $brandColor=$false
+                for($y=0;$y -lt $bitmap.Height -and !$brandColor;$y++){
+                    for($x=0;$x -lt $bitmap.Width;$x++){
+                        $pixel=$bitmap.GetPixel($x,$y)
+                        if($pixel.R -eq 99 -and $pixel.G -eq 102 -and $pixel.B -eq 241){$brandColor=$true;break}
+                    }
+                }
+                if(!$brandColor){throw 'The executable does not expose the Fortress icon'}
+            }finally{$bitmap.Dispose()}
+        }finally{$icon.Dispose()}
     }
     foreach($line in Get-Content -LiteralPath (Join-Path $appRoot 'SHA256SUMS')){
         $digest,$name=$line -split '  ',2
