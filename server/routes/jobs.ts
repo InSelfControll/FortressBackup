@@ -6,12 +6,14 @@ import {cronMatches} from '../services/cron.js';
 import { Router } from 'express';
 import { jobValidationError } from '../services/jobValidation.js';
 import crypto from 'crypto';
+import {enqueueManagedJob} from './managedAgents.js';
+import {managedRepository} from '../services/managedRepository.js';
 import * as db from '../db/index.js';
 import { authenticateToken, requireAdmin, getJwtSecret } from '../middleware/auth.js';
 import { toAPIJob, toDBJob } from '../utils/mappers.js';
 import { buildJobExecutionContext } from '../services/backup/jobContext.js';
 import { encrypt } from '../encryption.js';
-import { runBackupJob, runRestoreJob, listJobSnapshots, listJobFiles, BackupExecutionLog, withBackupProcessContext, reconcileRecordedProcessGroups } from '../services/backup/index.js';
+import { runBackupJob, runRestoreJob, listJobSnapshots, listJobFiles, BackupExecutionLog, withBackupProcessContext, reconcileRecordedProcessGroups, cancelRecordedJob } from '../services/backup/index.js';
 import { subscribeToJobLogs, broadcastJobLog, notifyJobComplete } from '../logStreamer.js';
 import { appendBoundedJobLog } from '../utils/boundedLog.js';
 
@@ -30,6 +32,8 @@ export async function completeRunningJob(
     stats?: Record<string,number>
 ): Promise<boolean> {
     const lastRun = new Date().toISOString();
+    const canceled=await db.getOne(`UPDATE jobs SET status='Canceled',operation_at=? WHERE id=? AND status='Running' AND run_epoch=? AND cancel_requested=1 RETURNING id`,[lastRun,jobId,runEpoch]);
+    if(canceled)return true;
     if (status === 'Success') {
         return Boolean(await db.getOne(`UPDATE jobs SET status='Success',last_run=?,size=?,stats=COALESCE(?,stats)
             WHERE id=? AND status='Running' AND run_epoch=? RETURNING id`,
@@ -160,8 +164,8 @@ export async function executeSavedJob(jobId:string, credentials:Record<string,un
         }
 
         const leased = await db.getOne<{run_epoch:number}>(`
-            UPDATE jobs SET status='Running',operation='backup',operation_at=CURRENT_TIMESTAMP,run_epoch=COALESCE(run_epoch,0)+1
-            WHERE id=? AND COALESCE(status,'Idle') IN ('Idle','Success','Failed','Warning') RETURNING run_epoch`,[jobId]);
+            UPDATE jobs SET status='Running',cancel_requested=0,operation='backup',operation_at=CURRENT_TIMESTAMP,run_epoch=COALESCE(run_epoch,0)+1
+            WHERE id=? AND COALESCE(status,'Idle') IN ('Idle','Success','Failed','Warning','Canceled') RETURNING run_epoch`,[jobId]);
         if (!leased) return {status:409,body:{error:'Backup is already running or requires operator review'}};
         runEpoch = leased.run_epoch;
 
@@ -208,10 +212,12 @@ export async function executeSavedJob(jobId:string, credentials:Record<string,un
         await db.saveJobLogs(job.id, runId, logs);
 
         // Notify SSE subscribers that job completed
-        if (completed) notifyJobComplete(jobId, true);
+        const wasCanceled=updatedJob?.status==='Canceled';
+        if (completed) notifyJobComplete(jobId, !wasCanceled);
 
         return {status:200,body:{
-            success: true,
+            success: !wasCanceled,
+            ...(wasCanceled?{canceled:true,error:'Operation canceled'}:{}),
             job: toAPIJob(updatedJob),
             stats,
 
@@ -220,9 +226,9 @@ export async function executeSavedJob(jobId:string, credentials:Record<string,un
     } catch (error: any) {
         if (runEpoch !== null) {
             try {
-                const completed = await completeRunningJob(jobId, runEpoch, 'Failed');
+                const completed = error?.stopUnconfirmed?Boolean(await db.getOne("UPDATE jobs SET status='ReviewRequired' WHERE id=? AND run_epoch=? AND status='Running' RETURNING id",[jobId,runEpoch])):await completeRunningJob(jobId, runEpoch, 'Failed');
                 if (completed) {
-                    const message = 'Backup could not start. Check the saved source SSH identity, host key, and repository configuration.';
+                    const message = error?.stopUnconfirmed?'Cancellation could not be confirmed. Review the source process before rerunning.':'Backup could not start. Check the saved source SSH identity, host key, and repository configuration.';
                     await db.saveJobLogs(jobId,crypto.randomUUID(),[{type:'error',message,timestamp:new Date()}]);
                     broadcastJobLog(jobId,'error',message); notifyJobComplete(jobId,false);
                 }
@@ -241,13 +247,13 @@ router.post('/:id/run', authenticateToken, requireAdmin, async (req,res)=>{
 
 export async function dispatchScheduledJobs(now=new Date(), execute=executeSavedJob):Promise<string[]> {
     const slot=new Date(Math.floor(now.getTime()/60000)*60000).toISOString();
-    const candidates=await db.query<db.Job>("SELECT * FROM jobs WHERE schedule_enabled=1 AND status IN ('Idle','Success','Failed','Warning')");
+    const candidates=await db.query<db.Job>("SELECT * FROM jobs WHERE schedule_enabled=1 AND status IN ('Idle','Success','Failed','Warning','Canceled')");
     const claimed:string[]=[];const work:Promise<unknown>[]=[];
     for(const job of candidates){
         try { if(!job.schedule || !cronMatches(job.schedule,now))continue; }
         catch { console.warn('[Job scheduler] Invalid saved cron expression for job',job.id);continue; }
         const claim=await db.getOne(`UPDATE jobs SET last_scheduled_for=? WHERE id=? AND schedule_enabled=1
-            AND status IN ('Idle','Success','Failed','Warning') AND (last_scheduled_for IS NULL OR last_scheduled_for!=?) RETURNING id`,[slot,job.id,slot]);
+            AND status IN ('Idle','Success','Failed','Warning','Canceled') AND (last_scheduled_for IS NULL OR last_scheduled_for!=?) RETURNING id`,[slot,job.id,slot]);
         if(!claim)continue;
         claimed.push(job.id);work.push(execute(job.id).catch(error=>console.error('[Job scheduler] Execution failed:',error instanceof Error?error.message:'unknown error')));
     }
@@ -325,6 +331,14 @@ router.get('/:id/snapshots/:snapshotId/files', authenticateToken, requireAdmin, 
     }
 });
 
+router.post('/:id/cancel',authenticateToken,requireAdmin,async(req,res,next)=>{
+ try{
+  const row=await db.getOne<{run_epoch:number}>("UPDATE jobs SET cancel_requested=1 WHERE id=? AND status='Running' RETURNING run_epoch",[req.params.id]);
+  if(!row)return res.status(409).json({error:'No running operation to cancel'});
+  cancelRecordedJob(req.params.id,row.run_epoch);res.status(202).json({cancelRequested:true});
+ }catch(error){next(error)}
+});
+
 // Restore a snapshot
 router.post('/:id/restore', authenticateToken, requireAdmin, async (req, res) => {
     const jobId=req.params.id;
@@ -332,16 +346,27 @@ router.post('/:id/restore', authenticateToken, requireAdmin, async (req, res) =>
     const logs:BackupExecutionLog[]=[];
     const finish=async(success:boolean)=>{
         if(epoch===null)return;
-        const completed=await db.getOne(`UPDATE jobs SET status=?,operation_at=? WHERE id=? AND status='Running' AND run_epoch=? RETURNING id`,[success?'Success':'Failed',new Date().toISOString(),jobId,epoch]);
+        const completed=await db.getOne(`UPDATE jobs SET status=CASE WHEN cancel_requested=1 THEN 'Canceled' ELSE ? END,operation_at=? WHERE id=? AND status='Running' AND run_epoch=? RETURNING id`,[success?'Success':'Failed',new Date().toISOString(),jobId,epoch]);
         if(completed)notifyJobComplete(jobId,success);
     };
     try {
         const {snapshotId,restorePath,systemId,paths}=req.body??{};
+        if(req.body?.managedAgentId){
+            const job=await db.getJob(jobId);if(!job)return res.sendStatus(404);
+            if(job.tool!=='Restic')return res.status(400).json({error:'Windows recovery requires a Restic backup'});
+            const binding=await db.getOne<{job_id:string}>('SELECT job_id FROM managed_repositories WHERE client_id=?',[req.body.managedAgentId]);
+            if(!binding)return res.status(409).json({error:'Assign this repository to the Windows destination first'});
+            const source=await managedRepository(jobId),target=await managedRepository(binding.job_id);
+            if(source.repository!==target.repository||source.password!==target.password)return res.status(409).json({error:'The Windows device is assigned to a different repository. Select this saved repository and Save and connect on that device first.'});
+            const queued=await enqueueManagedJob(req.body.managedAgentId,{operation:'restore',request:{snapshotId,allDevices:true,...(paths===undefined?{}:{paths})}});
+            return res.status(queued.status).json(queued.body);
+        }
+
         if(typeof snapshotId!=='string'||typeof restorePath!=='string'||paths!==undefined&&(!Array.isArray(paths)||!paths.length||paths.length>100||!paths.every(path=>typeof path==='string'&&path.length<=4096)))return res.status(400).json({error:'Choose a snapshot, restore folder, and valid file selection'});
         const job=await db.getJob(jobId);
         if(!job)return res.status(404).json({error:'Job not found'});
-        const lease=await db.getOne<{run_epoch:number}>(`UPDATE jobs SET status='Running',operation='restore',operation_at=?,run_epoch=COALESCE(run_epoch,0)+1
-            WHERE id=? AND COALESCE(status,'Idle') IN ('Idle','Success','Failed','Warning') RETURNING run_epoch`,[new Date().toISOString(),jobId]);
+        const lease=await db.getOne<{run_epoch:number}>(`UPDATE jobs SET status='Running',cancel_requested=0,operation='restore',operation_at=?,run_epoch=COALESCE(run_epoch,0)+1
+            WHERE id=? AND COALESCE(status,'Idle') IN ('Idle','Success','Failed','Warning','Canceled') RETURNING run_epoch`,[new Date().toISOString(),jobId]);
         if(!lease)return res.status(409).json({error:'An operation is already running or requires operator review'});
         epoch=lease.run_epoch;
         const {sshConfig,jobConfig}=await buildJobExecutionContext(job,{},systemId);
@@ -352,9 +377,11 @@ router.post('/:id/restore', authenticateToken, requireAdmin, async (req, res) =>
         }));
         await db.saveJobLogs(jobId,crypto.randomUUID(),logs);
         await finish(result.success);
+        if((await db.getJob(jobId))?.status==='Canceled')return res.json({success:false,canceled:true,error:'Restore canceled',logs});
         res.status(result.success?200:500).json({success:result.success,...(result.success?{}:{error:result.errors.join(', ')}),logs});
     }catch(error){
-        await finish(false);
+        if((error as any)?.stopUnconfirmed&&epoch!==null){await db.run("UPDATE jobs SET status='ReviewRequired' WHERE id=? AND run_epoch=? AND status='Running'",[jobId,epoch]);epoch=null}
+        else await finish(false);
         res.status(500).json({error:error instanceof Error?error.message:'Restore failed'});
     }
 });

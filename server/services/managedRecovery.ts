@@ -1,6 +1,8 @@
 import type {ManagedOperation,ManagedRequest,ManagedResult,Snapshot,ManagedFile} from '../../types';
 
 export const recoveryCapability='recovery-v1';
+export const crossDeviceCapability='recovery-v2';
+export const cancelCapability='cancel-v1';
 export const snapshotId=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{64}$/.test(value);
 export const snapshotPath=(value:unknown):value is string=>typeof value==='string'&&value.startsWith('/')&&value.length<=4096&&!/[\\\u0000-\u001f\u007f]/.test(value)&&!value.split('/').some(segment=>segment==='..'||segment==='.');
 const text=(value:unknown,max:number):value is string=>typeof value==='string'&&value.length<=max&&!/[\u0000-\u001f\u007f]/.test(value);
@@ -8,6 +10,7 @@ const text=(value:unknown,max:number):value is string=>typeof value==='string'&&
 export function managedRequest(operation:ManagedOperation,value:any={}):ManagedRequest {
  if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid operation request');
  const result:ManagedRequest={};
+ if(value.allDevices!==undefined){if(typeof value.allDevices!=='boolean'||!['snapshots','files','restore'].includes(operation))throw new Error('Invalid backup scope');result.allDevices=value.allDevices;}
  if(operation==='files'||operation==='restore'){
   if(!snapshotId(value.snapshotId))throw new Error('Choose a saved snapshot');
   result.snapshotId=value.snapshotId;

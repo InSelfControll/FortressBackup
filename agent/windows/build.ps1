@@ -13,7 +13,7 @@ $numericVersion=($displayVersion -split '-')[0].Replace('.',',')+',0'
 $flags=if($displayVersion.Contains('-')){2}else{0}
 $binaries=@(
     @{Name='fortress-agent.exe';Directory=$PSScriptRoot;Description='Fortress Backup background agent';GUI=$false},
-    @{Name='FortressBackup.exe';Directory=(Join-Path $PSScriptRoot 'cmd\setup');Description='Fortress Backup';GUI=$true}
+    @{Name='FortressBackup.exe';Directory=(Join-Path $PSScriptRoot 'app');Description='Fortress Backup';GUI=$true}
 )
 try {
     foreach($binary in $binaries){
@@ -22,6 +22,7 @@ try {
         $object=Join-Path $binary.Directory 'resources_windows_amd64.syso'
         @"
 LANGUAGE 9, 1
+$(if($binary.GUI){'1 24 "'+(Join-Path $PSScriptRoot 'app\app.manifest').Replace('\','\\')+'"'})
 1 ICON "$icon"
 1 VERSIONINFO
 FILEVERSION $numericVersion
@@ -53,6 +54,7 @@ END
 "@ | Set-Content -LiteralPath $resource -Encoding Unicode
         & $resourceCompiler.FullName /nologo "/fo$compiled" $resource
         if($LASTEXITCODE -ne 0){throw 'Windows icon/version resource compilation failed'}
+        if($binary.GUI){continue}
         # GNU windres produces the COFF resource object supported by Go's linker.
         & $converter --input-format=res --output-format=coff --target=pe-x86-64 --input $compiled --output $object
         if($LASTEXITCODE -ne 0){throw 'Windows resource conversion failed'}
@@ -61,8 +63,11 @@ END
     try {
         & go build -trimpath -o fortress-agent.exe .
         if($LASTEXITCODE -ne 0){throw 'Agent build failed'}
-        & go build -trimpath -ldflags '-H=windowsgui' -o FortressBackup.exe ./cmd/setup
-        if($LASTEXITCODE -ne 0){throw 'App build failed'}
+        $compiler=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+        $automation=[Management.Automation.PowerShell].Assembly.Location
+        $compilerArguments=@('/nologo','/target:winexe','/platform:x64','/optimize+',('/win32res:'+(Join-Path $work 'FortressBackup.exe.res')),'/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll',('/reference:'+$automation),'/out:FortressBackup.exe',(Join-Path $PSScriptRoot 'app\Program.cs'))
+        & $compiler @compilerArguments
+        if($LASTEXITCODE -ne 0){throw 'Native Windows app build failed'}
     }finally{Pop-Location}
     foreach($binary in $binaries){
         $path=Join-Path $PSScriptRoot $binary.Name

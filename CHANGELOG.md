@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-rc.10] - 2026-11-01
+
+- Re-enable disabled Windows enrollments or permanently remove them and their controller history while preserving repository backups.
+- Cancel queued and running Windows/SSH operations, retaining active ownership until stopping is acknowledged.
+- Recover old-device snapshots on replacement Windows devices using the same assigned repository; include Windows destinations in the main restore dialog.
+- Replace the external PowerShell GUI launcher with a native Windows application host, modernize its interface, and automatically reconnect saved enrollments when reopening.
+- Keep the connection available after saving configuration; closing the window leaves the background agent running.
+
 ## [0.1.0-rc.9] - 2026-11-01
 
 - Retry transient Microsoft Defender RPC errors during release signature updates. Signature updating, scanning, and installer verification remain mandatory before publishing downloads.

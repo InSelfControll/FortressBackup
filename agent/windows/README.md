@@ -28,7 +28,9 @@ The GitHub Actions Windows workflow builds the executable and tests task
 registration. It does not substitute for a complete restore test against your
 own backup destination.
 
-`build.ps1` uses the Windows SDK Resource Compiler and MinGW-w64 `windres`
+`build.ps1` runs in Windows PowerShell 5.1 and uses the built-in .NET Framework
+C# compiler for the native application host. The app hosts the existing provisioning
+engine in-process; it does not launch a PowerShell console. It uses the Windows SDK Resource Compiler and MinGW-w64 `windres`
 to embed the icon and version information in both binaries.
 It writes artifact checksums and removes generated resource objects afterward.
 The editable icon is `assets/fortress.svg`; `assets/fortress.ico` includes

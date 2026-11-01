@@ -25,7 +25,7 @@ function Add-RecoveryPanel($Form,$SetupState){
     $panel=New-Object Windows.Forms.Panel
     $panel.Name='recovery';$panel.Dock='Fill';$panel.Visible=$false
     $Form.Controls.Add($panel)
-    $r=@{Worker=$null;Pending=$null;Job=$null;Operation='';Request=$null;Entries=@();Snapshots=@();Offset=0;More=$false;Directory='/';Snapshot='';Selected=(New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal));NextPoll=[datetime]::MinValue;RestorePath=''}
+    $r=@{Worker=$null;Pending=$null;Job=$null;Operation='';Request=$null;Entries=@();Snapshots=@();Offset=0;More=$false;Directory='/';Snapshot='';AllDevices=$true;Selected=(New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal));NextPoll=[datetime]::MinValue;RestorePath=''}
     function Add-RecoveryControl($Type,$Name,$Text,$X,$Y,$Width,$Height){
         $c=New-Object ('Windows.Forms.'+$Type);$c.Name=$Name;$c.Text=$Text;$c.SetBounds($X,$Y,$Width,$Height);$panel.Controls.Add($c);return $c
     }
@@ -33,6 +33,8 @@ function Add-RecoveryPanel($Form,$SetupState){
     $heading.Font=New-Object Drawing.Font('Segoe UI',14,[Drawing.FontStyle]::Bold)
     [void](Add-RecoveryControl Label explanation 'A backup creates a snapshot: a saved version of your files. Browse saved versions, then restore everything or selected files into a new recovery folder. Original files are preserved.' 20 52 610 65)
     $load=Add-RecoveryControl Button load 'Load saved backups' 20 121 190 33
+    $scope=Add-RecoveryControl CheckBox scope 'Include backups from old / other devices' 230 121 400 33
+    $scope.Checked=$true
     $versions=Add-RecoveryControl ComboBox snapshots '' 20 167 610 30
     $versions.DropDownStyle='DropDownList';$versions.DisplayMember='Label'
     $directory=Add-RecoveryControl Label directory 'Folder: /' 20 207 300 40
@@ -47,19 +49,23 @@ function Add-RecoveryPanel($Form,$SetupState){
     $all=Add-RecoveryControl Button restoreAll 'Restore entire backup' 460 469 170 30
     $status=Add-RecoveryControl TextBox status 'Load saved backups using your saved connection. Operations also appear on the dashboard.' 20 507 610 43
     $status.Multiline=$true;$status.ReadOnly=$true;$status.ScrollBars='Vertical';$status.AccessibleName='Restore status'
+    $cancel=Add-RecoveryControl Button cancel 'Cancel operation' 235 558 200 33
     $open=Add-RecoveryControl Button open 'Open restored folder' 20 558 190 33
     $back=Add-RecoveryControl Button back 'Configuration' 460 558 170 33
+    $scope.Add_CheckedChanged({$r.AllDevices=$scope.Checked;$r.Snapshot='';$r.Selected.Clear();$selected.Text='0 selected.';$selected.Text='0 selected.';$versions.Items.Clear();$entries.Items.Clear()}.GetNewClosure())
     $setEnabled={param([bool]$enabled)
-        $load.Enabled=$enabled;$versions.Enabled=$enabled;$back.Enabled=$enabled
+        $load.Enabled=$enabled;$scope.Enabled=$enabled;$versions.Enabled=$enabled;$back.Enabled=$enabled
         $up.Enabled=$enabled -and $r.Snapshot -and $r.Directory -ne '/'
         $more.Enabled=$enabled -and $r.More
         $entries.Enabled=$enabled;$clear.Enabled=$enabled;$enter.Enabled=$enabled
         $restore.Enabled=$enabled -and $r.Snapshot -and $r.Selected.Count -gt 0 -and $r.Selected.Count -le 100
         $all.Enabled=$enabled -and !!$r.Snapshot
+        $cancel.Enabled=!!$r.Job -and $r.Job.state -in @('pending','running') -and !$r.Worker
         $open.Enabled=$enabled -and !!$r.RestorePath
     }.GetNewClosure()
     $start={param([string]$operation,$request)
         if($r.Worker -or ($r.Job -and $r.Job.state -in @('pending','running'))){return}
+        $request.allDevices=$r.AllDevices;
         $r.Operation=$operation;$r.Request=$request;$r.Job=$null;$r.RestorePath=''
         $status.Text=$operation+': queuing on controller...'; & $setEnabled $false
         $r.Worker=[PowerShell]::Create()
@@ -71,12 +77,12 @@ function Add-RecoveryPanel($Form,$SetupState){
         & $start 'files' @{snapshotId=$r.Snapshot;directory=$path;offset=0}
     }.GetNewClosure()
     $load.Add_Click({
-        $r.Snapshot='';$r.Selected.Clear();$r.Snapshots=@();$r.Entries=@();$r.Offset=0;$r.More=$false
+        $r.Snapshot='';$r.Selected.Clear();$selected.Text='0 selected.';$r.Snapshots=@();$r.Entries=@();$r.Offset=0;$r.More=$false
         $versions.Items.Clear();$entries.Items.Clear()
         & $start 'snapshots' @{offset=0}
     }.GetNewClosure())
     $versions.Add_SelectionChangeCommitted({
-        if($versions.SelectedItem){$r.Snapshot=$versions.SelectedItem.Id;$r.Selected.Clear(); & $browse '/'}
+        if($versions.SelectedItem){$r.Snapshot=$versions.SelectedItem.Id;$r.Selected.Clear();$selected.Text='0 selected.'; & $browse '/'}
     }.GetNewClosure())
     $entries.Add_ItemCheck({param($sender,$event)
         if($event.Index -lt $r.Entries.Count){
@@ -102,6 +108,7 @@ function Add-RecoveryPanel($Form,$SetupState){
         $target=[IO.Path]::GetFullPath($r.RestorePath)
         if($target.StartsWith($base,[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $target -PathType Container)){Start-Process explorer.exe -ArgumentList ('"'+$target+'"')}
     }.GetNewClosure())
+    $cancel.Add_Click({if(!$r.Worker -and $r.Job -and $r.Job.state -in @('pending','running')){$r.Worker=[PowerShell]::Create();[void]$r.Worker.AddScript($invokeAPI.ToString()).AddArgument('cancel').AddArgument(@{id=$r.Job.id});$r.Pending=$r.Worker.BeginInvoke();$SetupState.RecoveryWorker=$true}}.GetNewClosure())
     $back.Add_Click({$panel.Visible=$false;$Form.AcceptButton=$null}.GetNewClosure())
     $timer=New-Object Windows.Forms.Timer;$timer.Interval=200
     $timer.Add_Tick({
@@ -112,6 +119,8 @@ function Add-RecoveryPanel($Form,$SetupState){
                 $r.Job=([string]$output[0] | ConvertFrom-Json)
                 $status.Text=$r.Operation+': '+$r.Job.state
                 if($r.Job.state -eq 'pending'){$status.Text+=' - waiting for the laptop agent. See Managed Clients for current activity.'}
+                if($r.Job.cancelRequested){$status.Text='Cancellation requested; waiting for the agent to stop.'}
+                if($r.Job.state -eq 'canceled'){$status.Text='Operation canceled. Original files are preserved.'}
                 if($r.Job.state -eq 'failed'){throw [string]$r.Job.message}
                 if($r.Job.state -eq 'success'){
                     $data=$r.Job.result

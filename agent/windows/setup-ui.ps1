@@ -26,7 +26,7 @@ function Start-SetupOperation($State,[scriptblock]$Work,[object[]]$Arguments){
 
 . (Join-Path $PSScriptRoot 'recovery-ui.ps1')
 
-function New-SetupWindow([string]$SetupRoot){
+function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
     # PS 5.1 event closures do not retain script-scoped function lookup.
     $startOperation=${function:Start-SetupOperation}
     [Windows.Forms.Application]::EnableVisualStyles()
@@ -79,7 +79,7 @@ function New-SetupWindow([string]$SetupRoot){
     $form.CancelButton=$close
     $changed={
         if($state.Profile -and !$state.Worker){
-            $state.Profile=$null;$state.Token=''
+            $state.Profile=$null;$state.Token='';$connect.Text='Connect'
             $install.Enabled=$false;$add.Enabled=$false
             $form.AcceptButton=$connect
             $repository.Text='Connection settings changed. Click Connect to load your saved repository.'
@@ -147,15 +147,14 @@ function New-SetupWindow([string]$SetupRoot){
             $result=$state.Worker.EndInvoke($state.Pending)
             if($state.Worker.Streams.Error.Count -gt 0){throw $state.Worker.Streams.Error[0].Exception}
             if($state.Stage -eq 'connect'){
-                $state.Profile=$result[0]
+                $state.Profile=$result[0];$connect.Text='Refresh connection'
                 $form.AcceptButton=$install
                 $repository.Text='Saved repository: '+$state.Profile.storageName+' / '+$state.Profile.repositoryName
                 $status.Text='Connected. Choose the folders you want to back up, then click Save and connect.'
             }else{
                 $status.Text='Configured and connected. Open Managed Clients to start a backup and follow its progress. Saving the configuration does not mean a backup has completed.'
                 $close.Text='Finish'
-                $state.Token='';$token.Clear();$state.Profile=$null
-                $form.AcceptButton=$close
+                $form.AcceptButton=$install
             }
         }catch{
             $failed=$true
@@ -170,7 +169,7 @@ function New-SetupWindow([string]$SetupRoot){
         }finally{
             $state.Worker.Dispose();$state.Worker=$null;$state.Pending=$null
             $progress.Style='Blocks';$progress.Value=0;$close.Enabled=$true
-            if($state.Stage -eq 'connect' -or $failed){
+            if($true){
                 $connect.Enabled=$true;$controller.Enabled=$true;$id.Enabled=$true;$token.Enabled=$true;$folders.Enabled=$true
                 $add.Enabled=!!$state.Profile;$remove.Enabled=$folders.SelectedIndex -ge 0
                 $install.Enabled=!!$state.Profile -and $folders.Items.Count -gt 0
@@ -186,7 +185,7 @@ function New-SetupWindow([string]$SetupRoot){
             $id.Text=[string]$existing.agentId
             if($existing.agentTokenFile){$token.Text=[IO.File]::ReadAllText([string]$existing.agentTokenFile).Trim()}
             foreach($source in $existing.sources){if($source -and !$folders.Items.Contains([string]$source)){[void]$folders.Items.Add([string]$source)}}
-            $status.Text='Your existing configuration is loaded. Click Connect to refresh the saved repository and edit folders.'
+            $status.Text='Your saved configuration is loaded. The connection will be validated automatically; your background agent remains independent of this window.'
         }catch{$status.Text='Existing settings could not be loaded. Enter enrollment credentials to configure this laptop again.'}
     }
     $recoveryPanel=Add-RecoveryPanel $form $state
@@ -195,6 +194,53 @@ function New-SetupWindow([string]$SetupRoot){
         if($state.Worker){return}
         $recoveryPanel.Visible=$true;$recoveryPanel.BringToFront();$form.AcceptButton=$null
     }.GetNewClosure())
+    Set-FortressTheme $form $recoveryPanel
+    if($AutoConnect -and $controller.Text -and $id.Text -and $token.Text){$form.Add_Shown({if(!$state.Worker){$connect.PerformClick()}}.GetNewClosure())}
     $timer.Start()
     return $form
+}
+
+function Set-FortressTheme($Form,$Recovery){
+    $background=[Drawing.ColorTranslator]::FromHtml('#101827')
+    $surface=[Drawing.ColorTranslator]::FromHtml('#1D293B')
+    $text=[Drawing.ColorTranslator]::FromHtml('#E5EAF3')
+    $muted=[Drawing.ColorTranslator]::FromHtml('#A9B6CD')
+    $primary=[Drawing.ColorTranslator]::FromHtml('#6366F1')
+    $Form.ClientSize=New-Object Drawing.Size(940,740)
+    $Form.MinimumSize=New-Object Drawing.Size(640,400);$Form.FormBorderStyle='Sizable';$Form.MaximizeBox=$true
+    $Form.BackColor=$background;$Form.ForeColor=$text
+    $Form.Font=New-Object Drawing.Font('Segoe UI',10)
+    $Form.AutoScroll=$true;$Form.AutoScrollMinSize=New-Object Drawing.Size(930,730)
+    $Form.Add_Shown({$area=[Windows.Forms.Screen]::FromControl($Form).WorkingArea;$Form.Size=New-Object Drawing.Size([Math]::Min($Form.Width,$area.Width-24),[Math]::Min($Form.Height,$area.Height-24))}.GetNewClosure())
+    $placements=@{
+      heading=@(235,28,680,38);intro=@(235,80,675,50)
+      controllerLabel=@(235,148,210,26);controller=@(455,145,455,31)
+      idLabel=@(235,197,210,26);clientId=@(455,194,455,31)
+      tokenLabel=@(235,246,210,26);token=@(455,243,455,31)
+      connect=@(755,290,155,38);repository=@(235,345,675,50)
+      folderLabel=@(235,405,480,28);folders=@(235,442,505,140)
+      addFolder=@(755,442,155,38);removeFolder=@(755,491,155,38)
+      progress=@(235,602,675,8);status=@(235,625,675,50)
+      install=@(20,410,185,44);close=@(20,470,185,40);backups=@(20,176,185,44)
+    }
+    foreach($name in $placements.Keys){$c=$Form.Controls[$name];if($c){$b=$placements[$name];$c.SetBounds($b[0],$b[1],$b[2],$b[3])}}
+    $Form.Controls['heading'].Text='Device protection'
+    $Form.Controls['heading'].Font=New-Object Drawing.Font('Segoe UI',20,[Drawing.FontStyle]::Bold)
+    $Form.Controls['intro'].Text='Configure folders, browse saved versions, and recover files. Once configured, the agent runs independently of this window.'
+    $brand=New-Object Windows.Forms.Label;$brand.Name='brand';$brand.Text='FORTRESS'+"`n"+'BACKUP';$brand.SetBounds(22,30,185,75);$brand.Font=New-Object Drawing.Font('Segoe UI',17,[Drawing.FontStyle]::Bold);$Form.Controls.Add($brand)
+    $nav=New-Object Windows.Forms.Label;$nav.Text='DEVICE SETTINGS';$nav.SetBounds(24,133,185,25);$nav.ForeColor=$muted;$Form.Controls.Add($nav)
+    $hint=New-Object Windows.Forms.Label;$hint.Text='Encrypted backups'+"`n"+'Saved versions'+"`n"+'File recovery';$hint.SetBounds(24,265,180,95);$hint.ForeColor=$muted;$Form.Controls.Add($hint)
+    $Recovery.Dock='None';$Recovery.SetBounds(215,12,710,718);$Recovery.AutoScroll=$true;$Recovery.AutoScrollMinSize=New-Object Drawing.Size(690,620);$Recovery.Anchor='Top,Bottom,Left,Right'
+    $style={param($container)
+      foreach($c in $container.Controls){
+        $c.ForeColor=$text
+        if($c -is [Windows.Forms.Button]){$c.FlatStyle='Flat';$c.FlatAppearance.BorderSize=0;$c.BackColor=$surface;$c.UseVisualStyleBackColor=$false;$c.Cursor='Hand'}
+        elseif($c -is [Windows.Forms.TextBox] -or $c -is [Windows.Forms.ListBox] -or $c -is [Windows.Forms.ComboBox]){$c.BackColor=$surface}
+        else{$c.BackColor=$background}
+        if($c.Name -in @('install','connect','restore','restoreAll','load','backups')){$c.BackColor=$primary}
+      }
+    }.GetNewClosure()
+    & $style $Form;& $style $Recovery
+    $Form.Controls['status'].BackColor=$background
+    $Recovery.BackColor=$background
 }

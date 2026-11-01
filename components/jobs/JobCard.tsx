@@ -1,4 +1,8 @@
 import React from 'react';
+import {apiFetch,requireData} from '../../client/api/client';
+import {useQueryClient} from '@tanstack/react-query';
+import {queryKeys} from '../../client/api/queries';
+import toast from 'react-hot-toast';
 import { BackupJob, JobStatus, JobPriority, BackupTool } from '../../types';
 import { Archive, Edit3, FileText, RotateCcw, Play, Trash2, Settings2, Clock, Server, HardDrive, CheckCircle2, XCircle, Loader2, AlertTriangle, Circle, ArrowUp, Minus, ArrowDown } from 'lucide-react';
 
@@ -41,6 +45,8 @@ export const JobCard: React.FC<JobCardProps> = ({
     job, systemName, locationName, onEdit, onViewLogs, onRestore, onRun, onDelete, isRunning, isRunPending
 }) => {
 
+    const client=useQueryClient();
+    const cancel=async()=>{try{requireData(await apiFetch('/jobs/'+job.id+'/cancel',{method:'POST',body:'{}'}));await client.invalidateQueries({queryKey:queryKeys.jobs})}catch(e){toast.error(e instanceof Error?e.message:'Cancellation failed')}};
     const getStatusBadge = (status: JobStatus) => {
         const config = {
             [JobStatus.SUCCESS]: { color: 'text-emerald-400 bg-emerald-500/10', icon: CheckCircle2, text: 'Success' },
@@ -97,7 +103,7 @@ export const JobCard: React.FC<JobCardProps> = ({
                 <button onClick={() => onEdit(job)} className="p-3 text-slate-400 hover:text-indigo-400 hover:bg-slate-700 rounded-lg transition-colors" title="Edit Job"><Edit3 size={20} /></button>
                 <button onClick={() => onViewLogs(job.id)} className="p-3 text-slate-400 hover:text-indigo-400 hover:bg-slate-700 rounded-lg transition-colors" title="View Logs"><FileText size={20} /></button>
                 <button onClick={() => onRestore(job)} disabled={![BackupTool.BORG,BackupTool.RESTIC].includes(job.tool)} className="p-3 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors" title={[BackupTool.BORG,BackupTool.RESTIC].includes(job.tool) ? "Restore" : "Snapshot restore requires Borg or Restic"}><RotateCcw size={20} /></button>
-                <button onClick={() => onRun(job.id)} disabled={isRunning || isRunPending || job.status === JobStatus.REVIEW_REQUIRED} className="p-3 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50" title="Run Now"><Play size={20} /></button>
+                {isRunning&&<button className="p-3 text-amber-300 disabled:opacity-50" title="Cancel job" disabled={job.cancelRequested} onClick={()=>void cancel()}>{job.cancelRequested?'Cancel requested':'Cancel'}</button>}<button onClick={() => onRun(job.id)} disabled={isRunning || isRunPending || job.status === JobStatus.REVIEW_REQUIRED} className="p-3 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50" title="Run Now"><Play size={20} /></button>
                 <button onClick={() => onDelete(job.id)} className="p-3 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors" title="Delete"><Trash2 size={20} /></button>
             </div>
         </div>

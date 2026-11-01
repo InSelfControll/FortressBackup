@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -22,14 +23,16 @@ import (
 )
 
 type Config struct {
-	ResticPath     string   `json:"resticPath"`
-	Repository     string   `json:"repository"`
-	PasswordFile   string   `json:"passwordFile"`
-	Sources        []string `json:"sources"`
-	Excludes       []string `json:"excludes"`
-	Host           string   `json:"host"`
-	TimeoutMinutes int      `json:"timeoutMinutes"`
-	UseVSS         bool     `json:"useVSS"`
+	PreviousAgentID string   `json:"previousAgentId,omitempty"`
+	RepositoryJobID string   `json:"repositoryJobId,omitempty"`
+	ResticPath      string   `json:"resticPath"`
+	Repository      string   `json:"repository"`
+	PasswordFile    string   `json:"passwordFile"`
+	Sources         []string `json:"sources"`
+	Excludes        []string `json:"excludes"`
+	Host            string   `json:"host"`
+	TimeoutMinutes  int      `json:"timeoutMinutes"`
+	UseVSS          bool     `json:"useVSS"`
 	// Optional path to SSH configuration with pinned known_hosts and an SSH key.
 	SSHCommand         string `json:"sshCommand"`
 	ControllerURL      string `json:"controllerUrl"`
@@ -159,6 +162,12 @@ func runRestic(ctx context.Context, c Config, arguments []string, output io.Writ
 	}
 	args = append(args, arguments...)
 	cmd := exec.CommandContext(ctx, c.ResticPath, args...)
+	cmd.Cancel = func() error {
+		killer := exec.Command(filepath.Join(os.Getenv("SystemRoot"), "System32", "taskkill.exe"), "/PID", strconv.Itoa(cmd.Process.Pid), "/T", "/F")
+		killer.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		return killer.Run()
+	}
+	cmd.WaitDelay = 5 * time.Second
 	cmd.Stdin = nil
 	cmd.Stdout = output
 	cmd.Stderr = os.Stderr

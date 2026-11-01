@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -26,6 +27,7 @@ type pollResponse struct {
 	Job *lease `json:"job"`
 }
 type pendingReport struct {
+	AgentID string          `json:"agentId,omitempty"`
 	ID      string          `json:"id"`
 	Success bool            `json:"success"`
 	Message string          `json:"message"`
@@ -101,6 +103,42 @@ func agentCredentials(c Config) (string, string, error) {
 	return strings.TrimRight(c.ControllerURL, "/") + "/api/managed-agents", token, nil
 }
 
+// Configuration changes can replace an enrollment. Preserve old local audit
+// records without letting its unacknowledged report block the new identity.
+func reconcileEnrollmentState(c Config) error {
+	directory := filepath.Dir(c.AgentTokenFile)
+	ownerPath := filepath.Join(directory, "fortress-enrollment-owner.json")
+	owner, err := readPending(ownerPath)
+	if err != nil {
+		return err
+	}
+	previous := c.PreviousAgentID
+	if owner != nil {
+		previous = owner.ID
+	}
+	for _, name := range []string{"fortress-pending-report.json", "fortress-active-job.json"} {
+		file := filepath.Join(directory, name)
+		record, err := readPending(file)
+		if err != nil {
+			return err
+		}
+		if record == nil {
+			continue
+		}
+		stale := record.AgentID != "" && record.AgentID != c.AgentID || record.AgentID == "" && previous != "" && previous != c.AgentID
+		if stale {
+			if err := os.Rename(file, file+".previous-"+fmt.Sprint(time.Now().UnixNano())); err != nil {
+				return err
+			}
+			fmt.Fprintln(os.Stdout, "Archived local state for a previous enrollment")
+		}
+	}
+	if owner == nil || owner.ID != c.AgentID {
+		return writePending(ownerPath, pendingReport{ID: c.AgentID, AgentID: c.AgentID, Message: "Local state owner"})
+	}
+	return nil
+}
+
 func managedOnce(ctx context.Context, c Config, preflight bool) error {
 	endpoint, token, err := agentCredentials(c)
 	if err != nil {
@@ -111,6 +149,8 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	var poll pollResponse
+	var stopped atomic.Bool
+	var cancelRun context.CancelFunc
 	request := func(route string, payload any) error {
 		data, err := json.Marshal(payload)
 		if err != nil {
@@ -133,7 +173,26 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 			return err
 		}
 		if res.StatusCode != http.StatusOK {
+			if route == "/heartbeat" && cancelRun != nil && (res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden) {
+				stopped.Store(true)
+				cancelRun()
+			}
 			return fmt.Errorf("controller returned HTTP %d", res.StatusCode)
+		}
+		if route == "/heartbeat" {
+			var state struct {
+				Cancel bool `json:"cancel"`
+			}
+			if err := json.Unmarshal(response, &state); err != nil {
+				return err
+			}
+			if state.Cancel && cancelRun == nil {
+				return errors.New("enrollment disabled")
+			}
+			if state.Cancel && cancelRun != nil {
+				stopped.Store(true)
+				cancelRun()
+			}
 		}
 		if route == "/poll" {
 			return json.Unmarshal(response, &poll)
@@ -150,6 +209,9 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 		}
 		fmt.Fprintln(os.Stdout, "Repository accessible; enrollment authenticated. No queued job claimed.")
 		return nil
+	}
+	if err := reconcileEnrollmentState(c); err != nil {
+		return err
 	}
 	// Report files contain no encryption keys or remote commands. Restrict the
 	// directory ACL to the task identity and Administrators.
@@ -173,7 +235,7 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 			return err
 		}
 	}
-	if err := request("/poll", map[string]any{"capabilities": []string{"recovery-v1"}}); err != nil {
+	if err := request("/poll", map[string]any{"capabilities": []string{"recovery-v1", "recovery-v2", "cancel-v1"}}); err != nil {
 		return err
 	}
 	active, err := readPending(activePath)
@@ -192,17 +254,18 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 	if err := validateOperation(*poll.Job); err != nil {
 		return err
 	}
-	if err := writePending(activePath, pendingReport{ID: poll.Job.ID, Message: "running"}); err != nil {
+	if err := writePending(activePath, pendingReport{AgentID: c.AgentID, ID: poll.Job.ID, Message: "running"}); err != nil {
 		return fmt.Errorf("cannot persist active-job marker: %w", err)
 	}
 	jobctx, cancel := context.WithTimeout(ctx, time.Duration(c.TimeoutMinutes)*time.Minute)
 	defer cancel()
+	cancelRun = cancel
 	fmt.Fprintln(os.Stdout, time.Now().Format(time.RFC3339), "Running operation:", poll.Job.Operation, "job:", poll.Job.ID)
 	stopHeartbeat := make(chan struct{})
 	heartbeatDone := make(chan struct{})
 	go func() {
 		defer close(heartbeatDone)
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
@@ -211,10 +274,11 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 			case <-jobctx.Done():
 				return
 			case <-ticker.C:
-				_ = request("/heartbeat", map[string]string{})
+				_ = request("/heartbeat", map[string]string{"id": poll.Job.ID})
 			}
 		}
 	}()
+	_ = request("/heartbeat", map[string]string{"id": poll.Job.ID})
 	data, result := executeManaged(jobctx, c, *poll.Job)
 	close(stopHeartbeat)
 	<-heartbeatDone
@@ -223,7 +287,12 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 		message = poll.Job.Operation + " operation failed; see the laptop agent log"
 		fmt.Fprintln(os.Stderr, result)
 	}
-	report := pendingReport{ID: poll.Job.ID, Success: result == nil, Message: message}
+	if stopped.Load() {
+		message = "Operation canceled; partial restore files, if any, are in the protected recovery directory"
+		result = context.Canceled
+		data = nil
+	}
+	report := pendingReport{AgentID: c.AgentID, ID: poll.Job.ID, Success: result == nil, Message: message}
 	if data != nil && result == nil {
 		report.Data, _ = json.Marshal(data)
 	}

@@ -92,6 +92,7 @@ export const Dashboard: React.FC<DashboardProps> = ({searchQuery = '',onOpenMana
     { name: 'Success', value: successfulJobs, color: 'var(--color-success)' },
     { name: 'Failed', value: failedJobs, color: 'var(--color-error)' },
     { name: 'Running', value: activeJobs, color: 'var(--color-accent-primary)' },
+    { name: 'Canceled', value: jobs.filter(j=>j.status===JobStatus.CANCELED).length, color: 'var(--color-text-muted)' },
     { name: 'Idle', value: jobs.filter(j => j.status === JobStatus.IDLE).length, color: 'var(--color-text-muted)' },
   ].filter(d => d.value > 0);
 

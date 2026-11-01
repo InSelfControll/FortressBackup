@@ -13,6 +13,12 @@
 
 ## Current changes
 
+- Enable disabled enrollments or remove them and their controller history. Repository backups are retained.
+- Cancel queued/running jobs; running cancellation remains pending until the worker stops.
+- Restore old-device snapshots to a replacement Windows device, including Windows destinations in the main dashboard restore dialog.
+- The Windows app is now a native application host with no PowerShell console launch. Saved connections validate automatically when reopened; the background agent continues when the window closes.
+
+
 - Show actual running operation types and engines on the dashboard, including repository checks, backup browsing, and restores.
 - Browse saved Windows backups and restore all files or selected files/folders from Managed Clients or **Backups / Restore** in the installed app. Both use the saved connection and the tracked outbound queue.
 - Recover Windows files to a fresh protected folder under `C:\ProgramData\FortressBackup\restores\<job-id>`, preserving original files. Repeated app launches focus its existing window.
