@@ -145,7 +145,7 @@ function New-SetupWindow([string]$SetupRoot){
         $failed=$false
         try {
             $result=$state.Worker.EndInvoke($state.Pending)
-            if($state.Worker.HadErrors){throw $state.Worker.Streams.Error[0].Exception}
+            if($state.Worker.Streams.Error.Count -gt 0){throw $state.Worker.Streams.Error[0].Exception}
             if($state.Stage -eq 'connect'){
                 $state.Profile=$result[0]
                 $form.AcceptButton=$install

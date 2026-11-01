@@ -108,7 +108,7 @@ function Add-RecoveryPanel($Form,$SetupState){
         if($r.Worker -and $r.Pending.IsCompleted){
             try{
                 $output=$r.Worker.EndInvoke($r.Pending)
-                if($r.Worker.HadErrors){throw $r.Worker.Streams.Error[0].Exception}
+                if($r.Worker.Streams.Error.Count -gt 0){throw $r.Worker.Streams.Error[0].Exception}
                 $r.Job=([string]$output[0] | ConvertFrom-Json)
                 $status.Text=$r.Operation+': '+$r.Job.state
                 if($r.Job.state -eq 'pending'){$status.Text+=' - waiting for the laptop agent. See Managed Clients for current activity.'}
