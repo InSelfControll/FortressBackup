@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-rc.9] - 2026-11-01
+
+- Retry transient Microsoft Defender RPC errors during release signature updates. Signature updating, scanning, and installer verification remain mandatory before publishing downloads.
+- Include the Windows recovery, single-window app, and actual-operation dashboard changes from rc.8, whose release packaging was blocked by Defender updater RPC failures.
+
 ## [0.1.0-rc.8] - 2026-11-01
 
 - Show the actual running backup, repository check, backup listing, file browsing, or restore operation on the dashboard; track SSH restores without replacing backup statistics.
