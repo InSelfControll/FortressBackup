@@ -233,7 +233,7 @@ func executeManaged(ctx context.Context, c Config, job lease) (any, error) {
 				}
 				return nil, errors.New("invalid repository file response")
 			}
-			if (item.Type == "file" || item.Type == "dir" || item.Type == "symlink") && validSnapshotPath(item.Path) && path.Dir(item.Path) == path.Clean(job.Request.Directory) {
+			if (item.Type == "file" || item.Type == "dir" || item.Type == "symlink") && validSnapshotPath(item.Path) && item.Path != path.Clean(job.Request.Directory) && path.Dir(item.Path) == path.Clean(job.Request.Directory) {
 				entries = append(entries, item)
 			}
 		}
