@@ -23,6 +23,10 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Agent rejected a valid PowerShell 5.1 configuration with a BOM'}
     $hash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
     & (Join-Path $PSScriptRoot 'install-task.ps1') -AgentPath $exe -ConfigPath $cfg -AgentSha256 $hash -ResticSha256 $hash -TaskName $task -Managed
+    # This fixture uses an extra task name for rollback assertions. Keep it idle
+    # while the production task is upgraded/verified so minute ticks cannot race preflight.
+    Disable-ScheduledTask -TaskName $task | Out-Null
+    Stop-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
     $installedCfg=Join-Path $installed 'agent.json'
     # Match the installed bundle before testing a later real runtime upgrade.
     Copy-Item -LiteralPath $exe -Destination (Join-Path $PSScriptRoot 'restic.exe') -Force
@@ -190,6 +194,8 @@ try {
     if((Get-Acl -LiteralPath $generated).Sddl -match ';;;WD|;;;BU|;;;AU'){throw 'Provisioned credentials are readable by ordinary users'}
     $config | ConvertTo-Json | Set-Content -LiteralPath $cfg -Encoding UTF8
     & (Join-Path $PSScriptRoot 'install-task.ps1') -AgentPath $exe -ConfigPath $cfg -AgentSha256 $hash -ResticSha256 $resticHash -TaskName $task -Managed -VerifySetup
+    Disable-ScheduledTask -TaskName $task | Out-Null
+    Stop-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
     if(!(Test-Path -LiteralPath (Join-Path $root 'heartbeat'))){throw 'Setup never authenticated to the controller'}
     if((Get-Content -LiteralPath (Join-Path $installed 'setup-check.log') -Raw) -notmatch 'No queued job claimed'){throw 'Setup success diagnostics missing'}
     $savedConfig=Get-Content -LiteralPath $installedCfg -Raw|ConvertFrom-Json
