@@ -465,7 +465,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                 <h2 className="text-3xl font-black text-white mb-3">Controller Credential Vault</h2>
                 <p className="text-slate-400 text-sm max-w-lg mx-auto">The controller encrypts saved storage credentials and SSH identities with server-held keys. These keys are generated during setup and persisted with the controller configuration.</p>
               </div>
-              <p className="text-sm text-slate-400 max-w-lg mx-auto">Your administrator sign-in password controls access to the interface. Back up the protected runtime configuration together with the database so saved credentials can be recovered.</p>
+              <p className="text-sm text-slate-400 max-w-lg mx-auto">Your administrator sign-in password controls access to the interface. Keep a backup of the protected runtime configuration together with the database so saved credentials can be recovered.</p>
               <div className="mt-auto flex flex-col-reverse sm:flex-row gap-4 justify-between items-center pt-6 border-t border-slate-800/50">
                 <button onClick={() => setCurrentStep('welcome')} className="text-slate-400 py-3">Back</button>
                 <button onClick={() => setCurrentStep('ai')} className="w-full sm:w-auto px-6 py-4 rounded-2xl bg-indigo-600 text-white font-bold">Configure AI</button>
