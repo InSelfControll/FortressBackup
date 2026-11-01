@@ -103,7 +103,7 @@ export const Dashboard: React.FC<DashboardProps> = ({searchQuery = '',onOpenMana
       <QueryStatus pending={jobsQuery.isPending || systemsQuery.isPending} error={jobsQuery.error || systemsQuery.error} retry={() => { void jobsQuery.refetch(); void systemsQuery.refetch(); }} />
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total Jobs" value={totalJobs.toString()} subtext={`${activeJobs} running`} icon={HardDrive} color="#6366f1" />
+        <StatCard title="Saved SSH jobs" value={totalJobs.toString()} subtext={`${activeJobs} running`} icon={HardDrive} color="#6366f1" />
         <StatCard title="Active operations" value={activityQuery.isError?'Unavailable':(activeJobs+windowsRunning).toString()} subtext="SSH and Windows clients" icon={Activity} color="#3b82f6" />
         <StatCard title="System Health" value={systems.length > 0 ? `${avgSystemHealth}%` : 'N/A'} subtext={`${onlineSystems}/${systems.length} online`} icon={Server} color="#22c55e" />
         <StatCard title="Failed Jobs" value={failedJobs.toString()} subtext={failedJobs > 0 ? 'Needs attention' : 'All good'} icon={AlertCircle} color="#ef4444" />
@@ -113,7 +113,7 @@ export const Dashboard: React.FC<DashboardProps> = ({searchQuery = '',onOpenMana
       {managedAgentsQuery.data&&<ManagedClientOverview agents={managedAgentsQuery.data} onOpen={onOpenManagedClients}/>}
 
       <QueryStatus pending={activityQuery.isPending} error={activityQuery.error} retry={()=>void activityQuery.refetch()}/>
-      {(activeJobs+windowsRunning)>0&&<section className="card space-y-2" aria-label="Running operations"><h2 className="font-semibold">Running now</h2>{jobs.filter(j=>j.status===JobStatus.RUNNING).map(j=><p key={j.id}>{j.name} · {j.operation==='restore'?'Restore':'Backup'} · {j.tool}</p>)}{activityQuery.data?.map(row=><p key={row.operation}>Windows · {operationLabel(row.operation)} · {row.count} running</p>)}</section>}
+      {(activeJobs+windowsRunning)>0&&<section className="card space-y-2" aria-label="Running operations"><h2 className="font-semibold">Running now</h2>{jobs.filter(j=>j.status===JobStatus.RUNNING).map(j=><p key={j.id}>{j.name} · {j.operation==='restore'?'Restore':'Backup'} · {j.tool}</p>)}{activityQuery.data?.map(row=><p key={row.operation}>Windows · Restic · {operationLabel(row.operation)} · {row.count} running</p>)}</section>}
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Storage Chart */}
@@ -141,7 +141,7 @@ export const Dashboard: React.FC<DashboardProps> = ({searchQuery = '',onOpenMana
 
         {/* Pie Chart */}
         <div className="card flex flex-col">
-          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>Job Status</h3>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>SSH Job Status</h3>
           <div className="flex-1 min-h-[200px] relative">
             <ResponsiveContainer width="100%" height="100%" debounce={200}>
               <PieChart>

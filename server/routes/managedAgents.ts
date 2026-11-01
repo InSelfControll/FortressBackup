@@ -230,10 +230,11 @@ router.post('/poll', agentAuth, async (req, res, next) => {
   try {
     const id = (req as any).managedAgent as string;
     const now = new Date().toISOString();
-    if(req.body?.capabilities!==undefined){
-      if(!Array.isArray(req.body.capabilities)||req.body.capabilities.length>8||!req.body.capabilities.every((value:unknown)=>value===recoveryCapability))return res.status(400).json({error:'Invalid capabilities'});
-      await run('UPDATE managed_clients SET last_seen=?,capabilities=? WHERE id=?',[now,JSON.stringify([...new Set(req.body.capabilities)]),id]);
-    }else await run('UPDATE managed_clients SET last_seen=? WHERE id=?', [now, id]);
+    const capabilities=req.body?.capabilities??[];
+    if(!Array.isArray(capabilities)||capabilities.length>8||!capabilities.every((value:unknown)=>value===recoveryCapability))return res.status(400).json({error:'Invalid capabilities'});
+    await run('UPDATE managed_clients SET last_seen=?,capabilities=? WHERE id=?',[now,JSON.stringify([...new Set(capabilities)]),id]);
+    if(!capabilities.includes(recoveryCapability))await run(`UPDATE managed_jobs SET state='failed',finished_at=?,message='Update the installed app and Save and connect before recovery'
+      WHERE client_id=? AND state='pending' AND operation IN ('files','restore')`,[now,id]);
     await run(`UPDATE managed_jobs SET state='failed',finished_at=?,message='Execution lease expired; verify remote state'
       WHERE client_id=? AND state='running' AND lease_until<?`, [now, id, now]);
     // A lost poll response must not strand a leased job. The Windows client

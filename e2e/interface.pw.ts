@@ -225,7 +225,7 @@ test('managed backups browse and restore selected files and the full saved versi
  };
  await agent('poll',{capabilities:['recovery-v1']});
  await go(page,'Managed Clients');
- const card=page.getByRole('heading',{name:'Recovery laptop',exact:true}).locator('ancestor::article');
+ const card=page.getByRole('heading',{name:'Recovery laptop',exact:true}).locator('xpath=ancestor::article');
  await card.getByText('Browse backups and restore',{exact:true}).click();
  const claim=async(operation:string)=>{
   let job:any;
@@ -243,7 +243,7 @@ test('managed backups browse and restore selected files and the full saved versi
  await card.getByRole('button',{name:'Restore selected (1)',exact:true}).click();
  job=await claim('restore');expect(job.request.paths).toEqual(['/document[1].txt']);expect(job.request.restorePath).toBeUndefined();
  await go(page,'Dashboard');
- await expect(page.getByRole('region',{name:'Running operations'}).getByText('Windows · Restore · 1 running',{exact:true})).toBeVisible();
+ await expect(page.getByRole('region',{name:'Running operations'}).getByText('Windows · Restic · Restore · 1 running',{exact:true})).toBeVisible();
  const restored='C:\\ProgramData\\FortressBackup\\restores\\'+job.id;
  await agent('report',{id:job.id,success:true,data:{snapshotId,restorePath:restored}});
  await go(page,'Managed Clients');await card.getByText('Browse backups and restore',{exact:true}).click();

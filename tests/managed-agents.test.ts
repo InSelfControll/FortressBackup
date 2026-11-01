@@ -85,7 +85,7 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     expect((await api('/admin/'+other.data.id+'/jobs/'+list.data.id,undefined,adminHeaders,'GET')).status).toBe(404);
     const recovery=await api('/admin/'+id+'/jobs',{operation:'restore',request:{snapshotId:sid,paths:['/C/Users/test/document[1].txt'],restorePath:'C:\\Windows'}});
     expect(recovery.status).toBe(201);
-    const running=await api('/poll',{},auth);
+    const running=await api('/poll',{capabilities:['recovery-v1']},auth);
     expect(running.data.job.operation).toBe('restore');
     expect(running.data.job.request.restorePath).toBeUndefined();
     const activity=await api('/admin/activity',undefined,adminHeaders,'GET');
@@ -97,6 +97,11 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     const inventory=await api('/admin',undefined,adminHeaders,'GET');
     expect(JSON.stringify(inventory.data)).not.toContain('restorePath');
     expect((await api('/admin/'+id+'/jobs/'+recovery.data.id,undefined,adminHeaders,'GET')).data.result).toEqual(recoveryData);
+    const downgradeQueue=await api('/request',{operation:'restore',request:{snapshotId:sid}},auth);
+    expect(downgradeQueue.status).toBe(201);
+    expect((await api('/poll',{},auth)).data.job).toBeNull();
+    expect((await api('/result',{id:downgradeQueue.data.id},auth)).data.state).toBe('failed');
+    expect((await api('/request',{operation:'restore',request:{snapshotId:sid}},auth)).status).toBe(409);
     // Two simultaneous scheduler replicas must not create two jobs in one slot.
     const slot=new Date(Date.now()-60000).toISOString();
     const schedule=await api('/admin/'+id+'/schedule',{minutes:15},adminHeaders,'PUT');
