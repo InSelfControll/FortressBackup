@@ -121,10 +121,10 @@ test('export fetches cold data; invalid import stays editable; valid import pers
 test('managed enrollment, schedule, job queue, and revocation persist',async({page})=>{
     const source=(await api('/systems'))[0];const storage=(await api('/locations')).find((location:any)=>location.type==='sftp');
     const repository=await api('/jobs','POST',{name:'Saved Windows repository',tool:'Restic',sourceId:source.id,sourcePaths:['/home'],destinationId:storage.id,repoPassword:crypto.randomBytes(32).toString('base64url')});
-    await go(page,'Managed Clients');await page.getByLabel('Client name').fill('Disposable Windows Client');await page.getByRole('button',{name:'Enroll',exact:true}).click();await expect(page.getByText('Save credentials now. Token displayed only once.')).toBeVisible();await page.getByRole('button',{name:"I've saved these credentials"}).click();await page.getByLabel('Backup schedule').selectOption('60');await page.getByRole('button',{name:'backup',exact:true}).click();await expect(page.getByText(/backup · Queued — waiting for the Windows agent/)).toBeVisible();
+    await go(page,'Managed Clients');await page.getByLabel('Client name').fill('Disposable Windows Client');await page.getByRole('button',{name:'Enroll',exact:true}).click();await expect(page.getByText('Save credentials now. Token displayed only once.')).toBeVisible();await page.getByRole('button',{name:"I've saved these credentials"}).click();await page.getByLabel('Backup schedule').selectOption('60');await page.getByRole('button',{name:'Back up now',exact:true}).click();await expect(page.getByText(/Backup · Queued — waiting for the Windows agent/)).toBeVisible();
     expect((await api('/managed-agents/admin')).find((agent:any)=>agent.name==='Disposable Windows Client').repositoryJobId).toBe(repository.id);
     await go(page,'Dashboard');const activity=page.getByRole('region',{name:'Windows client activity'});await expect(activity.getByText('Disposable Windows Client',{exact:true})).toBeVisible();await expect(activity.getByText('Awaiting setup',{exact:true})).toBeVisible();await expect(activity.getByText(/Queued — waiting for the Windows agent/)).toBeVisible();await activity.getByRole('button',{name:'Open Managed Clients'}).click();
-    page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'Disable',exact:true}).click();await expect(page.getByRole('button',{name:'backup',exact:true})).toBeDisabled();
+    page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'Disable',exact:true}).click();await expect(page.getByRole('button',{name:'Back up now',exact:true})).toBeDisabled();
     await api('/jobs/'+repository.id,'DELETE');
 });
 
@@ -214,4 +214,47 @@ test('run buttons, dashboard actions and job filters use real controller state',
     const source=(await api('/systems'))[0],destination=(await api('/locations'))[0];const create=(name:string)=>api('/jobs','POST',{name,tool:'Restic',sourceId:source.id,destinationId:destination.id,sourcePaths:['/data'],repoPassword:'dummy-passphrase',schedule:'0 2 * * *',priority:'Medium'});const one=await create('Run button test'),two=await create('Dashboard run test');
     await page.reload();await page.locator('[data-app-content]').waitFor();await go(page,'Backup Jobs');const card=page.getByRole('heading',{name:one.name,exact:true}).locator('xpath=ancestor::div[contains(@class,"group")][1]');await card.getByTitle('Run Now').click();await expect.poll(async()=>(await api('/jobs')).find((j:any)=>j.id===one.id).status).toBe('Failed');await expect(card.getByText('Failed',{exact:true})).toBeVisible();await card.getByTitle('View Logs').click();await expect(page.getByRole('dialog').getByText(/SSH|configuration|fingerprint/i).first()).toBeVisible();await page.getByRole('button',{name:'Close job details'}).click();
     await page.getByRole('button',{name:'Filters',exact:true}).click();await page.getByPlaceholder('Search jobs...').fill('Run button');await expect(page.getByRole('heading',{name:two.name,exact:true})).toHaveCount(0);await page.getByPlaceholder('Search jobs...').fill('');await go(page,'Dashboard');await page.getByRole('button',{name:/Run Idle Jobs/}).click();await expect.poll(async()=>(await api('/jobs')).find((j:any)=>j.id===two.id).status).toBe('Failed');await page.getByRole('button',{name:/Check Health/}).click();await expect(page.getByRole('button',{name:/Check Health/})).toBeEnabled();await api('/jobs/'+one.id,'DELETE');await api('/jobs/'+two.id,'DELETE');
+});
+
+
+test('managed backups browse and restore selected files and the full saved version',async({page})=>{
+ const enrollment=await api('/managed-agents/admin/enroll','POST',{name:'Recovery laptop'});
+ const agent=async(route:string,body:any)=>{
+  const response=await fetch(base+'/api/managed-agents/'+route,{method:'POST',headers:{Authorization:'Bearer '+enrollment.token,'X-Fortress-Agent-Id':enrollment.id,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const data=await response.json();if(!response.ok)throw new Error(JSON.stringify(data));return data;
+ };
+ await agent('poll',{capabilities:['recovery-v1']});
+ await go(page,'Managed Clients');
+ const card=page.getByRole('heading',{name:'Recovery laptop',exact:true}).locator('ancestor::article');
+ await card.getByText('Browse backups and restore',{exact:true}).click();
+ const claim=async(operation:string)=>{
+  let job:any;
+  await expect.poll(async()=>{job=(await agent('poll',{capabilities:['recovery-v1']})).job;return job?.operation}).toBe(operation);
+  return job;
+ };
+ const snapshotId='a'.repeat(64);
+ await card.getByRole('button',{name:'Load saved backups',exact:true}).click();
+ let job=await claim('snapshots');
+ await agent('report',{id:job.id,success:true,data:{snapshots:[{id:snapshotId,time:'2026-11-01T00:00:00Z',hostname:'Recovery laptop',paths:['C:\\Users\\test']}],offset:0,hasMore:false}});
+ await card.getByLabel('Saved backup',{exact:true}).selectOption(snapshotId);
+ job=await claim('files');expect(job.request.directory).toBe('/');
+ await agent('report',{id:job.id,success:true,data:{snapshotId,directory:'/',offset:0,hasMore:false,entries:[{name:'document[1].txt',path:'/document[1].txt',type:'file',size:7}]}});
+ await card.getByLabel('Select document[1].txt',{exact:true}).check();
+ await card.getByRole('button',{name:'Restore selected (1)',exact:true}).click();
+ job=await claim('restore');expect(job.request.paths).toEqual(['/document[1].txt']);expect(job.request.restorePath).toBeUndefined();
+ await go(page,'Dashboard');
+ await expect(page.getByRole('region',{name:'Running operations'}).getByText('Windows · Restore · 1 running',{exact:true})).toBeVisible();
+ const restored='C:\\ProgramData\\FortressBackup\\restores\\'+job.id;
+ await agent('report',{id:job.id,success:true,data:{snapshotId,restorePath:restored}});
+ await go(page,'Managed Clients');await card.getByText('Browse backups and restore',{exact:true}).click();
+ // A second browsing session can request a complete restore without a selection.
+ await card.getByRole('button',{name:'Load saved backups',exact:true}).click();job=await claim('snapshots');
+ await agent('report',{id:job.id,success:true,data:{snapshots:[{id:snapshotId,time:'2026-11-01T00:00:00Z',hostname:'Recovery laptop',paths:['C:\\Users\\test']}],offset:0,hasMore:false}});
+ await card.getByLabel('Saved backup',{exact:true}).selectOption(snapshotId);job=await claim('files');
+ await agent('report',{id:job.id,success:true,data:{snapshotId,directory:'/',offset:0,hasMore:false,entries:[]}});
+ await expect(card.getByRole('button',{name:'Restore entire backup',exact:true})).toBeEnabled();
+ await card.getByRole('button',{name:'Restore entire backup',exact:true}).click();job=await claim('restore');expect(job.request.paths).toBeUndefined();
+ const full='C:\\ProgramData\\FortressBackup\\restores\\'+job.id;
+ await agent('report',{id:job.id,success:true,data:{snapshotId,restorePath:full}});
+ await expect(card.getByText('Files restored on the laptop to: '+full,{exact:true})).toBeVisible();
 });

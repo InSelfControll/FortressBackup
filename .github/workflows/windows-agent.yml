@@ -171,6 +171,7 @@ jobs:
         shell: pwsh
         working-directory: agent/windows
         run: |
-          $env:FORTRESS_TEST_RESTIC = (Get-Command restic -ErrorAction Stop).Source
-          go test -v -run TestResticManagedSFTPArgv ./...
+          $env:FORTRESS_TEST_RESTIC = Join-Path $env:RUNNER_TEMP 'restic-stable.exe'
+          if (!(Test-Path -LiteralPath $env:FORTRESS_TEST_RESTIC)) { $env:FORTRESS_TEST_RESTIC = (Get-Command restic -ErrorAction Stop).Source }
+          go test -v -run "TestResticManagedSFTPArgv|TestManagedRecoveryRoundTrip" ./...
           if ($LASTEXITCODE -ne 0) { throw 'Managed SSH transport argument verification failed' }

@@ -62,6 +62,33 @@ try {
                 $request.Response.Close()
                 [IO.File]::WriteAllText((Join-Path $root $route),'authenticated')
             }
+            $snapshotId='a'*64
+            foreach($operation in @('snapshots','files','restore')){
+                $jobId=[guid]::NewGuid().ToString()
+                foreach($route in @('request','result')){
+                    $request=$http.GetContext()
+                    if($request.Request.RawUrl -ne ('/api/managed-agents/'+$route)){throw 'Recovery used an unexpected route'}
+                    if($request.Request.Headers['Authorization'] -ne ('Bearer '+$expectedToken) -or $request.Request.Headers['X-Fortress-Agent-Id'] -ne $agentId){throw 'Recovery authentication missing'}
+                    $reader=New-Object IO.StreamReader($request.Request.InputStream)
+                    $body=$reader.ReadToEnd() | ConvertFrom-Json;$reader.Dispose()
+                    if($route -eq 'request'){
+                        if($body.operation -ne $operation){throw 'Recovery queued the wrong operation'}
+                        if($operation -eq 'restore' -and ($body.request.paths.Count -ne 1 -or $body.request.paths[0] -ne '/document[1].txt')){throw 'Recovery lost the exact selected filename'}
+                        $response=@{id=$jobId;state='pending';operation=$operation}
+                    }else{
+                        if($body.id -ne $jobId){throw 'Recovery requested another job result'}
+                        $data=switch($operation){
+                            snapshots {@{snapshots=@(@{id=$snapshotId;time='2026-11-01T00:00:00Z';hostname='test-host'});offset=0;hasMore=$false}}
+                            files {@{entries=@(@{name='document[1].txt';path='/document[1].txt';type='file';size=7});directory='/';snapshotId=$snapshotId;offset=0;hasMore=$false}}
+                            restore {@{snapshotId=$snapshotId;restorePath='C:\ProgramData\FortressBackup\restores\'+$jobId}}
+                        }
+                        $response=@{id=$jobId;state='success';operation=$operation;result=$data}
+                    }
+                    $bytes=[Text.Encoding]::UTF8.GetBytes(($response | ConvertTo-Json -Depth 10 -Compress))
+                    $request.Response.ContentType='application/json';$request.Response.ContentLength64=$bytes.Length
+                    $request.Response.OutputStream.Write($bytes,0,$bytes.Length);$request.Response.Close()
+                }
+            }
         }finally{$http.Stop();$http.Close()}
     }
     $deadline=(Get-Date).AddSeconds(30)
@@ -118,6 +145,31 @@ try {
     if((Get-Content -LiteralPath (Join-Path $installed 'setup-check.log') -Raw) -notmatch 'No queued job claimed'){throw 'Setup success diagnostics missing'}
     $savedConfig=Get-Content -LiteralPath $installedCfg -Raw|ConvertFrom-Json
     if($savedConfig.sftpKeyFile -ne (Join-Path $installed 'storage-key') -or $savedConfig.sftpKnownHostsFile -ne (Join-Path $installed 'known_hosts')){throw 'Storage credential paths were not rewritten for SYSTEM'}
+    # Exercise recovery in the same actual WinForms window with saved credentials.
+    $window=New-SetupWindow -SetupRoot $PSScriptRoot
+    function Wait-RecoveryUI([scriptblock]$Condition){
+        $deadline=(Get-Date).AddSeconds(40)
+        while(!( & $Condition) -and (Get-Date) -lt $deadline){[Windows.Forms.Application]::DoEvents();Start-Sleep -Milliseconds 50}
+        if(!( & $Condition)){throw ('Recovery GUI timed out: '+$window.Controls['recovery'].Controls['status'].Text)}
+    }
+    try{
+        $window.Show();$window.Controls['backups'].PerformClick()
+        $recovery=$window.Controls['recovery']
+        if(!$recovery.Visible){throw 'Recovery did not open in the existing window'}
+        $recovery.Controls['load'].PerformClick()
+        Wait-RecoveryUI {$recovery.Controls['snapshots'].Items.Count -eq 1 -and $recovery.Controls['snapshots'].Enabled}
+        $recovery.Controls['snapshots'].SelectedIndex=0
+        $recovery.Controls['snapshots'].GetType().GetMethod('OnSelectionChangeCommitted',[Reflection.BindingFlags]'Instance,NonPublic').Invoke($recovery.Controls['snapshots'],@([EventArgs]::Empty))
+        Wait-RecoveryUI {$recovery.Controls['entries'].Items.Count -eq 1 -and $recovery.Controls['entries'].Enabled}
+        if($recovery.Controls['restore'].Enabled){throw 'GUI allowed an empty selective restore'}
+        $recovery.Controls['entries'].SetItemChecked(0,$true)
+        if(!$recovery.Controls['restore'].Enabled){throw 'GUI did not enable selected-file restore'}
+        $recovery.Controls['restore'].PerformClick()
+        Wait-RecoveryUI {$recovery.Controls['status'].Text -like 'Restored to:*' -and $recovery.Controls['open'].Enabled}
+        $recovery.Controls['back'].PerformClick()
+        if($recovery.Visible){throw 'Configuration did not return in the same window'}
+        $window.Close()
+    }finally{if(!$window.IsDisposed){$window.Dispose()}}
     $beforeKey=(Get-FileHash -LiteralPath $savedConfig.sftpKeyFile -Algorithm SHA256).Hash
     $before=(Get-FileHash -LiteralPath $installedCfg -Algorithm SHA256).Hash
     $beforeTask=Export-ScheduledTask -TaskName $task

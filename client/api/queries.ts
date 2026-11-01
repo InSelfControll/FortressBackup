@@ -81,7 +81,11 @@ export function useManagedAgents(page = 0) {
     return useQuery({
         queryKey: [...queryKeys.managedAgents, page],
         staleTime: 0,
-        refetchInterval: 10000,
+        refetchInterval: 2000,
         queryFn: () => API.getManagedAgents(page).then(requireData),
     });
+}
+
+export function useManagedActivity(){
+ return useQuery({queryKey:['managed-activity'],refetchInterval:2000,queryFn:async()=>requireData(await (await import('./client')).apiFetch<{operation:import('../../types').ManagedOperation;count:number}[]>('/managed-agents/admin/activity'))});
 }

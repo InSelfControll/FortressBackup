@@ -86,7 +86,7 @@ export const JobCard: React.FC<JobCardProps> = ({
                         {getPriorityBadge(job.priority)}
                     </div>
                     <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
-                        <span className="flex items-center gap-1" title={TOOL_DESCRIPTIONS[job.tool]}><Settings2 size={12} /> {job.tool}</span>
+                        <span className="flex items-center gap-1" title={TOOL_DESCRIPTIONS[job.tool]}><Settings2 size={12} /> {job.tool} · {job.operation==='restore'?'Restore':'Backup'}</span>
                         <span className="flex items-center gap-1"><Clock size={12} /> {job.scheduleEnabled ? parseCron(job.schedule) + ' UTC' : 'Manual runs'}</span>
                         {job.sourceId && <span className="flex items-center gap-1"><Server size={12} /> {systemName}</span>}
                         {job.destinationId && <span className="flex items-center gap-1"><HardDrive size={12} /> {locationName}</span>}

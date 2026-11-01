@@ -79,7 +79,7 @@ curl -sS -X POST "https://fortress.example.net/api/managed-agents/admin/ENROLLME
 ## Production blockers
 - Source folders remain local. Repository assignments are managed centrally; rerun setup to apply changes to the protected local credential files. Automatic setup currently supports existing Restic SFTP repositories and never initializes or overwrites repositories.
 - No client auto-update or rotation of existing enrollment tokens.
-- No structured Restic progress or user-visible file-level restore from the managed-client screen.
+- Full and selected-file recovery is available from Managed Clients and the installed app. Results are paginated; detailed byte-level Restic progress is not yet streamed. Windows restores use a new protected per-job folder and never overwrite source files.
 - No automatic token rotation or transport-level client certificate authentication.
 - No end-to-end Windows VSS + Hetzner Storage Box restore test.
 - A complete security audit of all unrelated Fortress endpoints and a real Windows VSS restore test are still required.

@@ -229,7 +229,7 @@ export const RestoreModal: React.FC<RestoreModalProps> = ({ job, systems, isOpen
                 <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
                     {step === 'snapshots' && (
                         <div className="space-y-4">
-                            <h4 className="text-sm font-medium text-slate-400 uppercase tracking-widest">Select a Snapshot</h4>
+                            <h4 className="text-sm font-medium text-slate-400 uppercase tracking-widest">Select a saved backup (snapshot)</h4><p className="text-sm text-slate-400">A backup saves a snapshot: a version of your files at that time. Choose one to restore all files or selected files and folders.</p>
                             {loading ? (
                                 <div className="flex items-center justify-center py-12 text-slate-500 gap-2">
                                     <Loader2 className="animate-spin" size={20} /> Loading snapshots...

@@ -22,7 +22,7 @@ try {
     [IO.Directory]::CreateDirectory($bundle) | Out-Null
     foreach($name in @('fortress-agent.exe','FortressBackup.exe')){Copy-Item -LiteralPath (Join-Path $AgentDirectory $name) -Destination (Join-Path $bundle $name)}
     Copy-Item -LiteralPath $ResticPath -Destination (Join-Path $bundle 'restic.exe')
-    foreach($name in @('Install FortressBackup.cmd','setup.ps1','setup-ui.ps1','provision.ps1','install-task.ps1','uninstall-task.ps1','agent.example.json','INSTALL.md','MANAGED.md','RESTIC-LICENSE.txt')){
+    foreach($name in @('Install FortressBackup.cmd','setup.ps1','setup-ui.ps1','recovery-ui.ps1','provision.ps1','install-task.ps1','uninstall-task.ps1','agent.example.json','INSTALL.md','MANAGED.md','RESTIC-LICENSE.txt')){
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $bundle $name)
     }
     foreach($name in @('fortress.ico','LUCIDE-LICENSE.txt')){
@@ -37,7 +37,7 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Windows installer compilation failed'}
     Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath (Join-Path $OutputDirectory "fortressbackup-windows-amd64-$Version.zip")
     $assets=@{'fortress-agent.exe'='fortress-agent-windows-amd64.exe';'restic.exe'='restic-windows-amd64.exe';'FortressBackup.exe'='FortressBackup.exe';'Install FortressBackup.cmd'='Install.FortressBackup.cmd';'INSTALL.md'='WINDOWS-SETUP.md';'MANAGED.md'='MANAGED-WINDOWS.md'}
-    foreach($name in @('setup.ps1','setup-ui.ps1','provision.ps1','install-task.ps1','uninstall-task.ps1','agent.example.json','RESTIC-LICENSE.txt','fortress.ico','LUCIDE-LICENSE.txt')){$assets[$name]=$name}
+    foreach($name in @('setup.ps1','setup-ui.ps1','recovery-ui.ps1','provision.ps1','install-task.ps1','uninstall-task.ps1','agent.example.json','RESTIC-LICENSE.txt','fortress.ico','LUCIDE-LICENSE.txt')){$assets[$name]=$name}
     foreach($name in $assets.Keys){Copy-Item -LiteralPath (Join-Path $bundle $name) -Destination (Join-Path $OutputDirectory $assets[$name])}
 }finally{
     if(Test-Path -LiteralPath $work){Remove-Item -LiteralPath $work -Recurse -Force}

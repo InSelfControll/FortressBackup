@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../client/api/queries';
 import toast from 'react-hot-toast';
 import { QueryStatus } from './QueryStatus';
+import {operationLabel} from './ManagedRestore';
 import { ManagedClientOverview } from './ManagedClients';
 import React, { useMemo, useState } from 'react';
 import {
@@ -13,7 +14,7 @@ import {
 import { BackupJob, JobStatus, System } from '../types';
 import { Activity, Server, HardDrive, AlertCircle, Play, Clock, AlertTriangle, CheckCircle2, Zap } from 'lucide-react';
 
-import { useJobs, useSystems, useManagedAgents } from '../client/api/queries';
+import { useJobs, useSystems, useManagedAgents, useManagedActivity } from '../client/api/queries';
 
 interface DashboardProps { searchQuery?: string; onOpenManagedClients?: () => void }
 
@@ -51,6 +52,8 @@ const QuickActionCard = ({ title, description, icon: Icon, onClick, color, disab
 export const Dashboard: React.FC<DashboardProps> = ({searchQuery = '',onOpenManagedClients}) => {
   const jobsQuery = useJobs(); const systemsQuery = useSystems();
   const managedAgentsQuery = useManagedAgents();
+  const activityQuery=useManagedActivity();
+  const windowsRunning=(activityQuery.data||[]).reduce((sum,row)=>sum+Number(row.count),0);
   const {data: jobs = []} = jobsQuery; const {data: systems = []} = systemsQuery;
   const client = useQueryClient(); const [busy, setBusy] = useState(false);
   const runActions = async (kind: 'jobs' | 'health') => {
@@ -101,7 +104,7 @@ export const Dashboard: React.FC<DashboardProps> = ({searchQuery = '',onOpenMana
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Total Jobs" value={totalJobs.toString()} subtext={`${activeJobs} running`} icon={HardDrive} color="#6366f1" />
-        <StatCard title="Active Jobs" value={activeJobs.toString()} subtext={totalJobs > 0 ? `of ${totalJobs}` : 'No jobs'} icon={Activity} color="#3b82f6" />
+        <StatCard title="Active operations" value={activityQuery.isError?'Unavailable':(activeJobs+windowsRunning).toString()} subtext="SSH and Windows clients" icon={Activity} color="#3b82f6" />
         <StatCard title="System Health" value={systems.length > 0 ? `${avgSystemHealth}%` : 'N/A'} subtext={`${onlineSystems}/${systems.length} online`} icon={Server} color="#22c55e" />
         <StatCard title="Failed Jobs" value={failedJobs.toString()} subtext={failedJobs > 0 ? 'Needs attention' : 'All good'} icon={AlertCircle} color="#ef4444" />
       </div>
@@ -109,6 +112,8 @@ export const Dashboard: React.FC<DashboardProps> = ({searchQuery = '',onOpenMana
       <QueryStatus pending={managedAgentsQuery.isPending} error={managedAgentsQuery.error} retry={()=>void managedAgentsQuery.refetch()}/>
       {managedAgentsQuery.data&&<ManagedClientOverview agents={managedAgentsQuery.data} onOpen={onOpenManagedClients}/>}
 
+      <QueryStatus pending={activityQuery.isPending} error={activityQuery.error} retry={()=>void activityQuery.refetch()}/>
+      {(activeJobs+windowsRunning)>0&&<section className="card space-y-2" aria-label="Running operations"><h2 className="font-semibold">Running now</h2>{jobs.filter(j=>j.status===JobStatus.RUNNING).map(j=><p key={j.id}>{j.name} · {j.operation==='restore'?'Restore':'Backup'} · {j.tool}</p>)}{activityQuery.data?.map(row=><p key={row.operation}>Windows · {operationLabel(row.operation)} · {row.count} running</p>)}</section>}
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Storage Chart */}
@@ -227,7 +232,7 @@ export const Dashboard: React.FC<DashboardProps> = ({searchQuery = '',onOpenMana
                     style={{ backgroundColor: job.status === JobStatus.SUCCESS ? 'var(--color-success)' : job.status === JobStatus.FAILED ? 'var(--color-error)' : job.status === JobStatus.RUNNING ? 'var(--color-info)' : 'var(--color-text-muted)' }} />
                   <div>
                     <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{job.name}</p>
-                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{job.tool} • {job.lastRun || 'Never run'}</p>
+                    <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{job.tool} • {job.operation==='restore'?'Restore':'Backup'} • {job.operationAt || job.lastRun || 'Never run'}</p>
                   </div>
                 </div>
                 <div className="text-right">

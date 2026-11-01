@@ -3,25 +3,27 @@ import {apiFetch} from '../client/api/client';
 import {useManagedAgents,useJobs,useLocations} from '../client/api/queries';
 import {QueryStatus} from './QueryStatus';
 import type {ManagedAgent,ManagedAgentJob} from '../types';
+import {ManagedRestore,operationLabel,currentManagedJob} from './ManagedRestore';
 
 type Enrollment={id:string;token:string;name:string};
 
 export const managedClientStatus=(agent:ManagedAgent,now=Date.now()):string=>{
  if(agent.disabled)return 'Disabled';
+ const active=agent.jobs.find(job=>job.state==='running');
+ if(active)return operationLabel(active.operation)+' running';
  if(!agent.lastSeen)return 'Awaiting setup';
- if(agent.jobs.some(job=>job.state==='running'))return 'Job running';
  return now-Date.parse(agent.lastSeen)<=180000?'Online':'Offline';
 };
 export const managedJobStatus=(job:ManagedAgentJob):string=>
  job.state==='pending'?'Queued — waiting for the Windows agent':job.state==='running'?'Running on the laptop':job.state==='success'?'Completed':'Failed';
 
 export const ManagedClientOverview:React.FC<{agents:ManagedAgent[];onOpen?:()=>void}>=({agents,onOpen})=><section className="card space-y-4" aria-label="Windows client activity">
- <div className="flex flex-wrap justify-between gap-3"><div><h2 className="font-semibold">Windows client activity</h2><p className="text-sm text-slate-400">Recent client check-ins and operations. Updates every 10 seconds.</p></div>{onOpen&&<button onClick={onOpen} className="text-sm text-indigo-300 underline">Open Managed Clients</button>}</div>
+ <div className="flex flex-wrap justify-between gap-3"><div><h2 className="font-semibold">Windows client activity</h2><p className="text-sm text-slate-400">Recent client check-ins and operations. Updates every 2 seconds.</p></div>{onOpen&&<button onClick={onOpen} className="text-sm text-indigo-300 underline">Open Managed Clients</button>}</div>
  {agents.length===0?<p className="text-sm text-slate-400">No Windows clients enrolled.</p>:agents.slice(0,5).map(agent=><article key={agent.id} className="rounded-lg border border-slate-700 p-3 space-y-1">
   <div className="flex flex-wrap justify-between gap-2"><h3 className="font-medium break-all">{agent.name}</h3><span className="text-sm text-slate-300">{managedClientStatus(agent)}</span></div>
   <p className="text-xs text-slate-400">Last check-in: {agent.lastSeen?new Date(agent.lastSeen).toLocaleString():'Never'}</p>
   {!agent.lastSeen&&<p className="text-sm text-amber-300">Install and configure the Windows agent to connect this laptop. Enrollment alone does not start a backup.</p>}
-  {agent.jobs[0]?<p className="text-sm">{agent.jobs[0].operation}: {managedJobStatus(agent.jobs[0])}{agent.jobs[0].message&&<span className="text-slate-400"> · {agent.jobs[0].message}</span>}</p>:<p className="text-sm text-slate-400">No operations requested.</p>}
+  {currentManagedJob(agent.jobs)?<p className="text-sm">{operationLabel(currentManagedJob(agent.jobs)!.operation)}: {managedJobStatus(currentManagedJob(agent.jobs)!)}{currentManagedJob(agent.jobs)!.message&&<span className="text-slate-400"> · {currentManagedJob(agent.jobs)!.message}</span>}</p>:<p className="text-sm text-slate-400">No operations requested.</p>}
  </article>)}
 </section>;
 
@@ -107,11 +109,11 @@ export const ManagedClients:React.FC=()=>{
   {error&&<p role="alert" className="text-red-400">{error}</p>}
   <div className="space-y-3">{agents.map(agent=><article key={agent.id} className="rounded-xl border border-slate-700 bg-slate-900 p-4 space-y-3">
    <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold break-words">{agent.name}</h2><p className="text-xs text-slate-400 break-all">{agent.id}</p><p className="text-sm text-slate-300">{managedClientStatus(agent)}</p><p className="text-xs text-slate-400">Last check-in: {agent.lastSeen?new Date(agent.lastSeen).toLocaleString():'Never'}</p></div>
-   <div className="flex flex-wrap gap-2">{(['backup','check','snapshots'] as const).map(op=><button key={op} disabled={busy||agent.disabled||agent.jobs.some(j=>j.state==='pending'||j.state==='running')} onClick={()=>job(agent.id,op)} className="px-3 py-2 rounded bg-slate-700 disabled:opacity-50">{op}</button>)}<button disabled={busy||agent.disabled} onClick={()=>disable(agent.id)} className="px-3 py-2 rounded bg-red-900 disabled:opacity-50">Disable</button></div></div>
+   <div className="flex flex-wrap gap-2">{(['backup','check'] as const).map(op=><button key={op} disabled={busy||agent.disabled||agent.jobs.some(j=>j.state==='pending'||j.state==='running')} onClick={()=>job(agent.id,op)} className="px-3 py-2 rounded bg-slate-700 disabled:opacity-50">{op==='backup'?'Back up now':'Verify repository'}</button>)}<button disabled={busy||agent.disabled} onClick={()=>disable(agent.id)} className="px-3 py-2 rounded bg-red-900 disabled:opacity-50">Disable</button></div></div>
    {!agent.lastSeen&&<p className="text-sm text-amber-300">No backup has started. Waiting for the Windows agent to be installed, configured, and connected.</p>}
    <div className="flex flex-wrap gap-3 items-center text-sm"><label htmlFor={'repository-'+agent.id}>Backup repository</label><select id={'repository-'+agent.id} value={agent.repositoryJobId||''} disabled={busy||agent.disabled} onChange={event=>void assignRepository(agent.id,event.target.value)} className="max-w-full bg-slate-800 p-2 rounded"><option value="">Choose a saved repository</option>{repositories.map(repository=><option key={repository.id} value={repository.id}>{repositoryLabel(repository.id)}</option>)}</select>{agent.repositoryJobId?<span className="text-slate-400">Setup uses saved credentials. Rerun setup to apply repository changes.</span>:<span className="text-amber-300">Assign a repository before running Windows setup.</span>}</div>
    <div className="flex flex-wrap gap-3 items-center text-sm"><label htmlFor={'schedule-'+agent.id}>Backup schedule</label><select id={'schedule-'+agent.id} disabled={busy||agent.disabled} value={agent.scheduleMinutes||0} onChange={e=>void schedule(agent.id,Number(e.target.value))} className="bg-slate-800 p-2 rounded"><option value={0}>Manual</option><option value={60}>Hourly</option><option value={360}>Every 6 hours</option><option value={1440}>Daily</option><option value={10080}>Weekly</option></select><span className="text-slate-400">Next: {agent.nextRunAt||'Not scheduled'}</span></div>
-   <div className="text-sm break-words space-y-1">{agent.jobs.map(j=><p key={j.id}><span className="font-medium">{j.operation}</span> · {managedJobStatus(j)} · {new Date(j.createdAt).toLocaleString()} {j.message&&<span className="text-slate-400">{j.message}</span>}</p>)}</div>
+   <ManagedRestore agent={agent}/><div className="text-sm break-words space-y-1">{agent.jobs.map(j=><p key={j.id}><span className="font-medium">{operationLabel(j.operation)}</span> · {managedJobStatus(j)} · {new Date(j.createdAt).toLocaleString()} {j.message&&<span className="text-slate-400">{j.message}</span>}</p>)}</div>
   </article>)}</div>
   <div className="flex items-center gap-4 text-sm">
    <button disabled={page===0} onClick={()=>setPage(p=>Math.max(0,p-1))} className="underline disabled:opacity-40">Previous</button>

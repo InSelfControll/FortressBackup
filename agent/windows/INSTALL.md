@@ -48,6 +48,32 @@ After saving, follow check-ins and operations in **Managed Clients**. A successf
 installation/configuration does not mean a backup has completed; test a backup
 and a complete restore before relying on it. Windows clients remain pre-production.
 
+## Browse and restore saved backups
+
+A backup creates a Restic **snapshot**, a saved version of the selected files.
+Listing snapshots does not create another backup. Windows VSS snapshots are
+separate temporary source copies used to read files consistently during backup.
+
+In the installed app, choose **Backups / Restore**, then **Load saved backups**.
+This opens inside the existing window and uses the saved controller credentials.
+Choose a saved backup, select a folder and click **Open folder** to browse, and check individual files
+or folders. Use **Restore selected** or **Restore entire backup**. A checked folder
+includes its contents; up to 100 selections are allowed per restore. Selections
+remain checked when you navigate between folders. **Clear selection** resets them.
+
+Restored files go into a new folder under
+`C:\ProgramData\FortressBackup\restores\<job-id>`; original files are preserved.
+Use **Open restored folder** after completion, then copy recovered files to their
+final location. This protected folder requires administrator access. A failed
+restore can leave partial files there; inspect agent.log before using them.
+
+The dashboard offers the same controls under **Managed Clients → Browse backups
+and restore**. The laptop must be online and configured. Requests remain queued
+until the agent checks in; progress and the actual operation appear on the dashboard.
+After upgrading from an older version, open Configuration and **Save and connect**
+to update the background runtime and enable recovery. Clicking the app again
+restores and focuses its existing window.
+
 ## Upgrade and uninstall
 
 Run the newer installer to upgrade the app. Saved configuration and the existing

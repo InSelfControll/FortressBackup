@@ -2,22 +2,25 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import crypto from 'node:crypto';
 import { getOne, query, run } from '../db/helpers.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
+import type {ManagedOperation,ManagedRequest} from '../../types';
+import {managedRequest,managedResult,recoveryCapability} from '../services/managedRecovery.js';
 import {managedRepository} from '../services/managedRepository.js';
 
 // Source folders and executable commands remain local. Setup credentials are
 // released only over HTTPS to an agent with an administrator-assigned repository.
 const router = Router();
-type Operation = 'backup' | 'check' | 'snapshots';
+type Operation = ManagedOperation;
 type Agent = {
   id: string; name: string; token_hash: string; created_at: string;
   last_seen: string | null; disabled: number; schedule_minutes: number; next_run_at: string | null;
+  capabilities?: string;
   repository_job_id?: string|null; repository_name?: string|null; storage_name?: string|null;
 };
 type AgentJob = {
   id: string; client_id: string; operation: Operation;
   state: 'pending' | 'running' | 'success' | 'failed'; created_at: string;
   started_at: string | null; finished_at: string | null; lease_until: string | null;
-  message: string | null;
+  message: string | null; request_json?:string|null; result_json?:string|null; has_result?:number;
 };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sha256 = (v: string) => crypto.createHash('sha256').update(v).digest('hex');
@@ -30,12 +33,13 @@ const publicAgent = ({ token_hash: _secret, ...safe }: Agent) => ({
   id: safe.id, name: safe.name, createdAt: safe.created_at,
   lastSeen: safe.last_seen, disabled: !!safe.disabled,
   scheduleMinutes: safe.schedule_minutes, nextRunAt: safe.next_run_at,
+  capabilities:JSON.parse(safe.capabilities||'[]'),
   repositoryJobId:safe.repository_job_id||null,repositoryName:safe.repository_name||null,storageName:safe.storage_name||null
 });
 const publicJob = (j: AgentJob) => ({
   id: j.id, operation: j.operation, state: j.state,
   createdAt: j.created_at, startedAt: j.started_at,
-  finishedAt: j.finished_at, message: j.message
+  finishedAt: j.finished_at, message: j.message, hasResult:!!(j.result_json||j.has_result)
 });
 const isConflict = (e: unknown) =>
   /unique|constraint|duplicate key/i.test(e instanceof Error ? e.message : String(e));
@@ -89,9 +93,9 @@ router.get('/admin', authenticateToken, requireAdmin, async (req, res, next) => 
       return res.status(400).json({error:'Invalid pagination'});
     const agents=await query<Agent>(agentSelect+' ORDER BY m.created_at DESC LIMIT ? OFFSET ?',[limit,offset]);
     const recent=await query<AgentJob>(`
-      SELECT id,client_id,operation,state,created_at,started_at,finished_at,lease_until,message
+      SELECT id,client_id,operation,state,created_at,started_at,finished_at,lease_until,message,CASE WHEN result_json IS NOT NULL THEN 1 ELSE 0 END AS has_result
       FROM (
-        SELECT *,ROW_NUMBER() OVER(PARTITION BY client_id ORDER BY created_at DESC) AS rn
+        SELECT *,ROW_NUMBER() OVER(PARTITION BY client_id ORDER BY CASE WHEN state IN ('pending','running') THEN 0 ELSE 1 END,created_at DESC) AS rn
         FROM managed_jobs WHERE client_id IN (
           SELECT id FROM managed_clients ORDER BY created_at DESC LIMIT ? OFFSET ?
         )
@@ -103,6 +107,10 @@ router.get('/admin', authenticateToken, requireAdmin, async (req, res, next) => 
     }
     res.json(agents.map(a=>({...publicAgent(a),jobs:grouped.get(a.id)??[]})));
   }catch(e){next(e);}
+});
+
+router.get('/admin/activity',authenticateToken,requireAdmin,async(_req,res,next)=>{
+ try{res.json(await query(`SELECT j.operation,COUNT(*) AS count FROM managed_jobs j JOIN managed_clients c ON c.id=j.client_id WHERE j.state='running' GROUP BY j.operation`))}catch(error){next(error)}
 });
 
 router.get('/admin/:id', authenticateToken, requireAdmin, async (req, res, next) => {
@@ -142,24 +150,48 @@ router.post('/setup',async(req,res,next)=>{
   }catch(e){next(e)}
 });
 
-router.post('/admin/:id/jobs', authenticateToken, requireAdmin, async (req, res, next) => {
-  try {
-    const agent = await lookup(req.params.id);
-    if (!agent) return res.sendStatus(404);
-    if (agent.disabled) return res.status(409).json({ error: 'Client disabled' });
-    const operation = req.body?.operation;
-    if (!['backup', 'check', 'snapshots'].includes(operation))
-      return res.status(400).json({ error: 'Unsupported operation' });
-    const job = { id: crypto.randomUUID(), operation, createdAt: new Date().toISOString() };
-    try {
-      await run(`INSERT INTO managed_jobs(id,client_id,operation,state,created_at)
-        VALUES(?,?,?,'pending',?)`, [job.id, agent.id, operation, job.createdAt]);
-    } catch (e) {
-      if (isConflict(e)) return res.status(409).json({ error: 'Client already has an active job' });
-      throw e;
-    }
-    res.status(201).json({ ...job, state: 'pending' });
-  } catch (e) { next(e); }
+async function enqueue(agent:Agent,body:any){
+ const operation=body?.operation;
+ if(!['backup','check','snapshots','files','restore'].includes(operation))return {status:400,body:{error:'Unsupported operation'}};
+ if((operation==='files'||operation==='restore')&&!JSON.parse(agent.capabilities||'[]').includes(recoveryCapability)){
+  return {status:409,body:{error:'Update the Windows agent: open the installed app and Save and connect first.'}};
+ }
+ let request:ManagedRequest;
+ try{request=managedRequest(operation,body?.request??{})}catch(error){return {status:400,body:{error:error instanceof Error?error.message:'Invalid operation'}}}
+ const job={id:crypto.randomUUID(),operation,createdAt:new Date().toISOString()};
+ try{
+  await run(`INSERT INTO managed_jobs(id,client_id,operation,state,created_at,request_json) VALUES(?,?,?,'pending',?,?)`,[job.id,agent.id,operation,job.createdAt,JSON.stringify(request)]);
+ }catch(error){if(isConflict(error))return {status:409,body:{error:'Client already has an active job'}};throw error}
+ return {status:201,body:{...job,state:'pending'}};
+}
+async function resultFor(clientId:string,id:unknown){
+ if(typeof id!=='string'||!uuid.test(id))return null;
+ const job=await getOne<AgentJob>('SELECT * FROM managed_jobs WHERE id=? AND client_id=?',[id,clientId]);
+ return job?{...publicJob(job),request:job.request_json?JSON.parse(job.request_json):null,result:job.result_json?JSON.parse(job.result_json):null}:null;
+}
+router.post('/admin/:id/jobs',authenticateToken,requireAdmin,async(req,res,next)=>{
+ try{
+  const agent=await lookup(req.params.id);
+  if(!agent)return res.sendStatus(404);
+  if(agent.disabled)return res.status(409).json({error:'Client disabled'});
+  const response=await enqueue(agent,req.body)
+  res.status(response.status).json(response.body);
+ }catch(error){next(error)}
+});
+router.get('/admin/:id/jobs/:jobId',authenticateToken,requireAdmin,async(req,res,next)=>{
+ try{const result=await resultFor(req.params.id,req.params.jobId);res.set('Cache-Control','no-store');if(!result)return res.sendStatus(404);res.json(result)}catch(error){next(error)}
+});
+// The installed app may request only fixed operations for its own identity.
+router.post('/request',agentAuth,async(req,res,next)=>{
+ try{
+  const agent=await lookup((req as any).managedAgent);
+  if(!agent)return res.sendStatus(401);
+  const response=await enqueue(agent,req.body)
+  res.status(response.status).json(response.body);
+ }catch(error){next(error)}
+});
+router.post('/result',agentAuth,async(req,res,next)=>{
+ try{const result=await resultFor((req as any).managedAgent,req.body?.id);res.set('Cache-Control','no-store');if(!result)return res.sendStatus(404);res.json(result)}catch(error){next(error)}
 });
 
 router.put('/admin/:id/schedule', authenticateToken, requireAdmin, async (req, res, next) => {
@@ -198,36 +230,43 @@ router.post('/poll', agentAuth, async (req, res, next) => {
   try {
     const id = (req as any).managedAgent as string;
     const now = new Date().toISOString();
-    await run('UPDATE managed_clients SET last_seen=? WHERE id=?', [now, id]);
+    if(req.body?.capabilities!==undefined){
+      if(!Array.isArray(req.body.capabilities)||req.body.capabilities.length>8||!req.body.capabilities.every((value:unknown)=>value===recoveryCapability))return res.status(400).json({error:'Invalid capabilities'});
+      await run('UPDATE managed_clients SET last_seen=?,capabilities=? WHERE id=?',[now,JSON.stringify([...new Set(req.body.capabilities)]),id]);
+    }else await run('UPDATE managed_clients SET last_seen=? WHERE id=?', [now, id]);
     await run(`UPDATE managed_jobs SET state='failed',finished_at=?,message='Execution lease expired; verify remote state'
       WHERE client_id=? AND state='running' AND lease_until<?`, [now, id, now]);
     // A lost poll response must not strand a leased job. The Windows client
     // persists an active-run marker and refuses to execute it twice after a crash.
     const running=await getOne<{id:string;operation:Operation}>(
-      "SELECT id,operation FROM managed_jobs WHERE client_id=? AND state='running' LIMIT 1",[id]);
-    if(running)return res.json({job:running,resumed:true});
+      "SELECT id,operation,request_json FROM managed_jobs WHERE client_id=? AND state='running' LIMIT 1",[id]);
+    if(running)return res.json({job:{id:running.id,operation:running.operation,request:(running as any).request_json?JSON.parse((running as any).request_json):{}},resumed:true});
     // Atomic compare-and-claim; unique partial index enforces one active job.
     const job = await getOne<{ id: string; operation: Operation }>(`
       UPDATE managed_jobs SET state='running', started_at=?, lease_until=?
       WHERE id=(SELECT id FROM managed_jobs WHERE client_id=? AND state='pending' ORDER BY created_at LIMIT 1)
         AND state='pending'
-      RETURNING id,operation`,
+      RETURNING id,operation,request_json`,
       [now, new Date(Date.now()+5*60*60*1000).toISOString(), id]);
-    res.json({ job: job ?? null });
+    res.json({job:job?{id:job.id,operation:job.operation,request:(job as any).request_json?JSON.parse((job as any).request_json):{}}:null});
   } catch (e) { next(e); }
 });
 
 router.post('/report', agentAuth, async (req, res, next) => {
   try {
     const clientId = (req as any).managedAgent as string;
-    const { id, success, message } = req.body ?? {};
+    const { id, success, message, data } = req.body ?? {};
     if (!uuid.test(id ?? '') || typeof success !== 'boolean' ||
         (message !== undefined && (typeof message !== 'string' || message.length > 1024)))
       return res.status(400).json({ error: 'Invalid report' });
+    const existing=await getOne<AgentJob>('SELECT * FROM managed_jobs WHERE id=? AND client_id=?',[id,clientId]);
+    if(!existing)return res.status(409).json({error:'Job is not running'});
+    let result=null;
+    try{if(success)result=managedResult(existing.operation,data,managedRequest(existing.operation,existing.request_json?JSON.parse(existing.request_json):{}))}catch(error){return res.status(400).json({error:error instanceof Error?error.message:'Invalid result'})}
     const row = await getOne<{ id: string }>(`
-      UPDATE managed_jobs SET state=?,finished_at=?,message=?
+      UPDATE managed_jobs SET state=?,finished_at=?,message=?,result_json=?
       WHERE id=? AND client_id=? AND state='running' RETURNING id`,
-      [success ? 'success' : 'failed', new Date().toISOString(), message ?? '', id, clientId]);
+      [success ? 'success' : 'failed', new Date().toISOString(), message ?? '', result?JSON.stringify(result):null, id, clientId]);
     if (!row) {
       // Repeated delivery after a lost acknowledgement must be safe.
       const prior = await getOne<{state: string}>(
