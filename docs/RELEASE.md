@@ -11,7 +11,16 @@
 - Individual Windows executables, installer, configuration example, and guides
   are also attached. `SHA256SUMS` covers every downloadable release asset.
 
-## Fixes
+## Current changes
+
+- Show actual running operation types and engines on the dashboard, including repository checks, backup browsing, and restores.
+- Browse saved Windows backups and restore all files or selected files/folders from Managed Clients or **Backups / Restore** in the installed app. Both use the saved connection and the tracked outbound queue.
+- Recover Windows files to a fresh protected folder under `C:\ProgramData\FortressBackup\restores\<job-id>`, preserving original files. Repeated app launches focus its existing window.
+- After upgrading, open Configuration and **Connect → Save and connect** to update the background runtime and enable recovery.
+- A backup saves files; a Restic snapshot is the saved version it creates. Listing snapshots does not create another backup.
+- Retry transient Defender updater RPC failures without relaxing the required successful update, scan, and installer verification.
+
+## Earlier fixes included
 
 - Add the Fortress icon to the Windows app, installer, uninstaller, Start menu,
   taskbar, and configuration window, with executable version information.

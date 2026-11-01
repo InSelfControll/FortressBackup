@@ -122,6 +122,9 @@ jobs:
           name: windows-setup-gui-verification
           path: ${{ runner.temp }}/fortress-setup-gui.png
           if-no-files-found: ignore
+      - name: Verify Defender updater retry and failure gates
+        shell: powershell
+        run: ./agent/windows/test-release-retry.ps1
       - name: Verify single-file application installer lifecycle
         shell: powershell
         timeout-minutes: 5

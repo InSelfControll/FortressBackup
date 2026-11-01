@@ -35,8 +35,19 @@ try {
         throw 'Stable releases require valid, timestamped Authenticode signatures on executable and PowerShell files. Configure a trusted code-signing identity first.'
     }
     if((Get-Service WinDefend).Status -ne 'Running'){Start-Service WinDefend}
-    Update-MpSignature
-    $engine=Get-MpComputerStatus
+    # Defender platform updates can restart its CIM provider mid-request.
+    # Retry only transient RPC failures; an update must still succeed before scanning.
+    for($attempt=0;$attempt -lt 3;$attempt++){
+        try {
+            Update-MpSignature
+            $engine=Get-MpComputerStatus
+            break
+        }catch{
+            if($attempt -ge 2 -or $_.FullyQualifiedErrorId -notmatch '0x800706b[ae]'){throw}
+            Write-Host 'Defender RPC service is temporarily unavailable; retrying the signature update.'
+            Start-Sleep -Seconds 10
+        }
+    }
     if(!$engine.AMServiceEnabled -or !$engine.AMEngineVersion -or !$engine.AntivirusSignatureVersion){throw 'Microsoft Defender is not ready to scan release files'}
     $scanner=Get-ChildItem -Path (Join-Path $env:ProgramData 'Microsoft\Windows Defender\Platform\*\MpCmdRun.exe') -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
     $scannerPath=if($scanner){$scanner.FullName}else{Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'}
