@@ -221,7 +221,7 @@ function Set-FortressTheme($Form,$Recovery){
       folderLabel=@(235,405,480,28);folders=@(235,442,505,140)
       addFolder=@(755,442,155,38);removeFolder=@(755,491,155,38)
       progress=@(235,602,675,8);status=@(235,625,675,50)
-      install=@(575,688,170,38);close=@(760,688,150,38);backups=@(20,176,185,44)
+      install=@(20,410,185,44);close=@(20,470,185,40);backups=@(20,176,185,44)
     }
     foreach($name in $placements.Keys){$c=$Form.Controls[$name];if($c){$b=$placements[$name];$c.SetBounds($b[0],$b[1],$b[2],$b[3])}}
     $Form.Controls['heading'].Text='Device protection'
