@@ -44,7 +44,7 @@ try {
             break
         }catch{
             if($attempt -ge 2 -or $_.FullyQualifiedErrorId -notmatch '0x800706b[ae]'){throw}
-            Write-Host 'Defender RPC service is restarting; waiting before retrying the signature update.'
+            Write-Host 'Defender RPC service is temporarily unavailable; retrying the signature update.'
             Start-Sleep -Seconds 10
         }
     }
