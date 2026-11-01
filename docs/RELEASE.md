@@ -13,6 +13,10 @@
 
 ## Current changes
 
+- Windows app reconnect now updates an older background runtime through the existing verified setup and rollback path. An app-only upgrade no longer leaves the older snapshot reporting agent behind.
+- **Snapshots** automatically loads saved versions; **Backup now** creates a new saved version. Labels use “Backup” consistently.
+
+
 - Enable disabled enrollments or remove them and their controller history. Repository backups are retained.
 - Cancel queued/running jobs; running cancellation remains pending until the worker stops.
 - Restore old-device snapshots to a replacement Windows device, including Windows destinations in the main dashboard restore dialog.
@@ -22,7 +26,7 @@
 - Show actual running operation types and engines on the dashboard, including repository checks, backup browsing, and restores.
 - Browse saved Windows backups and restore all files or selected files/folders from Managed Clients or **Backups / Restore** in the installed app. Both use the saved connection and the tracked outbound queue.
 - Recover Windows files to a fresh protected folder under `C:\ProgramData\FortressBackup\restores\<job-id>`, preserving original files. Repeated app launches focus its existing window.
-- After upgrading, open Configuration and **Connect → Save and connect** to update the background runtime and enable recovery.
+- Open the upgraded app to reconnect and update its existing background runtime automatically. Save and connect remains available for changing folders or repairing configuration.
 - A backup saves files; a Restic snapshot is the saved version it creates. Listing snapshots does not create another backup.
 - Retry transient Defender updater RPC failures without relaxing the required successful update, scan, and installer verification.
 

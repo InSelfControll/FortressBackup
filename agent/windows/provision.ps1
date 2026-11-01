@@ -26,7 +26,7 @@ function Save-ManagedRepository([object]$Profile,[string]$Directory){
 }
 
 function Install-ManagedSetup([string]$SetupRoot,[object]$Profile,[string]$Controller,[string]$Id,[string]$Token,[string[]]$Sources){
-    if(!$Sources.Count){throw 'Choose at least one folder to back up.'}
+    if(!$Sources.Count){throw 'Choose at least one backup folder.'}
     foreach($source in $Sources){
         if(![IO.Path]::IsPathRooted($source) -or !(Test-Path -LiteralPath $source -PathType Container)){throw 'A selected folder no longer exists. Choose it again.'}
     }
@@ -56,4 +56,23 @@ function Install-ManagedSetup([string]$SetupRoot,[object]$Profile,[string]$Contr
     }finally{
         if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue}
     }
+}
+
+# The installed UI and the SYSTEM runtime live in different protected folders.
+# Bring an existing enrollment forward when connecting after an app upgrade.
+function Update-ManagedRuntime([string]$SetupRoot,[object]$Profile,[string]$Controller,[string]$Id,[string]$Token){
+    $runtime=Join-Path $env:ProgramData 'FortressBackup'
+    $configPath=Join-Path $runtime 'agent.json'
+    if(!(Test-Path -LiteralPath $configPath)){return $false}
+    $saved=Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+    if($saved.agentId -ne $Id -or $saved.controllerUrl.TrimEnd('/') -ne $Controller.TrimEnd('/')){return $false}
+    $changed=$saved.repositoryJobId -ne $Profile.repositoryJobId
+    foreach($name in @('fortress-agent.exe','restic.exe')){
+        $installed=Join-Path $runtime $name
+        if(!(Test-Path -LiteralPath $installed) -or (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath (Join-Path $SetupRoot $name) -Algorithm SHA256).Hash){$changed=$true}
+    }
+    if(!$changed){return $false}
+    # Reuse checksum verification, SYSTEM preflight, active-job protection and rollback.
+    [void](Install-ManagedSetup -SetupRoot $SetupRoot -Profile $Profile -Controller $Controller -Id $Id -Token $Token -Sources @($saved.sources))
+    return $true
 }

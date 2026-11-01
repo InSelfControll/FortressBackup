@@ -12,7 +12,14 @@ function Invoke-RecoveryAPI([string]$Route,$Body){
     [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
     try {
         $result=Invoke-RestMethod -Uri ($config.controllerUrl.TrimEnd('/')+'/api/managed-agents/'+$Route) -Method Post -ContentType 'application/json' -Headers @{'Authorization'='Bearer '+$secret;'X-Fortress-Agent-Id'=[string]$config.agentId} -Body ($Body | ConvertTo-Json -Depth 8 -Compress) -TimeoutSec 30 -MaximumRedirection 0
-    }catch{throw 'Controller request failed. Check the HTTPS connection and Managed Clients. If another operation is active, wait for it to finish; after an upgrade click Save and connect.'}
+    }catch{
+        $detail='Controller request failed. Check the HTTPS connection and Managed Clients.'
+        # Show actionable controller conflicts (old runtime / active job), never credentials.
+        if($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 409){
+            try{$errorBody=$_.ErrorDetails.Message | ConvertFrom-Json;if($errorBody.error){$detail=([string]$errorBody.error -replace '[\x00-\x1f\x7f]',' ').Substring(0,[Math]::Min(400,([string]$errorBody.error).Length))}}catch{}
+        }
+        throw $detail
+    }
     if($Route -eq 'request'){
         # A queued request remains visible even if the task is temporarily unavailable.
         try {Start-ScheduledTask -TaskName 'FortressBackup-Windows' -ErrorAction Stop}catch{}
@@ -31,8 +38,10 @@ function Add-RecoveryPanel($Form,$SetupState){
     }
     $heading=Add-RecoveryControl Label heading 'Saved backups and restore' 20 15 610 30
     $heading.Font=New-Object Drawing.Font('Segoe UI',14,[Drawing.FontStyle]::Bold)
+    $heading.Width=405
+    $backup=Add-RecoveryControl Button backup 'Backup now' 440 15 190 33
     [void](Add-RecoveryControl Label explanation 'A backup creates a snapshot: a saved version of your files. Browse saved versions, then restore everything or selected files into a new recovery folder. Original files are preserved.' 20 52 610 65)
-    $load=Add-RecoveryControl Button load 'Load saved backups' 20 121 190 33
+    $load=Add-RecoveryControl Button load 'Refresh snapshots' 20 121 190 33
     $scope=Add-RecoveryControl CheckBox scope 'Include backups from old / other devices' 230 121 400 33
     $scope.Checked=$true
     $versions=Add-RecoveryControl ComboBox snapshots '' 20 167 610 30
@@ -52,9 +61,9 @@ function Add-RecoveryPanel($Form,$SetupState){
     $cancel=Add-RecoveryControl Button cancel 'Cancel operation' 235 558 200 33
     $open=Add-RecoveryControl Button open 'Open restored folder' 20 558 190 33
     $back=Add-RecoveryControl Button back 'Configuration' 460 558 170 33
-    $scope.Add_CheckedChanged({$r.AllDevices=$scope.Checked;$r.Snapshot='';$r.Selected.Clear();$selected.Text='0 selected.';$selected.Text='0 selected.';$versions.Items.Clear();$entries.Items.Clear()}.GetNewClosure())
+    $scope.Add_CheckedChanged({$r.AllDevices=$scope.Checked;$r.Snapshot='';$r.Selected.Clear();$selected.Text='0 selected.';$versions.Items.Clear();$entries.Items.Clear()}.GetNewClosure())
     $setEnabled={param([bool]$enabled)
-        $load.Enabled=$enabled;$scope.Enabled=$enabled;$versions.Enabled=$enabled;$back.Enabled=$enabled
+        $load.Enabled=$enabled;$backup.Enabled=$enabled;$scope.Enabled=$enabled;$versions.Enabled=$enabled;$back.Enabled=$enabled
         $up.Enabled=$enabled -and $r.Snapshot -and $r.Directory -ne '/'
         $more.Enabled=$enabled -and $r.More
         $entries.Enabled=$enabled;$clear.Enabled=$enabled;$enter.Enabled=$enabled
@@ -65,7 +74,7 @@ function Add-RecoveryPanel($Form,$SetupState){
     }.GetNewClosure()
     $start={param([string]$operation,$request)
         if($r.Worker -or ($r.Job -and $r.Job.state -in @('pending','running'))){return}
-        $request.allDevices=$r.AllDevices;
+        if($operation -in @('snapshots','files','restore')){$request.allDevices=$r.AllDevices}
         $r.Operation=$operation;$r.Request=$request;$r.Job=$null;$r.RestorePath=''
         $status.Text=$operation+': queuing on controller...'; & $setEnabled $false
         $r.Worker=[PowerShell]::Create()
@@ -81,6 +90,7 @@ function Add-RecoveryPanel($Form,$SetupState){
         $versions.Items.Clear();$entries.Items.Clear()
         & $start 'snapshots' @{offset=0}
     }.GetNewClosure())
+    $backup.Add_Click({ & $start 'backup' @{} }.GetNewClosure())
     $versions.Add_SelectionChangeCommitted({
         if($versions.SelectedItem){$r.Snapshot=$versions.SelectedItem.Id;$r.Selected.Clear();$selected.Text='0 selected.'; & $browse '/'}
     }.GetNewClosure())
@@ -130,7 +140,7 @@ function Add-RecoveryPanel($Form,$SetupState){
                             [void]$versions.Items.Add([pscustomobject]@{Id=$s.id;Label=([datetime]$s.time).ToLocalTime().ToString('g')+' / '+$s.id.Substring(0,8)+' / '+$s.hostname})
                         }
                         $r.Offset=$versions.Items.Count;$r.More=[bool]$data.hasMore
-                        if(!$versions.Items.Count){$status.Text='No saved backups found for this laptop. Run a backup first.'}
+                        $status.Text=if(!$versions.Items.Count){'No snapshots found in the selected scope. Use Backup now to create the first saved version.'}else{[string]$versions.Items.Count+' snapshots loaded. Choose a saved version to browse files.'}
                     }elseif($r.Operation -eq 'files'){
                         foreach($entry in @($data.entries)){
                             $r.Entries+=@($entry)
@@ -141,6 +151,8 @@ function Add-RecoveryPanel($Form,$SetupState){
                     }elseif($r.Operation -eq 'restore'){
                         $r.RestorePath=[string]$data.restorePath
                         $status.Text='Restored to: '+$r.RestorePath
+                    }elseif($r.Operation -eq 'backup'){
+                        $status.Text='Backup saved. Refresh snapshots to view the new saved version.'
                     }
                 }
             }catch{$status.Text='Operation failed: '+$_.Exception.Message}

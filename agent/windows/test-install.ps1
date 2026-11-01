@@ -24,6 +24,8 @@ try {
     $hash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
     & (Join-Path $PSScriptRoot 'install-task.ps1') -AgentPath $exe -ConfigPath $cfg -AgentSha256 $hash -ResticSha256 $hash -TaskName $task -Managed
     $installedCfg=Join-Path $installed 'agent.json'
+    # Match the installed bundle before testing a later real runtime upgrade.
+    Copy-Item -LiteralPath $exe -Destination (Join-Path $PSScriptRoot 'restic.exe') -Force
     & (Join-Path $installed 'fortress-agent.exe') -config $installedCfg -operation validate
     if($LASTEXITCODE -ne 0){throw 'Installed configuration cannot be read by the real agent'}
     $bytes=[IO.File]::ReadAllBytes($installedCfg)
@@ -50,8 +52,17 @@ try {
         $http.Start()
         [IO.File]::WriteAllText((Join-Path $root 'ready'),'ready')
         try {
-            foreach($route in @('setup','setup','heartbeat')){
-                $request=$http.GetContext()
+            foreach($route in @('setup','setup','heartbeat','heartbeat')){
+                do {
+                    $request=$http.GetContext()
+                    $background=$request.Request.RawUrl -eq '/api/managed-agents/poll'
+                    if($background){
+                        $reader=New-Object IO.StreamReader($request.Request.InputStream);[void]$reader.ReadToEnd();$reader.Dispose()
+                        $bytes=[Text.Encoding]::UTF8.GetBytes('{"job":null,"ok":true}')
+                        $request.Response.ContentType='application/json';$request.Response.ContentLength64=$bytes.Length
+                        $request.Response.OutputStream.Write($bytes,0,$bytes.Length);$request.Response.Close()
+                    }
+                }while($background)
                 if($request.Request.HttpMethod -ne 'POST' -or $request.Request.RawUrl -ne ('/api/managed-agents/'+$route)){throw 'Setup tried to claim a job'}
                 if($request.Request.Headers['Authorization'] -ne ('Bearer '+$expectedToken) -or $request.Request.Headers['X-Fortress-Agent-Id'] -ne $agentId){throw 'Enrollment authentication missing'}
                 $response=if($route -eq 'setup'){$profileJson}else{'{"ok":true}'}
@@ -62,8 +73,9 @@ try {
                 $request.Response.Close()
                 [IO.File]::WriteAllText((Join-Path $root $route),'authenticated')
             }
+            $conflictSent=$false
             $snapshotId='a'*64
-            foreach($operation in @('snapshots','files','restore')){
+            foreach($operation in @('snapshots','files','restore','backup')){
                 $jobId=[guid]::NewGuid().ToString()
                 foreach($route in @('request','result')){
                     do {
@@ -74,6 +86,13 @@ try {
                             $bytes=[Text.Encoding]::UTF8.GetBytes('{"job":null,"ok":true}')
                             $request.Response.ContentType='application/json';$request.Response.ContentLength64=$bytes.Length
                             $request.Response.OutputStream.Write($bytes,0,$bytes.Length);$request.Response.Close()
+                        }elseif(!$conflictSent -and $operation -eq 'snapshots' -and $route -eq 'request'){
+                            if($request.Request.RawUrl -ne '/api/managed-agents/request'){throw 'Snapshot navigation did not request the backup list'}
+                            $reader=New-Object IO.StreamReader($request.Request.InputStream);[void]$reader.ReadToEnd();$reader.Dispose()
+                            $bytes=[Text.Encoding]::UTF8.GetBytes('{"error":"Client already has an active job"}')
+                            $request.Response.StatusCode=409;$request.Response.ContentType='application/json';$request.Response.ContentLength64=$bytes.Length
+                            $request.Response.OutputStream.Write($bytes,0,$bytes.Length);$request.Response.Close()
+                            $conflictSent=$true;$background=$true
                         }
                     }while($background)
                     if($request.Request.RawUrl -ne ('/api/managed-agents/'+$route)){throw ('Recovery used an unexpected route: '+$request.Request.RawUrl)}
@@ -82,6 +101,7 @@ try {
                     $body=$reader.ReadToEnd() | ConvertFrom-Json;$reader.Dispose()
                     if($route -eq 'request'){
                         if($body.operation -ne $operation){throw 'Recovery queued the wrong operation'}
+                        if($operation -eq 'backup' -and $body.request.PSObject.Properties['allDevices']){throw 'Backup inherited an invalid snapshot-list scope'}
                         if($operation -eq 'restore' -and ($body.request.paths.Count -ne 1 -or $body.request.paths[0] -ne '/document[1].txt')){throw 'Recovery lost the exact selected filename'}
                         $response=@{id=$jobId;state='pending';operation=$operation}
                     }else{
@@ -142,6 +162,9 @@ try {
         $window.Controls['close'].PerformClick()
         if($beforeGui -ne (Get-FileHash -LiteralPath $installedCfg -Algorithm SHA256).Hash){throw 'Cancelling GUI setup changed the installed configuration'}
     }finally{if(!$window.IsDisposed){$window.Dispose()}}
+    # A newer installed bundle updates the old SYSTEM runtime on automatic reconnect.
+    Copy-Item -LiteralPath $restic -Destination (Join-Path $PSScriptRoot 'restic.exe') -Force
+    @(($hash.ToLowerInvariant()+'  fortress-agent.exe'),($resticHash.ToLowerInvariant()+'  restic.exe')) | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'SHA256SUMS') -Encoding ascii
     # A reopened configured app connects automatically without another button click.
     $reopenConfig=Get-Content -LiteralPath $installedCfg -Raw | ConvertFrom-Json
     $reopenConfig.controllerUrl=$config.controllerUrl
@@ -152,8 +175,13 @@ try {
         $deadline=(Get-Date).AddSeconds(40)
         while(!$window.Tag.Profile -and (Get-Date) -lt $deadline){[Windows.Forms.Application]::DoEvents();Start-Sleep -Milliseconds 50}
         if(!$window.Tag.Profile){throw ('Saved enrollment did not reconnect automatically: '+$window.Controls['status'].Text)}
+        if(!$window.Tag.Profile.runtimeUpdated){throw 'New app did not update the older SYSTEM runtime automatically'}
+        if((Get-FileHash -LiteralPath (Join-Path $installed 'restic.exe') -Algorithm SHA256).Hash -ne $resticHash){throw 'Background runtime is still from the older app'}
+        if((Get-Content -LiteralPath $installedCfg -Raw | ConvertFrom-Json).sources[0] -ne $root){throw 'Automatic runtime upgrade changed backup folders'}
         $window.Close()
     }finally{if(!$window.IsDisposed){$window.Dispose()}}
+    Disable-ScheduledTask -TaskName 'FortressBackup-Windows' | Out-Null
+    Stop-ScheduledTask -TaskName 'FortressBackup-Windows' -ErrorAction SilentlyContinue
     $generated=Join-Path $root 'generated credentials'
     $credentials=Save-ManagedRepository -Profile $profile -Directory $generated
     foreach($name in $credentials.Keys){$config[$name]=$credentials[$name]}
@@ -177,6 +205,8 @@ try {
         $window.Show();$window.Controls['backups'].PerformClick()
         $recovery=$window.Controls['recovery']
         if(!$recovery.Visible){throw 'Recovery did not open in the existing window'}
+        if($window.Controls['backups'].Text -ne 'Snapshots' -or $window.Controls['backupNow'].Text -ne 'Backup now'){throw 'Snapshot / backup navigation missing'}
+        Wait-RecoveryUI {$recovery.Controls['status'].Text -like '*Client already has an active job*' -and $recovery.Controls['load'].Enabled}
         $recovery.Controls['load'].PerformClick()
         Wait-RecoveryUI {$recovery.Controls['snapshots'].Items.Count -eq 1 -and $recovery.Controls['snapshots'].Enabled}
         $recovery.Controls['snapshots'].SelectedIndex=0
@@ -189,6 +219,8 @@ try {
         Wait-RecoveryUI {$recovery.Controls['status'].Text -like 'Restored to:*' -and $recovery.Controls['open'].Enabled}
         $recovery.Controls['back'].PerformClick()
         if($recovery.Visible){throw 'Configuration did not return in the same window'}
+        $window.Controls['backupNow'].PerformClick()
+        Wait-RecoveryUI {$recovery.Controls['status'].Text -like 'Backup saved.*' -and $recovery.Controls['backup'].Enabled}
         $window.Close()
     }finally{if(!$window.IsDisposed){$window.Dispose()}}
     $beforeKey=(Get-FileHash -LiteralPath $savedConfig.sftpKeyFile -Algorithm SHA256).Hash
@@ -220,6 +252,8 @@ try {
     if($certificate){
         Remove-Item -LiteralPath "Cert:\LocalMachine\Root\$($certificate.Thumbprint)","Cert:\LocalMachine\My\$($certificate.Thumbprint)" -Force -ErrorAction SilentlyContinue
     }
+    Stop-ScheduledTask -TaskName 'FortressBackup-Windows' -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName 'FortressBackup-Windows' -Confirm:$false -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $root,$installed -Recurse -Force -ErrorAction SilentlyContinue
 }

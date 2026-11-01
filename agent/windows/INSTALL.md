@@ -32,7 +32,7 @@ installs protected credentials, and checks storage and controller access as
 SYSTEM before starting the background agent. Errors and progress stay visible.
 Closing the app before saving leaves your current backup configuration unchanged.
 
-Reopen Fortress Backup to edit folders later. It automatically validates the saved connection and loads the
+Reopen Fortress Backup to edit folders later. It automatically validates the saved connection, updates an older background runtime with the installed release using the existing protected setup/rollback checks, and loads the
 masked enrollment token, and selected folders. Saving folder changes preserves
 existing exclusions, host name, timeout, and VSS settings.
 
@@ -47,6 +47,10 @@ Diagnostics are in `C:\ProgramData\FortressBackup\setup-check.log` and `agent.lo
 After saving, follow check-ins and operations in **Managed Clients**. A successful
 installation/configuration does not mean a backup has completed; test a backup
 and a complete restore before relying on it. Windows clients remain pre-production.
+
+## Snapshots and backup
+
+Click **Backup now** to save a new snapshot. Click **Snapshots** to automatically load saved backups, or **Refresh snapshots** to refresh the list. A snapshot is a saved backup version.
 
 ## Browse and restore saved backups
 
