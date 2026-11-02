@@ -15,6 +15,8 @@ export function driveConfig(target:string, text:string|undefined):string {
         if(section){selected=section[1]===match[1];if(selected){if(found)throw new Error('Duplicate Rclone remote');found=true}continue}
         if(!selected)continue;
         const entry=/^([a-z_]+)\s*=\s*(.*)$/.exec(line);
+        // Rclone may persist an empty service-account prompt in an OAuth remote.
+        if(entry?.[1]==='service_account_file' && entry[2]==='')continue;
         if(!entry || !allowed.has(entry[1]) || Object.hasOwn(values,entry[1]))throw new Error('The Drive remote contains unsupported settings. Import a standard OAuth Google Drive remote without commands or external credential files');
         values[entry[1]]=entry[2];
     }

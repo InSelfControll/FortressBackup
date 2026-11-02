@@ -21,6 +21,7 @@ const azureKey=Buffer.alloc(64,19).toString('base64');
 
 test('Drive import keeps only the selected OAuth remote and rejects executable/external configuration',()=>{
  const normalized=driveConfig('drive:folder',config);
+ expect(driveConfig('drive:folder',config.replace('type = drive','type = drive\nservice_account_file = '))).toBe(normalized);
  expect(normalized).toContain('[drive]');expect(normalized).not.toContain('unrelated');
  for(const bad of [config.replace('type = drive','type = local'),config.replace(token,'{}'),config+'[drive]\ntype=drive',config.replace('type = drive','type = drive\npassword_command = bad'),config.replace('type = drive','type = drive\nservice_account_file = C:\\credentials.json')])expect(()=>driveConfig('drive:folder',bad)).toThrow();
  for(const target of ['drive:../escape',':drive:folder','drive:folder\ncommand'])expect(()=>driveConfig(target,config)).toThrow();
