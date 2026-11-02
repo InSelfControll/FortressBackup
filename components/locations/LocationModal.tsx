@@ -66,12 +66,15 @@ export const getLocationFormState = (location: Location | null): Partial<Locatio
         region: sftpFields.region ?? location.region,
         accessKey: sftpFields.accessKey ?? location.accessKey,
         secretKey: location.secretKey,
+        hasAccessKey:location.hasAccessKey,hasSecretKey:location.hasSecretKey,
         hostPublicKey: location.hostPublicKey ?? serverLocation.host_public_key
     };
 };
 
 export const canSubmitLocation = (location: Partial<Location>): boolean => Boolean(
-    location.name && location.path && (location.type !== 'sftp' || location.hostPublicKey?.trim())
+    location.name && location.path && (location.type !== 'sftp' || location.hostPublicKey?.trim()) &&
+    (location.type !== 'azure' || ((location.accessKey || location.hasAccessKey) && (location.secretKey || location.hasSecretKey))) &&
+    (location.type !== 'gdrive' || location.secretKey || location.hasSecretKey)
 );
 
 export const buildLocationData = (
@@ -83,7 +86,7 @@ export const buildLocationData = (
     name: newLocation.name as string,
     type: newLocation.type as Location['type'],
     path: newLocation.type === 'sftp' ? buildSftpTarget(newLocation) : newLocation.path as string,
-    endpoint: newLocation.type === 'sftp' || isCustomS3 ? newLocation.endpoint : undefined,
+    endpoint: newLocation.type === 'sftp' || (newLocation.type === 's3' && isCustomS3) ? newLocation.endpoint : undefined,
     region: newLocation.region,
     access_key: newLocation.accessKey || undefined,
     secret_key: newLocation.secretKey || undefined,
@@ -214,6 +217,13 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                     </>
                 );
 
+            case 'azure':
+                return <div className="space-y-4">
+                    {([['path','Container name','fortress-backups'],['region','Repository folder (optional)','laptop'],['accessKey','Storage account name','mystorageaccount'],['secretKey','Storage account key','Paste account key']] as const).map(([field,label,placeholder])=><label key={field} className="block text-sm text-slate-300">{label}<input aria-label={label} type={field==='secretKey'?'password':'text'} value={String(newLocation[field]||'')} onChange={e=>setNewLocation({...newLocation,[field]:e.target.value})} placeholder={placeholder} className="w-full mt-2 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white" /></label>)}
+                    {newLocation.hasSecretKey && <p role="status" className="text-xs text-emerald-400">Azure credentials saved. Leave account name and key blank to keep them.</p>}
+                    <p className="text-xs text-slate-400">Use Restic for Azure backups. The repository encryption password belongs to the saved backup job and is separate from this storage account key.</p>
+                </div>;
+
             case 'nfs':
                 return (
                     <div className="space-y-2">
@@ -243,18 +253,24 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                 );
 
             case 'gdrive':
-            case 'onedrive':
                 return (
                     <>
                         <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl mb-4">
-                            <p className="text-xs text-amber-400">
-                                <strong>Rclone Required:</strong> This backend requires rclone configuration. Run <code className="bg-slate-800 px-1 rounded">rclone config</code> to set up authentication.
+                            <p className="text-xs text-amber-400">                                Authorize Google Drive once with <code>rclone config</code>, then import its unencrypted config below. Fortress securely provisions the selected remote to Windows and Linux sources. Use Restic for this destination. <a href="https://rclone.org/drive/" target="_blank" rel="noreferrer" className="underline">Google Drive authorization instructions</a>
                             </p>
                         </div>
                         <div className="space-y-2">
                             <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Rclone Remote Name</label>
                             <input type="text" value={newLocation.path || ''} onChange={e => setNewLocation({ ...newLocation, path: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="myremote:/backup-folder" />
                         </div>
+                        <label className="block text-sm text-slate-300">Import Rclone config
+                            <input aria-label="Import Rclone config" type="file" accept=".conf,.ini,.txt" className="block mt-2 w-full text-sm" onChange={async e=>{const file=e.target.files?.[0];if(!file)return;if(file.size>16384){setSaveError('Rclone config must be 16 KB or smaller');return}const config=await file.text();setNewLocation(current=>current.type==='gdrive'?({...current,secretKey:config}):current);setSaveError('')}} />
+                        </label>
+                        <label className="block text-sm text-slate-300">Or paste Rclone config
+                            <textarea aria-label="Rclone config" rows={4} value={newLocation.secretKey||''} onChange={e=>setNewLocation({...newLocation,secretKey:e.target.value})} className="w-full mt-2 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono text-sm" placeholder="[myremote]&#10;type = drive&#10;token = ..." />
+                        </label>
+                        {newLocation.hasSecretKey && <p role="status" className="text-xs text-emerald-400">Drive credentials saved. Leave blank to keep them.</p>}
+                        <p className="text-xs text-slate-400">Only the selected Google Drive OAuth remote is imported. Command hooks and external credential files are rejected. Deploy Restic again on Linux sources to install Rclone. Windows includes it.</p>
                     </>
                 );
 
@@ -292,7 +308,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                                 return (
                                     <button
                                         key={type.id}
-                                        onClick={() => setNewLocation({ ...newLocation, type: type.id as Location['type'], path: '', endpoint: '', accessKey: '', secretKey: '' })}
+                                        onClick={() => {if(newLocation.type!==type.id)setNewLocation({name:newLocation.name,type:type.id as Location['type'],path:'',endpoint:'',region:'',accessKey:'',secretKey:'',hasAccessKey:false,hasSecretKey:false})}}
                                         className={`p-3 rounded-xl border text-center transition-all ${newLocation.type === type.id ? `${type.color} border-current` : 'bg-slate-800 border-slate-700 hover:border-slate-600'}`}
                                     >
                                         <TypeIcon size={20} className="mx-auto mb-2" />
@@ -307,9 +323,9 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                                 return (
                                     <button
                                         key={type.id}
-                                        disabled
-                                        title="This storage backend is not implemented by the controller"
-                                        onClick={() => setNewLocation({ ...newLocation, type: type.id as Location['type'], path: '', endpoint: '', accessKey: '', secretKey: '' })}
+                                        disabled={!['azure','gdrive'].includes(type.id)}
+                                        title={['azure','gdrive'].includes(type.id)?'Restic backup destination':'This storage backend is not implemented by the controller'}
+                                        onClick={() => {if(newLocation.type!==type.id)setNewLocation({name:newLocation.name,type:type.id as Location['type'],path:'',endpoint:'',region:'',accessKey:'',secretKey:'',hasAccessKey:false,hasSecretKey:false})}}
                                         className={`p-3 rounded-xl border text-center transition-all ${newLocation.type === type.id ? `${type.color} border-current` : 'bg-slate-800 border-slate-700 hover:border-slate-600'}`}
                                     >
                                         <TypeIcon size={20} className="mx-auto mb-2" />

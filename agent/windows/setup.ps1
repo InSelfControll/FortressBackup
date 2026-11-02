@@ -32,13 +32,16 @@ try {
     }
     $agentHash=Get-ReleaseDigest 'fortress-agent.exe'
     $resticHash=Get-ReleaseDigest 'restic.exe'
+    $rcloneHash=$null
+    $setupConfig=Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+    if($setupConfig.rclonePath){$rcloneHash=Get-ReleaseDigest 'rclone.exe'}
     foreach($item in @(@($agent,$agentHash),@($restic,$resticHash))){
         if((Get-FileHash -LiteralPath $item[0] -Algorithm SHA256).Hash -ine $item[1]){throw 'Release binary checksum mismatch. Run the Fortress Backup installer again to repair the app.'}
     }
     & $agent -config $ConfigPath -operation validate
     if($LASTEXITCODE -ne 0){throw 'Configuration validation failed. Nothing was installed.'}
     Write-Host 'Installing protected files and checking storage and controller access as SYSTEM...'
-    & (Join-Path $PSScriptRoot 'install-task.ps1') -AgentPath $agent -ConfigPath $ConfigPath -AgentSha256 $agentHash -ResticSha256 $resticHash -Managed -VerifySetup
+    & (Join-Path $PSScriptRoot 'install-task.ps1') -AgentPath $agent -ConfigPath $ConfigPath -AgentSha256 $agentHash -ResticSha256 $resticHash -RcloneSha256 $rcloneHash -Managed -VerifySetup
     Start-ScheduledTask -TaskName FortressBackup-Windows
     Write-Host 'Setup verified. The agent has connected to the controller; polling has started.' -ForegroundColor Green
     Write-Host 'Open Managed Clients or the dashboard for check-ins and queued/running/completed operations.'

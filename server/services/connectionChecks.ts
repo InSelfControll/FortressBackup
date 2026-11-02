@@ -2,6 +2,34 @@ import { Client } from 'ssh2';
 import { sshHostVerifier, hostFingerprintFromPublicKey } from './ssh/hostKey.js';
 import type { SSHConnectionConfig } from './ssh/types.js';
 import type { Location } from '../db/locations.js';
+import {spawn} from 'node:child_process';
+import {mkdtemp,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {azureRepository,driveConfig} from './backup/cloudStorage.js';
+
+/** Storage-only read probe: no initialization, repository password or backup lease. */
+export async function checkCloudLocation(location:Location):Promise<void>{
+    const directory=await mkdtemp(join(tmpdir(),'fortress-cloud-check-'));
+    try{
+        const env={...process.env,RCLONE_CONFIG:join(directory,'rclone.conf')};
+        let target:string;
+        if(location.type==='gdrive'){
+            await writeFile(env.RCLONE_CONFIG,driveConfig(location.path,location.secret_key),{mode:0o600});
+            target=location.path;
+        }else if(location.type==='azure'){
+            azureRepository({destinationPath:location.path,destinationRegion:location.region,destinationAccessKey:location.access_key,destinationSecretKey:location.secret_key});
+            Object.assign(env,{RCLONE_AZUREBLOB_ACCOUNT:location.access_key,RCLONE_AZUREBLOB_KEY:location.secret_key});
+            target=`:azureblob:${location.path}/${location.region||''}`;
+        }else throw new Error('Unsupported cloud connection test');
+        await new Promise<void>((resolve,reject)=>{
+            const child=spawn('rclone',['lsf',target,'--max-depth','1','--retries','1','--low-level-retries','1','--contimeout','8s','--timeout','15s'],{env,stdio:'ignore'});
+            const timer=setTimeout(()=>{child.kill('SIGKILL');reject(new Error('Cloud connection check timed out'))},25000);
+            child.once('error',()=>{clearTimeout(timer);reject(new Error('Rclone is unavailable on the controller. Install it or update the controller image'))});
+            child.once('close',code=>{clearTimeout(timer);code===0?resolve():reject(new Error('Cloud authentication or folder access failed. Check the saved account credentials, remote name, and folder permissions'))});
+        });
+    }finally{await rm(directory,{recursive:true,force:true})}
+}
 
 /** Read-only probes with pinned host identity; never install tools or create repositories. */
 export function checkSSH(config: SSHConnectionConfig, remotePath?: string): Promise<void> {

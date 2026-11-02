@@ -10,6 +10,7 @@ param(
     [Parameter(Mandatory)][string]$ConfigPath,
     [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$AgentSha256,
     [Parameter(Mandatory)][ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ResticSha256,
+    [string]$RcloneSha256,
     [string]$TaskName='FortressBackup-Windows',
     [int]$DailyHour=2,
     [switch]$Managed,
@@ -26,6 +27,11 @@ $config=Get-Content -LiteralPath $sourceConfig -Raw | ConvertFrom-Json -ErrorAct
 if(!$config.resticPath -or !$config.passwordFile){throw 'Agent config requires resticPath and passwordFile'}
 $resticSource=(Resolve-Path -LiteralPath $config.resticPath -ErrorAction Stop).Path
 if(!((Get-FileHash -LiteralPath $resticSource -Algorithm SHA256).Hash -ieq $ResticSha256)){throw 'Restic binary SHA256 mismatch'}
+if($config.rclonePath){
+    if($RcloneSha256 -notmatch '^[a-fA-F0-9]{64}$'){throw 'A trusted Rclone SHA256 is required'}
+    $rcloneSource=(Resolve-Path -LiteralPath $config.rclonePath -ErrorAction Stop).Path
+    if((Get-FileHash -LiteralPath $rcloneSource -Algorithm SHA256).Hash -ine $RcloneSha256){throw 'Rclone binary SHA256 mismatch'}
+}
 if($config.sshCommand){throw 'Arbitrary RESTIC_SFTP_COMMAND is not allowed for elevated tasks'}
 $sourcePassword=(Resolve-Path -LiteralPath $config.passwordFile -ErrorAction Stop).Path
 $hasSFTP=!!($config.sftpKeyFile -or $config.sftpKnownHostsFile)
@@ -85,6 +91,20 @@ try{
         $config.sftpKeyFile=Join-Path $root 'storage-key'
         $config.sftpKnownHostsFile=Join-Path $root 'known_hosts'
     }
+    $cloudPayload=@()
+    foreach($entry in @(@('azureKeyFile','azure-key.txt'),@('rcloneConfigFile','rclone.conf'))){
+        if($config.($entry[0])){
+            Copy-Protected (Resolve-Path -LiteralPath $config.($entry[0])).Path (Join-Path $staging $entry[1])
+            $config.($entry[0])=Join-Path $root $entry[1]
+            $cloudPayload+=$entry[1]
+        }
+    }
+    if($config.rclonePath){
+        Copy-Protected $rcloneSource (Join-Path $staging 'rclone.exe')
+        Assert-FileDigest -Path (Join-Path $staging 'rclone.exe') -Expected $RcloneSha256 -Label 'Staged Rclone binary'
+        $config.rclonePath=Join-Path $root 'rclone.exe'
+        $cloudPayload+='rclone.exe'
+    }
     $config.passwordFile=$password
     $config.resticPath=$restic
     if($Managed){$config.agentTokenFile=$token}
@@ -92,6 +112,7 @@ try{
     Set-ProtectedSecurityDescriptor -Path $stagedConfig
 
     $payloadNames=@('fortress-agent.exe','restic.exe','repo-password.txt','agent.json')
+    $payloadNames+=$cloudPayload
     if($Managed){$payloadNames+='agent-token.txt'}
     if($hasSFTP){$payloadNames+=@('storage-key','known_hosts')}
     $backedUp=@{}

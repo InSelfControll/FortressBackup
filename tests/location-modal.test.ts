@@ -158,11 +158,26 @@ test('does not require or submit a host public key for other location types', ()
   expect(typeof modal.buildLocationData).toBe('function');
 
   for (const type of ['s3', 'nfs', 'b2', 'gcs', 'azure', 'gdrive', 'onedrive']) {
-    expect(modal.canSubmitLocation({ name: 'Dummy location', type, path: '/backups' })).toBe(true);
+    expect(modal.canSubmitLocation({ name: 'Dummy location', type, path: '/backups', accessKey:'account',secretKey:'test-only' })).toBe(true);
   }
 
   const payload = modal.buildLocationData({
     name: 'Dummy NFS', type: 'nfs', path: '/backups', hostPublicKey: HOST_PUBLIC_KEY,
   }, false, 'dummy-nfs-id');
   expect(payload.host_public_key).toBeUndefined();
+});
+
+test('cloud edits preserve credential presence and omit blank secret replacements',()=>{
+ for(const type of ['azure','gdrive'] as const){
+  const location:Location={id:'cloud',name:'Saved cloud',type,path:type==='azure'?'backups':'drive:backups',hasAccessKey:true,hasSecretKey:true};
+  const state=modal.getLocationFormState(location);
+  expect(modal.canSubmitLocation(state)).toBe(true);
+  const payload=JSON.parse(JSON.stringify(modal.buildLocationData({...state,region:'new-folder'},true,location.id)));
+  expect(payload).not.toHaveProperty('secret_key');
+  expect(payload).not.toHaveProperty('access_key');
+  expect(payload).not.toHaveProperty('endpoint');
+  expect(renderLocation(location)).toContain(type==='azure'?'Storage account key':'Import Rclone config');
+ }
+ expect(modal.canSubmitLocation({name:'New Azure',type:'azure',path:'backups'})).toBe(false);
+ expect(modal.canSubmitLocation({name:'New Drive',type:'gdrive',path:'drive:backups'})).toBe(false);
 });

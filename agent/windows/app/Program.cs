@@ -33,7 +33,7 @@ static class FortressApplication {
             }
             try {
                 string root=AppDomain.CurrentDomain.BaseDirectory;
-                foreach(var name in new[]{"setup.ps1","setup-ui.ps1","recovery-ui.ps1","provision.ps1","install-task.ps1","fortress-agent.exe","restic.exe","SHA256SUMS"})
+                foreach(var name in new[]{"setup.ps1","setup-ui.ps1","recovery-ui.ps1","provision.ps1","install-task.ps1","fortress-agent.exe","restic.exe","rclone.exe","SHA256SUMS"})
                     if(!File.Exists(Path.Combine(root,name)))throw new IOException("Application files are missing. Run the installer again to repair Fortress Backup.");
                 // Match the previous launcher's process-only script policy; machine
                 // and enterprise policy are unchanged.

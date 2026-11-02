@@ -88,7 +88,7 @@ export const JobModal: React.FC<JobModalProps> = ({ job, isOpen, onClose, system
         }
     };
 
-    const supportedTypes: Record<string,string[]> = {BorgBackup:['nfs','sftp'],Restic:['nfs','sftp','s3','b2'],Rsync:['nfs','sftp']};
+    const supportedTypes: Record<string,string[]> = {BorgBackup:['nfs','sftp'],Restic:['nfs','sftp','s3','b2','azure','gdrive'],Rsync:['nfs','sftp']};
     const destinationSupported = supportedTypes[formData.tool]?.includes(locations.find(location=>location.id===formData.destinationId)?.type || '');
     const handleSubmit = () => {
         if (isSaving) return;

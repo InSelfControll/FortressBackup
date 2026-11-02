@@ -11,7 +11,7 @@ try {
         if($task.State -in @('Running','Queued')){Stop-ScheduledTask -TaskName FortressBackup-Windows -TaskPath '\'}
         Unregister-ScheduledTask -TaskName FortressBackup-Windows -TaskPath '\' -Confirm:$false
     }
-    foreach($name in @('fortress-agent.exe','restic.exe')){
+    foreach($name in @('fortress-agent.exe','restic.exe','rclone.exe')){
         $path=Join-Path $root $name
         if(Test-Path -LiteralPath $path){
             if(((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Unexpected runtime file link. No configuration was removed.'}

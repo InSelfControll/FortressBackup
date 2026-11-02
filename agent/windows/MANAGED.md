@@ -16,7 +16,7 @@ See [INSTALL.md](INSTALL.md) for installation and diagnostics.
 - The controller stores a SHA-256 hash of each randomly generated bearer token; enrollment returns the secret **once**.
 - Only controller JWT users with role `admin` can enroll, manage any client or disable an agent. The installed app can queue only fixed operations for its own authenticated identity.
 - Jobs contain **only an allow-listed operation** (`backup`, `check`, `snapshots`, `files`, `restore`); recovery requests contain validated snapshot IDs and file selections, never executable commands or arbitrary restore targets.
-- During enrollment, an administrator assigns an existing Restic SFTP repository. Setup downloads only that repository's address, encryption password, SSH identity and pinned host key over authenticated HTTPS; public inventory never returns them. Paths and the trusted executable remain local. Credentials are protected for SYSTEM and Administrators.
+- During enrollment, an administrator assigns an existing Restic SFTP, Azure, or Google Drive repository. Setup downloads only that repository's address, encryption password, and backend credentials (SSH identity and host key, Azure account key, or authenticated Drive config) over authenticated HTTPS; public inventory never returns them. Paths and the trusted executable remain local. Credentials are protected for SYSTEM and Administrators.
 - One in-flight job per client. A five-hour execution lease requires manual intervention after expiration to prevent automatic duplicate backups.
 
 ## Controller enrollment
@@ -77,7 +77,7 @@ curl -sS -X POST "https://fortress.example.net/api/managed-agents/admin/ENROLLME
 - Backups are scheduled in the controller; the Windows Task Scheduler runs the agent poller every minute.
 
 ## Production blockers
-- Source folders remain local. Repository assignments are managed centrally; rerun setup to apply changes to the protected local credential files. Automatic setup currently supports existing Restic SFTP repositories and never initializes or overwrites repositories.
+- Source folders remain local. Repository assignments are managed centrally; rerun setup to apply changes to the protected local credential files. Automatic setup currently supports existing Restic SFTP, Azure, or Google Drive repositories and never initializes or overwrites repositories.
 - No client auto-update or rotation of existing enrollment tokens.
 - Full and selected-file recovery is available from Managed Clients and the installed app. Results are paginated; detailed byte-level Restic progress is not yet streamed. Windows restores use a new protected per-job folder and never overwrite source files.
 - No automatic token rotation or transport-level client certificate authentication.

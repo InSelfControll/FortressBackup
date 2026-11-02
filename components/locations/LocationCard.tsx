@@ -55,7 +55,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({
             <p className="text-xs text-slate-500 font-mono truncate mb-4" title={location.path}>{location.path}</p>
 
             {location.region && (
-                <p className="text-[10px] text-slate-600 mb-4">Region: {location.region}</p>
+                <p className="text-[10px] text-slate-600 mb-4">{location.type==='azure'?'Repository folder':'Region'}: {location.region}</p>
             )}
 
             <div className="flex flex-wrap gap-3 justify-between items-center pt-4 border-t border-slate-700/50">
