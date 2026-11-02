@@ -20,7 +20,7 @@ export async function managedRepository(jobId:string){
     try{password=decrypt(JSON.parse(job.repo_password),getJwtSecret())}
     catch{throw new Error('The saved repository password cannot be decrypted; check controller encryption settings')}
     if(!password)throw new Error('The saved repository encryption password is empty');
-    const base={repositoryJobId:job.id,repositoryName:job.name,storageName:location.name,password};
+    const base={repositoryJobId:job.id,repositoryName:job.name,storageName:location.name,storageId:location.id,password};
     const config={jobId:job.id,jobName:job.name,tool:'restic' as const,sourcePaths:[],destinationType:location.type as 'azure'|'gdrive',destinationPath:location.path,destinationRegion:location.region,destinationAccessKey:location.access_key,destinationSecretKey:location.secret_key};
     if(location.type==='azure')return {...base,backend:'azure',repository:getRepository(config),azureAccountName:location.access_key,azureAccountKey:location.secret_key};
     if(location.type==='gdrive')return {...base,backend:'gdrive',repository:getRepository(config),rcloneConfig:driveConfig(location.path,location.secret_key)};

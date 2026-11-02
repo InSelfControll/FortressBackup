@@ -357,7 +357,10 @@ router.post('/:id/restore', authenticateToken, requireAdmin, async (req, res) =>
             const binding=await db.getOne<{job_id:string}>('SELECT job_id FROM managed_repositories WHERE client_id=?',[req.body.managedAgentId]);
             if(!binding)return res.status(409).json({error:'Assign this repository to the Windows destination first'});
             const source=await managedRepository(jobId),target=await managedRepository(binding.job_id);
-            if(source.repository!==target.repository||source.password!==target.password)return res.status(409).json({error:'The Windows device is assigned to a different repository. Select this saved repository and Save and connect on that device first.'});
+            // Cloud repository URIs omit the account identity: equal container/remote
+            // names in separate saved locations do not imply the same repository.
+            if(source.repository!==target.repository||source.password!==target.password||
+                (['azure','gdrive'].includes(source.backend)&&source.storageId!==target.storageId))return res.status(409).json({error:'The Windows device is assigned to a different repository. Select this saved repository and Save and connect on that device first.'});
             const queued=await enqueueManagedJob(req.body.managedAgentId,{operation:'restore',request:{snapshotId,allDevices:true,...(paths===undefined?{}:{paths})}});
             return res.status(queued.status).json(queued.body);
         }

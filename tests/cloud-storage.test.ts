@@ -6,6 +6,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import locations from '../server/routes/locations.js';
+import jobs from '../server/routes/jobs.js';
 import {initDatabase,closeDatabase} from '../server/db/connection.js';
 import {run,getOne} from '../server/db/helpers.js';
 import {getLocation} from '../server/db/locations.js';
@@ -54,7 +55,7 @@ test('cloud CRUD encrypts credentials, retains them on edit and provisions the a
  const signing=crypto.randomBytes(48).toString('hex');process.env.JWT_SECRET=signing;process.env.FORTRESS_CREDENTIAL_KEY=crypto.randomBytes(32).toString('hex');
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'fortress-cloud-api-'));
  await initDatabase({type:'sqlite',filePath:path.join(directory,'test.db')});
- const app=express();app.use(express.json());app.use('/locations',locations);
+ const app=express();app.use(express.json());app.use('/locations',locations);app.use('/jobs',jobs);
  const server=app.listen(0,'127.0.0.1');
  try{
   await run('INSERT INTO users(id,email,name,role,auth_type) VALUES(?,?,?,?,?)',['admin','admin@example.invalid','Admin','admin','local']);
@@ -71,6 +72,17 @@ test('cloud CRUD encrypts credentials, retains them on edit and provisions the a
    const profile=await managedRepository(jobId);expect(profile.backend).toBe(type);expect(profile.password).toBe('test-encryption-password');expect(profile).not.toHaveProperty('sshPrivateKey');
    if(type==='azure'){expect(profile.repository).toBe('azure:backup-container:/laptop');expect((profile as any).azureAccountKey).toBe(azureKey)}else expect((profile as any).rcloneConfig).toBe(driveConfig(body.path,config));
   }
+  // Identical Azure container URIs/passwords on different accounts must not
+  // allow cross-device recovery to the wrong assigned storage location.
+  const source=await request('',{name:'Account one',type:'azure',path:'same-container',access_key:'accountone',secret_key:azureKey});
+  const target=await request('',{name:'Account two',type:'azure',path:'same-container',access_key:'accounttwo',secret_key:azureKey});
+  const ids=[crypto.randomUUID(),crypto.randomUUID()];
+  for(let i=0;i<2;i++)await saveJob({id:ids[i],name:'Account '+i,tool:'Restic',destination_id:[source,target][i].data.id,repo_password:JSON.stringify(encrypt('same-repo-password',signing)),status:'Idle',priority:'Medium'});
+  const clientId=crypto.randomUUID();
+  await run('INSERT INTO managed_clients(id,name,token_hash,created_at) VALUES(?,?,?,?)',[clientId,'New device','test-only',new Date().toISOString()]);
+  await run('INSERT INTO managed_repositories(client_id,job_id) VALUES(?,?)',[clientId,ids[1]]);
+  const rejected=await fetch(base.replace('/locations','/jobs/')+ids[0]+'/restore',{method:'POST',headers:{Authorization:'Bearer '+auth,'Content-Type':'application/json'},body:JSON.stringify({managedAgentId:clientId,snapshotId:'a'.repeat(64)})});
+  expect(rejected.status).toBe(409);expect((await rejected.json() as any).error).toContain('different repository');
   expect((await request('',{name:'Bad',type:'gdrive',path:'drive:backups',secret_key:config.replace('type = drive','type = drive\npassword_command = bad')})).status).toBe(400);
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));await closeDatabase();fs.rmSync(directory,{recursive:true,force:true});for(const [name,value] of Object.entries({JWT_SECRET:previous.jwt,FORTRESS_CREDENTIAL_KEY:previous.key})){if(value===undefined)delete process.env[name];else process.env[name]=value}}
 });
