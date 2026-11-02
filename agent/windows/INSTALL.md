@@ -48,6 +48,10 @@ After saving, follow check-ins and operations in **Managed Clients**. A successf
 installation/configuration does not mean a backup has completed; test a backup
 and a complete restore before relying on it. Windows clients remain pre-production.
 
+## Backup progress
+
+The dashboard and Windows app display measured Restic progress for the current operation. Network delays are marked; 100% is not displayed as a successful backup until the agent reports success. Older runtimes display an activity bar without a percentage. Finish an active backup before upgrading the runtime; measured progress is available on the next run.
+
 ## Snapshots and backup
 
 Click **Backup now** to save a new snapshot. Click **Snapshots** to automatically load saved backups, or **Refresh snapshots** to refresh the list. A snapshot is a saved backup version.

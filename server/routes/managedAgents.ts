@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { getOne, query, run } from '../db/helpers.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import type {ManagedOperation,ManagedRequest} from '../../types';
-import {managedRequest,managedResult,recoveryCapability,crossDeviceCapability,cancelCapability} from '../services/managedRecovery.js';
+import {managedRequest,managedResult,managedProgress,recoveryCapability,crossDeviceCapability,cancelCapability} from '../services/managedRecovery.js';
 import {managedRepository} from '../services/managedRepository.js';
 
 // Source folders and executable commands remain local. Setup credentials are
@@ -21,7 +21,7 @@ type AgentJob = {
   state: 'pending' | 'running' | 'success' | 'failed' | 'canceled';
   cancel_requested?:number; created_at: string;
   started_at: string | null; finished_at: string | null; lease_until: string | null;
-  message: string | null; request_json?:string|null; result_json?:string|null; has_result?:number;
+  message: string | null; request_json?:string|null; result_json?:string|null; progress_json?:string|null; has_result?:number;
 };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sha256 = (v: string) => crypto.createHash('sha256').update(v).digest('hex');
@@ -40,7 +40,7 @@ const publicAgent = ({ token_hash: _secret, ...safe }: Agent) => ({
 const publicJob = (j: AgentJob) => ({
   id: j.id, operation: j.operation, state: j.state,
   createdAt: j.created_at, startedAt: j.started_at,
-  finishedAt: j.finished_at,cancelRequested:!!j.cancel_requested, message: j.message, hasResult:!!(j.result_json||j.has_result)
+  finishedAt: j.finished_at,cancelRequested:!!j.cancel_requested, message: j.message, hasResult:!!(j.result_json||j.has_result),progress:j.progress_json?JSON.parse(j.progress_json):null
 });
 const isConflict = (e: unknown) =>
   /unique|constraint|duplicate key/i.test(e instanceof Error ? e.message : String(e));
@@ -94,7 +94,7 @@ router.get('/admin', authenticateToken, requireAdmin, async (req, res, next) => 
       return res.status(400).json({error:'Invalid pagination'});
     const agents=await query<Agent>(agentSelect+' ORDER BY m.created_at DESC LIMIT ? OFFSET ?',[limit,offset]);
     const recent=await query<AgentJob>(`
-      SELECT id,client_id,operation,state,created_at,started_at,finished_at,lease_until,message,cancel_requested,CASE WHEN result_json IS NOT NULL THEN 1 ELSE 0 END AS has_result
+      SELECT id,client_id,operation,state,created_at,started_at,finished_at,lease_until,message,cancel_requested,progress_json,CASE WHEN result_json IS NOT NULL THEN 1 ELSE 0 END AS has_result
       FROM (
         SELECT *,ROW_NUMBER() OVER(PARTITION BY client_id ORDER BY CASE WHEN state IN ('pending','running') THEN 0 ELSE 1 END,created_at DESC) AS rn
         FROM managed_jobs WHERE client_id IN (
@@ -271,9 +271,15 @@ router.post('/heartbeat', agentAuth, async (req, res, next) => {
   try {
     const capabilities=req.body?.capabilities;
     if(capabilities!==undefined&&(!Array.isArray(capabilities)||capabilities.length>8||!capabilities.every((value:unknown)=>[recoveryCapability,crossDeviceCapability,cancelCapability].includes(value as string))))return res.status(400).json({error:'Invalid capabilities'});
+    let progress=null;
+    if(req.body?.progress!==undefined){
+     if(!uuid.test(req.body?.id??''))return res.status(400).json({error:'Progress requires a running backup ID'});
+     try{progress=managedProgress(req.body.progress)}catch{return res.status(400).json({error:'Invalid backup progress'})}
+    }
     await run('UPDATE managed_clients SET last_seen=?,capabilities=COALESCE(?,capabilities) WHERE id=?',
       [new Date().toISOString(), capabilities===undefined?null:JSON.stringify([...new Set(capabilities)]), (req as any).managedAgent]);
     const active=await getOne<{cancel_requested:number}>("SELECT cancel_requested FROM managed_jobs WHERE client_id=? AND id=? AND state='running'",[(req as any).managedAgent,req.body?.id??'']);
+    if(progress)await run("UPDATE managed_jobs SET progress_json=? WHERE id=? AND client_id=? AND state='running' AND operation='backup'",[JSON.stringify(progress),req.body.id,(req as any).managedAgent]);
     const agent=await lookup((req as any).managedAgent);
     res.json({ok:true,cancel:!!active?.cancel_requested||!!agent?.disabled});
   } catch (e) { next(e); }

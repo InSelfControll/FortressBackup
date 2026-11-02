@@ -61,6 +61,10 @@ function Add-RecoveryPanel($Form,$SetupState){
     $cancel=Add-RecoveryControl Button cancel 'Cancel operation' 235 558 200 33
     $open=Add-RecoveryControl Button open 'Open restored folder' 20 558 190 33
     $back=Add-RecoveryControl Button back 'Configuration' 460 558 170 33
+    $backupProgress=Add-RecoveryControl ProgressBar backupProgress '' 20 600 610 14
+    $backupProgress.Maximum=1000;$backupProgress.Visible=$false;$backupProgress.AccessibleName='Backup progress'
+    $progressText=Add-RecoveryControl Label progressText '' 20 622 610 40
+    $progressText.Visible=$false;$progressText.AccessibleName='Backup progress details'
     $scope.Add_CheckedChanged({$r.AllDevices=$scope.Checked;$r.Snapshot='';$r.Selected.Clear();$selected.Text='0 selected.';$versions.Items.Clear();$entries.Items.Clear()}.GetNewClosure())
     $setEnabled={param([bool]$enabled)
         $load.Enabled=$enabled;$backup.Enabled=$enabled;$scope.Enabled=$enabled;$versions.Enabled=$enabled;$back.Enabled=$enabled
@@ -127,6 +131,16 @@ function Add-RecoveryPanel($Form,$SetupState){
                 $output=$r.Worker.EndInvoke($r.Pending)
                 if($r.Worker.Streams.Error.Count -gt 0){throw $r.Worker.Streams.Error[0].Exception}
                 $r.Job=([string]$output[0] | ConvertFrom-Json)
+                $backupProgress.Visible=$r.Operation -eq 'backup' -and $r.Job.state -in @('pending','running')
+                $progressText.Visible=$backupProgress.Visible
+                if($backupProgress.Visible){
+                    $p=$r.Job.progress
+                    if($p -and $p.totalBytes -gt 0){
+                        $backupProgress.Style='Blocks';$backupProgress.Value=[Math]::Min(999,[int]($p.percentDone*1000))
+                        $progressText.Text=if($p.percentDone -ge 1){'Finalizing backup...'}else{('{0:P1} - {1:N0} of {2:N0} bytes - {3:N0} files' -f ([Math]::Min(0.999,[double]$p.percentDone)),$p.bytesDone,$p.totalBytes,$p.filesDone)}
+                        if(([datetime]::UtcNow-([datetime]$p.updatedAt).ToUniversalTime()).TotalSeconds -gt 20){$progressText.Text+=' - progress updates delayed'}elseif($p.secondsRemaining -gt 0){$progressText.Text+=(' - about {0:N0}s remaining' -f $p.secondsRemaining)}
+                    }else{$backupProgress.Style='Marquee';$progressText.Text='Waiting for measured progress. No percentage has been reported.'}
+                }
                 $status.Text=$r.Operation+': '+$r.Job.state
                 if($r.Job.state -eq 'pending'){$status.Text+=' - waiting for the laptop agent. See Managed Clients for current activity.'}
                 if($r.Job.cancelRequested){$status.Text='Cancellation requested; waiting for the agent to stop.'}

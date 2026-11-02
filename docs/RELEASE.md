@@ -13,6 +13,10 @@
 
 ## Current changes
 
+- Windows backups report measured progress through their existing heartbeat. The dashboard, Managed Clients, and Windows app show processed bytes/files and remaining-time estimates; delayed updates are marked.
+- Older runtimes show an activity bar and elapsed time without an invented percentage. Let an active backup finish before upgrading its runtime; detailed progress starts with the next run.
+
+
 - Windows app reconnect now updates an older background runtime through the existing verified setup and rollback path. An app-only upgrade no longer leaves the older snapshot reporting agent behind.
 - **Snapshots** automatically loads saved versions; **Backup now** creates a new saved version. Labels use “Backup” consistently.
 

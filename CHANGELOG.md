@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-rc.12] - 2026-11-02
+
+- Show Windows backup progress on the dashboard, Managed Clients and Windows app using measured Restic byte/file counts and remaining-time estimates.
+- Carry bounded numeric progress through existing job heartbeats; omit filenames and preserve local logs. Mark delayed updates and keep running jobs below 100% until completion is confirmed.
+- Show an indeterminate activity bar and elapsed time for older agents that do not report detailed progress.
+
 ## [0.1.0-rc.11] - 2026-11-01
 
 - Update an older Windows SYSTEM runtime automatically when the installed app reconnects, preserving configured backup folders and credentials.

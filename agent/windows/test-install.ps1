@@ -81,7 +81,9 @@ try {
             $snapshotId='a'*64
             foreach($operation in @('snapshots','files','restore','backup')){
                 $jobId=[guid]::NewGuid().ToString()
-                foreach($route in @('request','result')){
+                $round=0
+                foreach($route in $(if($operation -eq 'backup'){@('request','result','result')}else{@('request','result')})){
+                    $round++
                     do {
                         $request=$http.GetContext()
                         $background=$request.Request.RawUrl -in @('/api/managed-agents/poll','/api/managed-agents/heartbeat')
@@ -116,6 +118,7 @@ try {
                             restore {@{snapshotId=$snapshotId;restorePath='C:\ProgramData\FortressBackup\restores\'+$jobId}}
                         }
                         $response=@{id=$jobId;state='success';operation=$operation;result=$data}
+                        if($operation -eq 'backup' -and $round -eq 2){$response=@{id=$jobId;state='running';operation='backup';progress=@{percentDone=0.42;bytesDone=42;totalBytes=100;filesDone=2;totalFiles=5;updatedAt=[datetime]::UtcNow.ToString('o')}}}
                     }
                     $bytes=[Text.Encoding]::UTF8.GetBytes(($response | ConvertTo-Json -Depth 10 -Compress))
                     $request.Response.ContentType='application/json';$request.Response.ContentLength64=$bytes.Length
@@ -226,6 +229,7 @@ try {
         $recovery.Controls['back'].PerformClick()
         if($recovery.Visible){throw 'Configuration did not return in the same window'}
         $window.Controls['backupNow'].PerformClick()
+        Wait-RecoveryUI {$recovery.Controls['backupProgress'].Visible -and $recovery.Controls['backupProgress'].Value -eq 420}
         Wait-RecoveryUI {$recovery.Controls['status'].Text -like 'Backup saved.*' -and $recovery.Controls['backup'].Enabled}
         $window.Close()
     }finally{if(!$window.IsDisposed){$window.Dispose()}}

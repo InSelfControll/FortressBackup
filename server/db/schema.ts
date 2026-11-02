@@ -34,6 +34,7 @@ const managedTablesDDL = `
       message TEXT,
       request_json TEXT,
       result_json TEXT,
+      progress_json TEXT,
       cancel_requested INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_managed_jobs_client ON managed_jobs(client_id,created_at);
@@ -167,6 +168,8 @@ export const createTables = () => {
       DELETE FROM managed_repositories WHERE client_id=OLD.id;
     END;`);
   const clients = sqliteDb.prepare('PRAGMA table_info(managed_clients)').all() as {name:string}[];
+  const progressColumns=sqliteDb.prepare('PRAGMA table_info(managed_jobs)').all() as {name:string}[];
+  if(!progressColumns.some(column=>column.name==='progress_json')) sqliteDb.exec('ALTER TABLE managed_jobs ADD COLUMN progress_json TEXT');
   if (!clients.some(column=>column.name==='capabilities')) sqliteDb.exec("ALTER TABLE managed_clients ADD COLUMN capabilities TEXT NOT NULL DEFAULT '[]'");
   const jobActivity = sqliteDb.prepare('PRAGMA table_info(jobs)').all() as {name:string}[];
   if (!jobActivity.some(column=>column.name==='operation')) sqliteDb.exec("ALTER TABLE jobs ADD COLUMN operation TEXT NOT NULL DEFAULT 'backup'");
@@ -319,6 +322,7 @@ export const createTablesPostgres = async () => {
   await pgPool.query('ALTER TABLE managed_jobs ADD COLUMN IF NOT EXISTS request_json TEXT');
   await pgPool.query('ALTER TABLE managed_jobs ADD COLUMN IF NOT EXISTS result_json TEXT');
   await pgPool.query('ALTER TABLE managed_jobs ADD COLUMN IF NOT EXISTS cancel_requested INTEGER NOT NULL DEFAULT 0');
+  await pgPool.query('ALTER TABLE managed_jobs ADD COLUMN IF NOT EXISTS progress_json TEXT');
   await pgPool.query("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS operation TEXT NOT NULL DEFAULT 'backup'");
   await pgPool.query('ALTER TABLE jobs ADD COLUMN IF NOT EXISTS operation_at TEXT');
   await pgPool.query('ALTER TABLE jobs ADD COLUMN IF NOT EXISTS cancel_requested INTEGER NOT NULL DEFAULT 0');

@@ -262,6 +262,14 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 	cancelRun = cancel
 	fmt.Fprintln(os.Stdout, time.Now().Format(time.RFC3339), "Running operation:", poll.Job.Operation, "job:", poll.Job.ID)
 	stopHeartbeat := make(chan struct{})
+	var latestProgress atomic.Pointer[backupProgress]
+	heartbeat := func() error {
+		body := map[string]any{"id": poll.Job.ID}
+		if p := latestProgress.Swap(nil); p != nil {
+			body["progress"] = p
+		}
+		return request("/heartbeat", body)
+	}
 	heartbeatDone := make(chan struct{})
 	go func() {
 		defer close(heartbeatDone)
@@ -274,12 +282,12 @@ func managedOnce(ctx context.Context, c Config, preflight bool) error {
 			case <-jobctx.Done():
 				return
 			case <-ticker.C:
-				_ = request("/heartbeat", map[string]string{"id": poll.Job.ID})
+				_ = heartbeat()
 			}
 		}
 	}()
-	_ = request("/heartbeat", map[string]string{"id": poll.Job.ID})
-	data, result := executeManaged(jobctx, c, *poll.Job)
+	_ = heartbeat()
+	data, result := executeManaged(jobctx, c, *poll.Job, func(p backupProgress) { latestProgress.Store(&p) })
 	close(stopHeartbeat)
 	<-heartbeatDone
 	message := poll.Job.Operation + " completed"
