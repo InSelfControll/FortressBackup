@@ -123,7 +123,7 @@ jobs:
         if: always()
         with:
           name: windows-setup-gui-verification
-          path: ${{ runner.temp }}/fortress-setup-gui.png
+          path: ${{ runner.temp }}/fortress-*.png
           if-no-files-found: ignore
       - name: Verify Defender updater retry and failure gates
         shell: powershell
