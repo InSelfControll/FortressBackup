@@ -182,6 +182,7 @@ function Add-RecoveryPanel($Form,$SetupState,$Content,$BackupButton){
                 $output=$r.Worker.EndInvoke($r.Pending)
                 if($r.Worker.Streams.Error.Count -gt 0){throw $r.Worker.Streams.Error[0].Exception}
                 $r.Job=([string]$output[0] | ConvertFrom-Json)
+                $status.ForeColor=[Drawing.ColorTranslator]::FromHtml('#334155')
                 $SetupState.ConnectionLabel.Text='Connected';$SetupState.ConnectionLabel.ForeColor=[Drawing.ColorTranslator]::FromHtml('#86EFAC')
                 $activity.Text=if($r.Job.state -eq 'pending'){'Waiting for the laptop agent'}elseif($r.Job.state -eq 'running'){switch($r.Operation){'backup'{'Backup in progress'} 'restore'{'Restoring files'} default{'Loading saved backups'}}}else{'Ready'}
                 $backupProgress.Visible=$r.Operation -eq 'backup' -and $r.Job.state -in @('pending','running')
