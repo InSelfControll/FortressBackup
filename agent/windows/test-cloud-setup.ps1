@@ -10,7 +10,9 @@ try{
  foreach($backend in @('azure','gdrive')){
   $profile=@{backend=$backend;repository=$(if($backend -eq 'azure'){'azure:backups:/laptop'}else{'rclone:drive:laptop'});password='test-password';azureAccountName='testaccount';azureAccountKey=('a'*86+'==');rcloneConfig="[drive]`ntype = drive`ntoken = {`"refresh_token`":`"test-only`"}`n"}
   $credentials=Save-ManagedRepository -Profile $profile -Directory (Join-Path $work $backend)
-  $config=@{resticPath=$exe;sources=@($env:WINDIR)}
+  $token=Join-Path (Join-Path $work $backend) 'agent-token.txt'
+  [IO.File]::WriteAllText($token,('a'*43))
+  $config=@{resticPath=$exe;sources=@($env:WINDIR);controllerUrl='https://controller.example.invalid';agentId='cloud-test';agentTokenFile=$token}
   foreach($name in $credentials.Keys){$config[$name]=$credentials[$name]}
   if($backend -eq 'gdrive'){$config.rclonePath=$exe}
   $configPath=Join-Path $work ($backend+'.json')
