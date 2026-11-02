@@ -34,6 +34,7 @@ test('Linux backup/list/files/restore share cloud targets and safely clean tempo
   fs.writeFileSync(path.join(directory,'restic'),`#!/usr/bin/env bun
 import fs from 'node:fs';
 const file=process.env.RCLONE_CONFIG;
+if(file)fs.writeFileSync(file+'.old','disposable token-refresh backup');
 console.log(JSON.stringify({args:process.argv.slice(2),account:process.env.AZURE_ACCOUNT_NAME,key:process.env.AZURE_ACCOUNT_KEY,config:file?fs.readFileSync(file,'utf8'):null,mode:file?(fs.statSync(file).mode&511):null,file}));
 `,{mode:0o700});
   for(const backend of ['azure','gdrive'] as const){

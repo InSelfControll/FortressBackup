@@ -59,8 +59,9 @@ const resticPrefix = (config: ResticConfig): string => {
         return [
             'command -v rclone >/dev/null 2>&1 || { echo "Rclone is required on this source. Deploy Restic again from Systems." >&2; exit 1; }',
             'umask 077',
+            "trap 'exit 1' HUP INT TERM",
             'FORTRESS_CLOUD_DIR=$(mktemp -d /tmp/fortress-cloud.XXXXXXXX) || exit 1',
-            'trap \'rm -f -- "$FORTRESS_CLOUD_DIR/rclone.conf"; rmdir -- "$FORTRESS_CLOUD_DIR"\' EXIT',
+            'trap \'rm -rf -- "$FORTRESS_CLOUD_DIR"\' EXIT',
             `printf '%s' '${encoded}' | base64 -d > "$FORTRESS_CLOUD_DIR/rclone.conf" || exit 1`,
             `RCLONE_CONFIG="$FORTRESS_CLOUD_DIR/rclone.conf" ${env ? env+' ' : ''}restic -r ${sh(repository)}`
         ].join('\n');
