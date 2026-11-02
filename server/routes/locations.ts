@@ -3,13 +3,19 @@
  */
 
 import { Router } from 'express';
-import { checkSFTPLocation } from '../services/connectionChecks.js';
+import { checkSFTPLocation,checkCloudLocation } from '../services/connectionChecks.js';
 import crypto from 'crypto';
 import * as db from '../db/index.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { validateHostPublicKey } from '../services/backup/rsync.js';
 
+import {azureRepository,driveConfig} from '../services/backup/cloudStorage.js';
 const router = Router();
+function validateCloud(location:any){
+    if(location.type==='azure')azureRepository({destinationPath:location.path,destinationRegion:location.region,destinationAccessKey:location.access_key,destinationSecretKey:location.secret_key});
+    if(location.type==='gdrive')return driveConfig(location.path,location.secret_key);
+}
+
 const validLocation=(location:any):boolean=>{
     if(typeof location.name!=='string'||!location.name.trim()||location.name.length>120||
        typeof location.path!=='string'||!location.path.trim()||location.path.length>1024||
@@ -36,6 +42,10 @@ router.post('/:id/test', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const location = await db.getLocation(req.params.id);
         if (!location) return res.status(404).json({ error: 'Location not found' });
+        if(['azure','gdrive'].includes(location.type)){
+            await checkCloudLocation(location);
+            return res.json({success:true,message:'Cloud authentication and folder access verified. This does not initialize or verify a Restic repository.'});
+        }
         if (location.type !== 'sftp') return res.status(501).json({ error: 'Direct connection testing is available for SFTP locations. Validate other storage types with a backup and restore on the source system.' });
         await checkSFTPLocation(location);
         res.json({ success: true, message: 'SFTP authentication, host identity, and repository directory verified' });
@@ -51,6 +61,7 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
         if (!validLocation(location)) {
             return res.status(400).json({error:'Invalid location configuration'});
         }
+        try{const normalized=validateCloud(location);if(normalized)location.secret_key=normalized}catch(error){return res.status(400).json({error:error instanceof Error?error.message:'Invalid cloud configuration'})}
         if(location.host_public_key)location.host_public_key=validateHostPublicKey(location.host_public_key);
         await db.saveLocation(location);
         res.json(await db.getPublicLocation(location.id));
@@ -63,10 +74,12 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
 router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         if (!await db.getOne('SELECT id FROM locations WHERE id=?',[req.params.id])) return res.status(404).json({error:'Location not found'});
+        const previous=await db.getLocation(req.params.id);
         const location = { ...req.body, id: req.params.id };
         if (!validLocation(location)) {
             return res.status(400).json({error:'Invalid location configuration'});
         }
+        try{const normalized=validateCloud({...previous,...location});if(normalized)location.secret_key=normalized}catch(error){return res.status(400).json({error:error instanceof Error?error.message:'Invalid cloud configuration'})}
         if(location.host_public_key)location.host_public_key=validateHostPublicKey(location.host_public_key);
         await db.saveLocation(location);
         res.json(await db.getPublicLocation(location.id));

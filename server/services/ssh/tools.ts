@@ -118,6 +118,14 @@ export const installRestic = async (executor: SSHExecutor): Promise<boolean> => 
         '  echo "Using distribution-managed Restic (self-update unavailable)"',
         'fi',
         'restic version',
+        'if ! command -v rclone >/dev/null 2>&1; then',
+        '  if command -v apt-get >/dev/null 2>&1; then sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y rclone',
+        '  elif command -v dnf >/dev/null 2>&1; then sudo -n dnf install -y rclone',
+        '  elif command -v pacman >/dev/null 2>&1; then sudo -n pacman -S --needed --noconfirm rclone',
+        '  else echo "No supported trusted package source for Rclone" >&2; exit 1; fi',
+        'fi',
+        'rclone version',
+        'restic version',
     ].join('\n');
     // This script contains only constant code, never untrusted job parameters.
     const shellCommand = "sh -c '" + command.replace(/'/g, "'\\''") + "'";

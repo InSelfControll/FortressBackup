@@ -40,6 +40,10 @@ type Config struct {
 	AgentTokenFile     string `json:"agentTokenFile"`
 	SFTPKeyFile        string `json:"sftpKeyFile,omitempty"`
 	SFTPKnownHostsFile string `json:"sftpKnownHostsFile,omitempty"`
+	AzureAccountName   string `json:"azureAccountName,omitempty"`
+	AzureKeyFile       string `json:"azureKeyFile,omitempty"`
+	RclonePath         string `json:"rclonePath,omitempty"`
+	RcloneConfigFile   string `json:"rcloneConfigFile,omitempty"`
 }
 
 func loadConfig(path string) (Config, error) {
@@ -74,7 +78,7 @@ func loadConfig(path string) (Config, error) {
 	if c.Repository == "" || c.PasswordFile == "" || len(c.Sources) == 0 {
 		return c, errors.New("repository, passwordFile and sources required")
 	}
-	if !strings.HasPrefix(c.Repository, "sftp:") && !strings.HasPrefix(c.Repository, "rest:") && !strings.HasPrefix(c.Repository, "s3:") && !strings.HasPrefix(c.Repository, "b2:") {
+	if !strings.HasPrefix(c.Repository, "sftp:") && !strings.HasPrefix(c.Repository, "rest:") && !strings.HasPrefix(c.Repository, "s3:") && !strings.HasPrefix(c.Repository, "b2:") && !strings.HasPrefix(c.Repository, "azure:") && !strings.HasPrefix(c.Repository, "rclone:") {
 		return c, errors.New("repository must use an explicit remote backend")
 	}
 	if c.Host == "" {
@@ -109,6 +113,9 @@ func loadConfig(path string) (Config, error) {
 		}
 	}
 	if _, err := managedSFTPArgs(c); err != nil {
+		return c, err
+	}
+	if _, _, err := cloudOptions(c); err != nil {
 		return c, err
 	}
 	return c, nil
@@ -149,6 +156,11 @@ func execute(ctx context.Context, c Config, operation string, updates ...func(ba
 
 func runRestic(ctx context.Context, c Config, arguments []string, output io.Writer) error {
 	args := []string{"--repo", c.Repository, "--password-file", c.PasswordFile}
+	cloudArgs, cloudEnv, err := cloudOptions(c)
+	if err != nil {
+		return err
+	}
+	args = append(args, cloudArgs...)
 	transport, cleanup, err := prepareSFTP(c)
 	if err != nil {
 		return err
@@ -175,8 +187,9 @@ func runRestic(ctx context.Context, c Config, arguments []string, output io.Writ
 	cmd.Stdin = nil
 	cmd.Stdout = output
 	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(), cloudEnv...)
 	if c.SSHCommand != "" {
-		cmd.Env = append(os.Environ(), "RESTIC_SFTP_COMMAND="+c.SSHCommand)
+		cmd.Env = append(cmd.Env, "RESTIC_SFTP_COMMAND="+c.SSHCommand)
 	}
 	err = cmd.Run()
 	if ctx.Err() != nil {

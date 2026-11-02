@@ -309,3 +309,32 @@ test('dashboard restores old-device snapshots on Windows without the original so
  await expect(modal.getByText('Files restored on the laptop to: '+target,{exact:true})).toBeVisible();await modal.getByRole('button',{name:'Close dialog',exact:true}).click();
  await api('/managed-agents/admin/'+enrollment.id+'/disable','POST',{});await api('/managed-agents/admin/'+enrollment.id,'DELETE');await api('/jobs/'+repo.id,'DELETE');
 });
+
+test('Azure and Google Drive can be selected, saved, and edited without losing credentials',async({page})=>{
+ await go(page,'Storage Locations');
+ for(const type of ['azure','gdrive']){
+  await page.getByRole('button',{name:'Add Location',exact:true}).click();
+  await page.getByRole('button',{name:type==='azure'?'Azure Blob Storage':'Google Drive (Rclone)',exact:true}).click();
+  await page.getByPlaceholder('Production S3 Backup').fill('QA '+type);
+  if(type==='azure'){
+   await page.getByLabel('Container name',{exact:true}).fill('qa-backups');
+   await page.getByLabel('Repository folder (optional)',{exact:true}).fill('laptop');
+   await page.getByLabel('Storage account name',{exact:true}).fill('qatestaccount');
+   await page.getByLabel('Storage account key',{exact:true}).fill(Buffer.alloc(64,17).toString('base64'));
+  }else{
+   await page.getByPlaceholder('myremote:/backup-folder').fill('drive:laptop');
+   await page.getByLabel('Import Rclone config',{exact:true}).setInputFiles({name:'rclone.conf',mimeType:'text/plain',buffer:Buffer.from('[drive]\ntype = drive\ntoken = {"access_token":"qa-access","refresh_token":"qa-refresh"}\n[other]\ntype = local\n')});
+  }
+  await page.getByRole('dialog').getByRole('button',{name:'Add Location',exact:true}).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  const saved=(await api('/locations')).find((l:any)=>l.name==='QA '+type);
+  expect(saved.hasSecretKey).toBe(true);expect(saved.secret_key).toBeUndefined();
+  await page.getByRole('heading',{name:'QA '+type,exact:true}).locator('..').getByTitle('Edit',{exact:true}).click();
+  await expect(page.getByRole('status').filter({hasText:type==='azure'?'Azure credentials saved':'Drive credentials saved'})).toBeVisible();
+  await page.getByPlaceholder('Production S3 Backup').fill('Edited QA '+type);
+  await page.getByRole('button',{name:'Update Location',exact:true}).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  expect((await api('/locations')).find((l:any)=>l.id===saved.id).hasSecretKey).toBe(true);
+  await api('/locations/'+saved.id,'DELETE');await page.reload();await page.locator('[data-app-content]').waitFor();await go(page,'Storage Locations');
+ }
+});

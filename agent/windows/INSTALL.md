@@ -21,7 +21,7 @@ See [Windows publisher trust](https://github.com/InSelfControll/FortressBackup/b
 
 Open **Fortress Backup** from the Start menu. Enter the trusted HTTPS controller
 address and the enrollment ID/token from **Managed Clients**, then click
-**Connect**. Select the repository in the dashboard; a sole saved Restic SFTP
+**Connect**. Select the repository in the dashboard; a sole saved Restic SFTP, Azure, or Google Drive
 repository is assigned automatically during enrollment. Existing enrollments
 remain valid.
 

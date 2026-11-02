@@ -72,7 +72,13 @@ jobs:
           $upstream = Join-Path $env:RUNNER_TEMP 'restic-upstream'
           Expand-Archive -LiteralPath $archive -DestinationPath $upstream
           $restic = Join-Path $upstream "restic_$($env:RESTIC_VERSION)_windows_amd64.exe"
-          & ./agent/windows/package.ps1 -AgentDirectory ./agent-artifact -ResticPath $restic -Version $env:GITHUB_REF_NAME -OutputDirectory ./downloads
+          $rcloneZip = Join-Path $env:RUNNER_TEMP 'rclone-windows.zip'
+          Invoke-WebRequest -Uri 'https://downloads.rclone.org/v1.75.2/rclone-v1.75.2-windows-amd64.zip' -OutFile $rcloneZip
+          if ((Get-FileHash $rcloneZip -Algorithm SHA256).Hash -ine '8a9db2bad1dc79a65b3348fd857069598e2aab7cf4d118b77b1df23055aff818') { throw 'Rclone download checksum mismatch' }
+          $rcloneRoot = Join-Path $env:RUNNER_TEMP 'rclone-upstream'
+          Expand-Archive -LiteralPath $rcloneZip -DestinationPath $rcloneRoot
+          $rclone = Join-Path $rcloneRoot 'rclone-v1.75.2-windows-amd64/rclone.exe'
+          & ./agent/windows/package.ps1 -AgentDirectory ./agent-artifact -ResticPath $restic -RclonePath $rclone -Version $env:GITHUB_REF_NAME -OutputDirectory ./downloads
           if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
       - name: Scan release files and report publisher signatures
         shell: powershell

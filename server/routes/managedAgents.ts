@@ -70,7 +70,7 @@ router.post('/admin/enroll', authenticateToken, requireAdmin, async (req, res, n
     if(repositoryJobId===undefined){
       const ready=await query<{id:string}>(`SELECT j.id FROM jobs j JOIN locations l ON l.id=j.destination_id
         WHERE j.tool='Restic' AND j.repo_password IS NOT NULL AND j.repo_password<>''
-        AND l.type='sftp' AND l.secret_key IS NOT NULL AND l.secret_key<>'' AND l.host_public_key IS NOT NULL`);
+        AND l.type IN ('sftp','azure','gdrive') AND l.secret_key IS NOT NULL AND l.secret_key<>'' AND (l.type<>'sftp' OR l.host_public_key IS NOT NULL)`);
       if(ready.length===1)repositoryJobId=ready[0].id;
     }
     if(repositoryJobId!=null){

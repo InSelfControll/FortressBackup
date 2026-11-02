@@ -5,7 +5,7 @@ function Get-ManagedRepository([string]$Controller,[string]$Id,[string]$Token){
     if(![uri]::TryCreate($Controller,[UriKind]::Absolute,[ref]$uri) -or $uri.Scheme -ne 'https' -or $uri.UserInfo -or $uri.AbsolutePath -ne '/' -or $uri.Query -or $uri.Fragment){throw 'A trusted HTTPS controller origin is required.'}
     [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
     $profile=Invoke-RestMethod -Uri ($Controller.TrimEnd('/')+'/api/managed-agents/setup') -Method Post -ContentType 'application/json' -Body '{}' -Headers @{'Authorization'=('Bearer '+$Token);'X-Fortress-Agent-Id'=$Id} -MaximumRedirection 0 -TimeoutSec 30
-    if(!$profile.repository -or !$profile.password -or !$profile.sshPrivateKey -or !$profile.knownHosts){throw 'The assigned repository is incomplete. Update its saved credentials in Fortress.'}
+    if(!$profile.repository -or !$profile.password -or ($profile.repository.StartsWith('sftp:') -and (!$profile.sshPrivateKey -or !$profile.knownHosts)) -or ($profile.repository.StartsWith('azure:') -and (!$profile.azureAccountName -or !$profile.azureAccountKey)) -or ($profile.repository.StartsWith('rclone:') -and !$profile.rcloneConfig)){throw 'The assigned repository is incomplete. Update its saved credentials in Fortress.'}
     return $profile
 }
 
@@ -17,6 +17,17 @@ function Save-ManagedRepository([object]$Profile,[string]$Directory){
     [IO.Directory]::CreateDirectory($Directory,$acl) | Out-Null
     $utf8=New-Object Text.UTF8Encoding($false)
     $password=Join-Path $Directory 'repo-password.txt'
+    [IO.File]::WriteAllText($password,[string]$Profile.password,$utf8)
+    if($Profile.backend -eq 'azure'){
+        $key=Join-Path $Directory 'azure-key.txt'
+        [IO.File]::WriteAllText($key,[string]$Profile.azureAccountKey,$utf8)
+        return @{repository=[string]$Profile.repository;passwordFile=$password;azureAccountName=[string]$Profile.azureAccountName;azureKeyFile=$key}
+    }
+    if($Profile.backend -eq 'gdrive'){
+        $config=Join-Path $Directory 'rclone.conf'
+        [IO.File]::WriteAllText($config,[string]$Profile.rcloneConfig,$utf8)
+        return @{repository=[string]$Profile.repository;passwordFile=$password;rcloneConfigFile=$config}
+    }
     $key=Join-Path $Directory 'storage-key'
     $hosts=Join-Path $Directory 'known_hosts'
     [IO.File]::WriteAllText($password,[string]$Profile.password,$utf8)
@@ -31,9 +42,9 @@ function Install-ManagedSetup([string]$SetupRoot,[object]$Profile,[string]$Contr
         if(![IO.Path]::IsPathRooted($source) -or !(Test-Path -LiteralPath $source -PathType Container)){throw 'A selected folder no longer exists. Choose it again.'}
     }
     $ssh=Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
-    if(!(Test-Path -LiteralPath $ssh)){
+    if($Profile.repository.StartsWith('sftp:') -and !(Test-Path -LiteralPath $ssh)){
         Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0 | Out-Null
-        if(!(Test-Path -LiteralPath $ssh)){throw 'Windows OpenSSH client installation did not complete. Check Windows optional features.'}
+        if($Profile.repository.StartsWith('sftp:') -and !(Test-Path -LiteralPath $ssh)){throw 'Windows OpenSSH client installation did not complete. Check Windows optional features.'}
     }
     $temporary=Join-Path $env:TEMP ('FortressSetup-'+[guid]::NewGuid().ToString('N'))
     try {
@@ -43,6 +54,8 @@ function Install-ManagedSetup([string]$SetupRoot,[object]$Profile,[string]$Contr
         [IO.File]::WriteAllText($tokenPath,$Token,$utf8)
         $configPath=Join-Path $temporary 'agent.json'
         $config=@{repositoryJobId=[string]$Profile.repositoryJobId;resticPath=(Join-Path $SetupRoot 'restic.exe');repository=$credentials.repository;passwordFile=$credentials.passwordFile;sftpKeyFile=$credentials.sftpKeyFile;sftpKnownHostsFile=$credentials.sftpKnownHostsFile;sources=@($Sources | Select-Object -Unique);excludes=@();host=$env:COMPUTERNAME;timeoutMinutes=240;useVSS=$true;controllerUrl=$Controller;agentId=$Id;agentTokenFile=$tokenPath}
+        foreach($name in @('azureAccountName','azureKeyFile','rcloneConfigFile')){if($credentials[$name]){$config[$name]=$credentials[$name]}}
+        if($credentials.rcloneConfigFile){$config.rclonePath=Join-Path $SetupRoot 'rclone.exe'}
         $existingPath=Join-Path $env:ProgramData 'FortressBackup\agent.json'
         if(Test-Path -LiteralPath $existingPath){
             $existing=Get-Content -LiteralPath $existingPath -Raw | ConvertFrom-Json
@@ -67,7 +80,7 @@ function Update-ManagedRuntime([string]$SetupRoot,[object]$Profile,[string]$Cont
     $saved=Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
     if($saved.agentId -ne $Id -or $saved.controllerUrl.TrimEnd('/') -ne $Controller.TrimEnd('/')){return $false}
     $changed=[string]$saved.repositoryJobId -ne [string]$Profile.repositoryJobId
-    foreach($name in @('fortress-agent.exe','restic.exe')){
+    foreach($name in @('fortress-agent.exe','restic.exe')+$(if($Profile.backend -eq 'gdrive'){@('rclone.exe')}else{@()})){
         $installed=Join-Path $runtime $name
         if(!(Test-Path -LiteralPath $installed) -or (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath (Join-Path $SetupRoot $name) -Algorithm SHA256).Hash){$changed=$true}
     }

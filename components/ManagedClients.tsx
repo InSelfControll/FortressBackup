@@ -36,7 +36,7 @@ export const ManagedClients:React.FC=()=>{
  const jobsQuery=useJobs();
  const locationsQuery=useLocations();
  const repositories=(jobsQuery.data||[]).filter(job=>job.tool==='Restic'&&job.hasRepoPassword&&
-  (locationsQuery.data||[]).some(location=>location.id===job.destinationId&&location.type==='sftp'&&location.hasSecretKey));
+  (locationsQuery.data||[]).some(location=>location.id===job.destinationId&&['sftp','azure','gdrive'].includes(location.type)&&location.hasSecretKey));
  const repositoryLabel=(id:string)=>{
   const job=repositories.find(item=>item.id===id);
   return job?job.name+' — '+(locationsQuery.data||[]).find(location=>location.id===job.destinationId)?.name:'Choose a saved repository';
@@ -102,7 +102,7 @@ export const ManagedClients:React.FC=()=>{
    <p className="text-sm text-slate-400">Enrollment creates an ID and token. It does not install software, select folders, or start a backup.</p>
    <label className="block text-sm" htmlFor="enrollment-repository">Saved backup repository</label>
    <select id="enrollment-repository" value={selectedRepository} disabled={busy} onChange={event=>setRepositoryJobId(event.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"><option value="">Choose a saved repository</option>{repositories.map(repository=><option key={repository.id} value={repository.id}>{repositoryLabel(repository.id)}</option>)}</select>
-   <p className="text-sm text-slate-400">Windows setup retrieves this repository's saved encryption password, SSH identity, and host verification securely. You only choose the laptop's folders. Automatic setup supports configured Restic SFTP repositories.</p>
+   <p className="text-sm text-slate-400">Windows setup retrieves this repository's saved encryption password and storage credentials securely. Choose the laptop's folders locally. SFTP, Azure Blob Storage, and Google Drive Restic repositories are supported.</p>
    <div className="flex flex-col sm:flex-row gap-3"><input aria-label="Client name" maxLength={100} value={name} onChange={e=>setName(e.target.value)} className="px-3 py-2 bg-slate-800 border border-slate-600 rounded min-w-0 flex-1" placeholder="Windows laptop"/><button disabled={busy||!name.trim()||repositoriesLoading||jobsQuery.isError||locationsQuery.isError||(repositories.length>0&&!selectedRepository)} onClick={enroll} className="bg-indigo-600 disabled:opacity-50 px-4 py-2 rounded">Enroll</button></div>
    {enrollment&&<div className="border border-amber-500 rounded p-3 space-y-2"><strong className="text-amber-300">Save credentials now. Token displayed only once.</strong><p>Client ID: <code className="break-all">{enrollment.id}</code></p><p>Token: <code className="break-all select-all">{enrollment.token}</code></p><button className="underline" onClick={()=>setEnrollment(null)}>I've saved these credentials</button></div>}
   </div>

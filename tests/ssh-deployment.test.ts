@@ -24,6 +24,7 @@ test('deployment detects quoted distribution IDs and compatible families', async
 test('Restic deployment supports distro builds and still rejects updater failures', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fortress-restic-deploy-'));
     try {
+        fs.writeFileSync(path.join(dir,'rclone'),'#!/bin/sh\necho rclone-test\n',{mode:0o700});
         for (const [helpExit, updateExit, expected] of [[1, 99, true], [0, 0, true], [0, 1, false]] as const) {
             fs.writeFileSync(path.join(dir, 'restic'), `#!/bin/sh
 case "$1 $2" in

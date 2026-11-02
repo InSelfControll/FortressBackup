@@ -18,7 +18,7 @@ if((Test-Path -LiteralPath $appRoot) -or (Test-Path -LiteralPath $dataRoot)){thr
 try {
     # Installation must work offline, without configuring/enrolling an agent.
     Invoke-TestInstaller $InstallerPath 'fortress-install.log'
-    foreach($name in @('FortressBackup.exe','fortress-agent.exe','restic.exe','setup.ps1','setup-ui.ps1','recovery-ui.ps1','provision.ps1','install-task.ps1','uninstall-task.ps1','SHA256SUMS','unins000.exe','fortress.ico','LUCIDE-LICENSE.txt')){
+    foreach($name in @('FortressBackup.exe','fortress-agent.exe','restic.exe','rclone.exe','RCLONE-LICENSE.txt','setup.ps1','setup-ui.ps1','recovery-ui.ps1','provision.ps1','install-task.ps1','uninstall-task.ps1','SHA256SUMS','unins000.exe','fortress.ico','LUCIDE-LICENSE.txt')){
         if(!(Test-Path -LiteralPath (Join-Path $appRoot $name))){throw "Installer omitted $name"}
     }
     Add-Type -AssemblyName System.Drawing
@@ -93,7 +93,7 @@ try {
     [IO.File]::WriteAllText($configPath,($config|ConvertTo-Json))
     $before=(Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash
     $beforeKey=(Get-FileHash -LiteralPath $credentials.sftpKeyFile -Algorithm SHA256).Hash
-    foreach($name in @('fortress-agent.exe','restic.exe')){Copy-Item -LiteralPath (Join-Path $appRoot $name) -Destination (Join-Path $dataRoot $name)}
+    foreach($name in @('fortress-agent.exe','restic.exe','rclone.exe')){Copy-Item -LiteralPath (Join-Path $appRoot $name) -Destination (Join-Path $dataRoot $name)}
     $action=New-ScheduledTaskAction -Execute (Join-Path $dataRoot 'fortress-agent.exe') -Argument '-operation managed'
     $principal=New-ScheduledTaskPrincipal -UserId SYSTEM -LogonType ServiceAccount -RunLevel Highest
     Register-ScheduledTask -TaskName FortressBackup-Windows -Action $action -Principal $principal | Out-Null
@@ -127,7 +127,7 @@ if($written.sources.Count -ne 1 -or $written.sources[0] -ne $env:RUNNER_TEMP){th
     }finally{Remove-Item -LiteralPath $writerFixture -Recurse -Force}
     Invoke-TestInstaller (Join-Path $appRoot 'unins000.exe') 'fortress-uninstall.log'
     if(Get-ScheduledTask -TaskName FortressBackup-Windows -ErrorAction SilentlyContinue){throw 'Uninstall left the agent task enabled'}
-    foreach($path in @($registration,$shortcut,(Join-Path $appRoot 'FortressBackup.exe'),(Join-Path $dataRoot 'fortress-agent.exe'),(Join-Path $dataRoot 'restic.exe'))){if(Test-Path -LiteralPath $path){throw 'Uninstall left an application registration, shortcut, or executable'}}
+    foreach($path in @($registration,$shortcut,(Join-Path $appRoot 'FortressBackup.exe'),(Join-Path $dataRoot 'fortress-agent.exe'),(Join-Path $dataRoot 'restic.exe'),(Join-Path $dataRoot 'rclone.exe'))){if(Test-Path -LiteralPath $path){throw 'Uninstall left an application registration, shortcut, or executable'}}
     if($before -ne (Get-FileHash -LiteralPath $configPath -Algorithm SHA256).Hash -or $beforeKey -ne (Get-FileHash -LiteralPath $credentials.sftpKeyFile -Algorithm SHA256).Hash){throw 'Uninstall removed saved configuration or storage credentials'}
     Write-Output 'Single-file installer, Start menu launch, configuration later, upgrade preservation, and uninstall verified'
 }finally{
