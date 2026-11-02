@@ -269,6 +269,11 @@ test('enrollments can be enabled, cancellation waits for acknowledgment, and rem
  await card.getByRole('button',{name:'Enable',exact:true}).click();await expect(card.getByRole('button',{name:'Disable',exact:true})).toBeEnabled();
  await card.getByRole('button',{name:'Backup now',exact:true}).click();
  const running=(await agent('poll',{capabilities:['recovery-v1','recovery-v2','cancel-v1']})).data.job;
+ await expect(card.getByRole('progressbar',{name:'Backup progress'})).toBeVisible();
+ await expect(card.getByRole('progressbar',{name:'Backup progress'})).not.toHaveAttribute('value');
+ await agent('heartbeat',{id:running.id,progress:{percentDone:0.42,bytesDone:42,totalBytes:100,filesDone:2,totalFiles:5,secondsElapsed:10,secondsRemaining:14}});
+ await expect(card.getByRole('progressbar',{name:'Backup progress'})).toHaveAttribute('value','42');
+ await expect(card.getByText('42.0%',{exact:true})).toBeVisible();
  await expect(card.getByRole('button',{name:'Cancel job',exact:true})).toBeVisible();await card.getByRole('button',{name:'Cancel job',exact:true}).click();
  expect((await agent('heartbeat',{id:running.id})).data.cancel).toBe(true);
  expect((await api('/managed-agents/admin/'+enrollment.id)).jobs.find((j:any)=>j.id===running.id).state).toBe('running');

@@ -201,7 +201,7 @@ func lockOperations(c Config) (func(), error) {
 	}
 	return func() { syscall.CloseHandle(handle) }, nil
 }
-func executeManaged(ctx context.Context, c Config, job lease) (any, error) {
+func executeManaged(ctx context.Context, c Config, job lease, updates ...func(backupProgress)) (any, error) {
 	if job.Request.AllDevices && (c.RepositoryJobID == "" || c.RepositoryJobID != job.Request.RepositoryJobID || c.Repository != job.Request.Repository) {
 		return nil, errors.New("repository assignment changed; Save and connect before recovery")
 	}
@@ -209,7 +209,7 @@ func executeManaged(ctx context.Context, c Config, job lease) (any, error) {
 		return nil, err
 	}
 	if job.Operation == "backup" || job.Operation == "check" {
-		return nil, execute(ctx, c, job.Operation)
+		return nil, execute(ctx, c, job.Operation, updates...)
 	}
 	if job.Operation == "snapshots" {
 		all, err := savedSnapshots(ctx, c, job.Request.AllDevices)

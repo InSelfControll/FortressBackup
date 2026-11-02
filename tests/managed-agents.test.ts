@@ -85,6 +85,18 @@ test('managed agent enrollment, atomic dispatch, report and revocation', async (
     const otherAuth={...auth,Authorization:'Bearer '+other.data.token,'X-Fortress-Agent-Id':other.data.id};
     expect((await api('/result',{id:list.data.id},otherAuth)).status).toBe(404);
     expect((await api('/admin/'+other.data.id+'/jobs/'+list.data.id,undefined,adminHeaders,'GET')).status).toBe(404);
+    const progressJob=await api('/admin/'+id+'/jobs',{operation:'backup'});
+    await api('/poll',{capabilities:['recovery-v1']},auth);
+    const progress={percentDone:0.42,bytesDone:42,totalBytes:100,filesDone:2,totalFiles:5,secondsElapsed:10,secondsRemaining:14};
+    expect((await api('/heartbeat',{id:progressJob.data.id,progress},otherAuth)).status).toBe(200);
+    expect((await api('/result',{id:progressJob.data.id},auth)).data.progress).toBeNull();
+    expect((await api('/heartbeat',{id:progressJob.data.id,progress:{...progress,percentDone:2}},auth)).status).toBe(400);
+    expect((await api('/heartbeat',{id:progressJob.data.id,progress:{...progress,currentFile:'private-path'}},auth)).status).toBe(200);
+    const measured=(await api('/result',{id:progressJob.data.id},auth)).data;
+    expect(measured.state).toBe('running');expect(measured.progress).toMatchObject(progress);
+    expect(measured.progress.currentFile).toBeUndefined();expect(measured.progress.updatedAt).toBeTruthy();
+    expect((await api('/admin',undefined,adminHeaders,'GET')).data.find((a:any)=>a.id===id).jobs.find((j:any)=>j.id===progressJob.data.id).progress).toMatchObject(progress);
+    await api('/report',{id:progressJob.data.id,success:true},auth);
     const recovery=await api('/admin/'+id+'/jobs',{operation:'restore',request:{snapshotId:sid,paths:['/C/Users/test/document[1].txt'],restorePath:'C:\\Windows'}});
     expect(recovery.status).toBe(201);
     const running=await api('/poll',{capabilities:['recovery-v1']},auth);

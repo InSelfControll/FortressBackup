@@ -1,3 +1,4 @@
+import {BackupProgress} from './BackupProgress';
 import React, {useState} from 'react';
 import {apiFetch} from '../client/api/client';
 import {useManagedAgents,useJobs,useLocations} from '../client/api/queries';
@@ -24,6 +25,7 @@ export const ManagedClientOverview:React.FC<{agents:ManagedAgent[];onOpen?:()=>v
   <p className="text-xs text-slate-400">Last check-in: {agent.lastSeen?new Date(agent.lastSeen).toLocaleString():'Never'}</p>
   {!agent.lastSeen&&<p className="text-sm text-amber-300">Install and configure the Windows agent to connect this laptop. Enrollment alone does not start a backup.</p>}
   {currentManagedJob(agent.jobs)?<p className="text-sm">Restic · {operationLabel(currentManagedJob(agent.jobs)!.operation)}: {managedJobStatus(currentManagedJob(agent.jobs)!)}{currentManagedJob(agent.jobs)!.message&&<span className="text-slate-400"> · {currentManagedJob(agent.jobs)!.message}</span>}</p>:<p className="text-sm text-slate-400">No operations requested.</p>}
+  {currentManagedJob(agent.jobs)&&<BackupProgress job={currentManagedJob(agent.jobs)!}/>}
  </article>)}
 </section>;
 
@@ -121,6 +123,7 @@ export const ManagedClients:React.FC=()=>{
    {!agent.lastSeen&&<p className="text-sm text-amber-300">No backup has started. Waiting for the Windows agent to be installed, configured, and connected.</p>}
    <div className="flex flex-wrap gap-3 items-center text-sm"><label htmlFor={'repository-'+agent.id}>Backup repository</label><select id={'repository-'+agent.id} value={agent.repositoryJobId||''} disabled={busy||agent.disabled} onChange={event=>void assignRepository(agent.id,event.target.value)} className="max-w-full bg-slate-800 p-2 rounded"><option value="">Choose a saved repository</option>{repositories.map(repository=><option key={repository.id} value={repository.id}>{repositoryLabel(repository.id)}</option>)}</select>{agent.repositoryJobId?<span className="text-slate-400">Setup uses saved credentials. Rerun setup to apply repository changes.</span>:<span className="text-amber-300">Assign a repository before running Windows setup.</span>}</div>
    <div className="flex flex-wrap gap-3 items-center text-sm"><label htmlFor={'schedule-'+agent.id}>Backup schedule</label><select id={'schedule-'+agent.id} disabled={busy||agent.disabled} value={agent.scheduleMinutes||0} onChange={e=>void schedule(agent.id,Number(e.target.value))} className="bg-slate-800 p-2 rounded"><option value={0}>Manual</option><option value={60}>Hourly</option><option value={360}>Every 6 hours</option><option value={1440}>Daily</option><option value={10080}>Weekly</option></select><span className="text-slate-400">Next: {agent.nextRunAt||'Not scheduled'}</span></div>
+   {agent.jobs.filter(j=>j.state==='running'&&j.operation==='backup').map(j=><BackupProgress key={j.id} job={j}/>)}
    <ManagedRestore agent={agent}/><div className="text-sm break-words space-y-1">{agent.jobs.map(j=><p key={j.id}><span className="font-medium">Restic · {operationLabel(j.operation)}</span> · {managedJobStatus(j)} · {new Date(j.createdAt).toLocaleString()} {j.message&&<span className="text-slate-400">{j.message}</span>}{['pending','running'].includes(j.state)&&<button disabled={!!j.cancelRequested} className="ml-3 underline text-amber-300 disabled:opacity-50" onClick={()=>void cancel(agent,j)}>{j.cancelRequested?'Cancel requested':'Cancel job'}</button>}</p>)}</div>
   </article>)}</div>
   <div className="flex items-center gap-4 text-sm">

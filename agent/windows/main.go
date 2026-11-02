@@ -114,7 +114,7 @@ func loadConfig(path string) (Config, error) {
 	return c, nil
 }
 
-func execute(ctx context.Context, c Config, operation string) error {
+func execute(ctx context.Context, c Config, operation string, updates ...func(backupProgress)) error {
 	args := []string{}
 	switch operation {
 	case "backup":
@@ -140,7 +140,11 @@ func execute(ctx context.Context, c Config, operation string) error {
 	default:
 		return errors.New("unsupported operation")
 	}
-	return runRestic(ctx, c, args, os.Stdout)
+	var output io.Writer = os.Stdout
+	if operation == "backup" && len(updates) > 0 {
+		output = &progressOutput{writer: output, publish: updates[0]}
+	}
+	return runRestic(ctx, c, args, output)
 }
 
 func runRestic(ctx context.Context, c Config, arguments []string, output io.Writer) error {

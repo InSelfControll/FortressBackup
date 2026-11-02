@@ -114,6 +114,7 @@ export type ManagedOperation = 'backup' | 'check' | 'snapshots' | 'files' | 'res
 export interface ManagedRequest {repository?:string;repositoryJobId?:string;allDevices?:boolean;snapshotId?:string;directory?:string;offset?:number;paths?:string[]}
 export interface ManagedFile {path:string;name:string;type:'file'|'dir'|'symlink';size?:number}
 export interface ManagedResult {snapshots?:Snapshot[];entries?:ManagedFile[];directory?:string;offset?:number;hasMore?:boolean;restorePath?:string;snapshotId?:string}
+export interface ManagedProgress {percentDone:number;bytesDone:number;totalBytes:number;filesDone:number;totalFiles:number;secondsElapsed:number;secondsRemaining:number;updatedAt:string}
 export interface ManagedAgentJob {
   id: string;
   operation: ManagedOperation;
@@ -126,6 +127,7 @@ export interface ManagedAgentJob {
   hasResult?: boolean;
   result?: ManagedResult | null;
   request?: ManagedRequest | null;
+  progress?: ManagedProgress | null;
 }
 
 export interface ManagedAgent {

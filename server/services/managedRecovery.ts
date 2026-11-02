@@ -1,4 +1,14 @@
-import type {ManagedOperation,ManagedRequest,ManagedResult,Snapshot,ManagedFile} from '../../types';
+import type {ManagedOperation,ManagedRequest,ManagedResult,Snapshot,ManagedFile,ManagedProgress} from '../../types';
+
+export function managedProgress(value:any):ManagedProgress {
+ if(!value||typeof value!=='object'||Array.isArray(value)||!Number.isFinite(value.percentDone)||value.percentDone<0||value.percentDone>1)throw new Error('Invalid backup progress');
+ const result:any={percentDone:value.percentDone,updatedAt:new Date().toISOString()};
+ for(const key of ['bytesDone','totalBytes','filesDone','totalFiles','secondsElapsed','secondsRemaining']){
+  if(!Number.isSafeInteger(value[key])||value[key]<0)throw new Error('Invalid backup progress');
+  result[key]=value[key];
+ }
+ return result;
+}
 
 export const recoveryCapability='recovery-v1';
 export const crossDeviceCapability='recovery-v2';
