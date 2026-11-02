@@ -6,6 +6,10 @@ $ErrorActionPreference='Stop'
 # Screenshots come from the native Windows controls, using disposable test data.
 function Save-TestWindow($Window,[string]$Name){
     $Window.PerformLayout();[Windows.Forms.Application]::DoEvents()
+    # Capture the top of the scrollable page consistently, including at larger text.
+    $recoveryView=$Window.Controls.Find('recovery',$true)[0]
+    if($recoveryView -and $recoveryView.Visible){$recoveryView.AutoScrollPosition=[Drawing.Point]::Empty}
+    [Windows.Forms.Application]::DoEvents()
     $image=New-Object Drawing.Bitmap($Window.Width,$Window.Height)
     try{$Window.DrawToBitmap($image,(New-Object Drawing.Rectangle(0,0,$Window.Width,$Window.Height)));$image.Save((Join-Path $env:RUNNER_TEMP $Name),[Drawing.Imaging.ImageFormat]::Png)}finally{$image.Dispose()}
 }

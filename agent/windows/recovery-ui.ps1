@@ -77,14 +77,14 @@ function Add-RecoveryPanel($Form,$SetupState,$Content,$BackupButton){
     $entries.Dock='Fill';$entries.CheckOnClick=$true;$entries.HorizontalScrollbar=$true;$entries.IntegralHeight=$false;$entries.BorderStyle='None';$entries.BackColor=[Drawing.Color]::White;$entries.ItemHeight=24;$entries.AccessibleName='Files and folders in saved backup'
     $empty=New-FortressControl $fileArea Label emptyFiles "Choose a saved version`n`nFiles and folders will appear here."
     $empty.AutoSize=$false;$empty.Dock='Fill';$empty.TextAlign='MiddleCenter';$empty.ForeColor=[Drawing.ColorTranslator]::FromHtml('#64748B');$empty.BackColor=[Drawing.Color]::White;$empty.BringToFront()
-    $selection=New-FortressTable $null selection 2;$selection.ColumnStyles[1].SizeType='AutoSize';$selection.Margin=New-Object Windows.Forms.Padding(0,12,0,12);$layout.Controls.Add($selection,0,3)
+    $selection=New-FortressTable $null selection 2;$selection.ColumnStyles[1].SizeType='AutoSize';$selection.Margin=New-Object Windows.Forms.Padding(0,8,0,8);$layout.Controls.Add($selection,0,3)
     $selected=New-FortressControl $null Label selected '0 selected'
     $selected.ForeColor=[Drawing.ColorTranslator]::FromHtml('#64748B');$selected.Anchor='Left,Right';$selection.Controls.Add($selected,0,0)
     $selectionActions=New-FortressFlow $null selectionActions;$selectionActions.Margin=New-Object Windows.Forms.Padding(0);$selection.Controls.Add($selectionActions,1,0)
     $more=New-FortressButton $selectionActions more 'Load more'
     $clear=New-FortressButton $selectionActions clear 'Clear selection'
     $clear.MinimumSize=New-Object Drawing.Size(0,28);$clear.Padding=New-Object Windows.Forms.Padding(10,2,10,2)
-    $restoreActions=New-FortressFlow $null restoreActions;$restoreActions.Margin=New-Object Windows.Forms.Padding(0,12,0,0);$selection.Controls.Add($restoreActions,0,1);$selection.SetColumnSpan($restoreActions,2)
+    $restoreActions=New-FortressFlow $null restoreActions;$restoreActions.Margin=New-Object Windows.Forms.Padding(0,8,0,0);$selection.Controls.Add($restoreActions,0,1);$selection.SetColumnSpan($restoreActions,2)
     $restore=New-FortressButton $restoreActions restore 'Restore selected' primary
     $all=New-FortressButton $restoreActions restoreAll 'Restore entire backup'
     $operation=New-FortressCard $null operation;$operation.Margin=New-Object Windows.Forms.Padding(0);$operation.Padding=New-Object Windows.Forms.Padding(12);$layout.Controls.Add($operation,0,4)
@@ -113,7 +113,12 @@ function Add-RecoveryPanel($Form,$SetupState,$Content,$BackupButton){
         $open.Enabled=$enabled -and !!$r.RestorePath
         $open.Visible=!!$r.RestorePath;$cancel.Visible=$cancel.Enabled
         $more.Visible=$r.More
+        $browserToolbar.Visible=!!$r.Snapshot
+        $selection.Visible=!!$r.Snapshot -or $r.More
+        $restoreActions.Visible=!!$r.Snapshot
+        $clear.Visible=!!$r.Snapshot;$selected.Visible=!!$r.Snapshot
         $empty.Visible=$entries.Items.Count -eq 0
+        $entries.Visible=!$empty.Visible
         if($empty.Visible){$empty.BringToFront()}
         if(!$configured){$empty.Text="Connect this laptop first`n`nOpen Device settings, choose folders, then Save and connect."}
     }.GetNewClosure()
@@ -125,7 +130,7 @@ function Add-RecoveryPanel($Form,$SetupState,$Content,$BackupButton){
         $r.Operation=$operation;$r.Request=$request;$r.Job=$null;$r.RestorePath=''
         $activity.Text=switch($operation){'snapshots'{'Loading backups'} 'files'{'Loading files'} 'backup'{'Backing up this laptop'} 'restore'{'Restoring files'}}
         $status.ForeColor=[Drawing.ColorTranslator]::FromHtml('#334155')
-        $empty.Text="Loading saved files...`n`nYou can follow the operation on the dashboard."
+        $empty.Text=$activity.Text+"...`n`nYou can follow the operation on the dashboard."
         $status.Text='Contacting the controller...'; & $setEnabled $false
         $r.Worker=[PowerShell]::Create()
         [void]$r.Worker.AddScript($invokeAPI.ToString()).AddArgument('request').AddArgument(@{operation=$operation;request=$request})
@@ -228,7 +233,7 @@ function Add-RecoveryPanel($Form,$SetupState,$Content,$BackupButton){
                 $panel.ScrollControlIntoView($operation)
                 $empty.Text="No files loaded`n`nResolve the message below, then refresh backups."
             }
-            finally{$r.Worker.Dispose();$r.Worker=$null;$r.Pending=$null;$SetupState.RecoveryWorker=$false;$r.NextPoll=[datetime]::UtcNow.AddSeconds(2); & $setEnabled (!$r.Job -or $r.Job.state -notin @('pending','running'))}
+            finally{$r.Worker.Dispose();$r.Worker=$null;$r.Pending=$null;$SetupState.RecoveryWorker=$false;$r.NextPoll=[datetime]::UtcNow.AddSeconds(2); & $setEnabled (!$r.Job -or $r.Job.state -notin @('pending','running'));if($r.Operation -in @('backup','restore')){$panel.ScrollControlIntoView($operation)}elseif($r.Job -and $r.Job.state -eq 'success'){$panel.AutoScrollPosition=[Drawing.Point]::Empty}}
         }
         if(!$r.Worker -and $r.Job -and $r.Job.state -in @('pending','running') -and [datetime]::UtcNow -ge $r.NextPoll){
             $r.Worker=[PowerShell]::Create()
