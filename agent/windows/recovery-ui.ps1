@@ -137,8 +137,8 @@ function Add-RecoveryPanel($Form,$SetupState){
                     $p=$r.Job.progress
                     if($p -and $p.totalBytes -gt 0){
                         $backupProgress.Style='Blocks';$backupProgress.Value=[Math]::Min(999,[int]($p.percentDone*1000))
-                        $progressText.Text=if($p.percentDone -ge 1){'Finalizing backup...'}else{('{0:P1} - {1:N0} of {2:N0} bytes - {3:N0} files' -f $p.percentDone,$p.bytesDone,$p.totalBytes,$p.filesDone)}
-                        if(([datetime]::UtcNow-([datetime]$p.updatedAt).ToUniversalTime()).TotalSeconds -gt 20){$progressText.Text+=' - progress updates delayed'}
+                        $progressText.Text=if($p.percentDone -ge 1){'Finalizing backup...'}else{('{0:P1} - {1:N0} of {2:N0} bytes - {3:N0} files' -f ([Math]::Min(0.999,[double]$p.percentDone)),$p.bytesDone,$p.totalBytes,$p.filesDone)}
+                        if(([datetime]::UtcNow-([datetime]$p.updatedAt).ToUniversalTime()).TotalSeconds -gt 20){$progressText.Text+=' - progress updates delayed'}elseif($p.secondsRemaining -gt 0){$progressText.Text+=(' - about {0:N0}s remaining' -f $p.secondsRemaining)}
                     }else{$backupProgress.Style='Marquee';$progressText.Text='Waiting for measured progress. No percentage has been reported.'}
                 }
                 $status.Text=$r.Operation+': '+$r.Job.state
