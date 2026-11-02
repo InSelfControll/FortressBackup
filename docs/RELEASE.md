@@ -1,7 +1,7 @@
 ## Downloads
 
 - **Windows installer:** **FortressBackup-Setup-<version>.exe** installs the app,
-  bundled Restic, Start menu shortcut, and Windows uninstall entry. Configure
+  bundled Restic and Rclone, Start menu shortcut, and Windows uninstall entry. Configure
   after installation or later from the Start menu; no ZIP extraction is required.
 - **Advanced Windows ZIP:** agent, app launcher, scripts, configuration example,
   guides, license, and checksums remain available for manual deployments.
@@ -12,6 +12,9 @@
   are also attached. `SHA256SUMS` covers every downloadable release asset.
 
 ## Current changes
+
+- Windows app redesign: a light workspace, compact navigation, collapsible connection details, persistent Save and connect action, and a resizable backup browser. Normal, compact, and larger-text layouts are verified on Windows.
+- Backup and restore status shows the actionable operation error. Loading, empty, progress, and recovery states remain readable in the same app window.
 
 - Windows backups report measured progress through their existing heartbeat. The dashboard, Managed Clients, and Windows app show processed bytes/files and remaining-time estimates; delayed updates are marked.
 - Older runtimes show an activity bar and elapsed time without an invented percentage. Let an active backup finish before upgrading its runtime; detailed progress starts with the next run.

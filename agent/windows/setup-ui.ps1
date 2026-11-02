@@ -48,7 +48,8 @@ function New-FortressButton($Parent,[string]$Name,[string]$Text,[string]$Role='s
     $b=New-FortressControl $Parent Button $Name $Text
     $b.UseMnemonic=$false;$b.AutoSize=$true;$b.AutoSizeMode='GrowAndShrink';$b.Dock='None'
     $b.MinimumSize=New-Object Drawing.Size(0,38)
-    $b.Padding=New-Object Windows.Forms.Padding(14,6,14,6)
+    $horizontal=if($Role -eq 'nav'){8}else{14}
+    $b.Padding=New-Object Windows.Forms.Padding($horizontal,6,$horizontal,6)
     $b.Margin=New-Object Windows.Forms.Padding(0,0,8,0)
     $b.FlatStyle='Flat';$b.FlatAppearance.BorderSize=1;$b.UseVisualStyleBackColor=$false;$b.Cursor='Hand'
     $apply={
@@ -64,7 +65,7 @@ function New-FortressButton($Parent,[string]$Name,[string]$Text,[string]$Role='s
 }
 function New-FortressFlow($Parent,[string]$Name){
     $flow=New-FortressControl $Parent FlowLayoutPanel $Name
-    $flow.AutoSize=$true;$flow.AutoSizeMode='GrowAndShrink';$flow.WrapContents=$true
+    $flow.AutoSize=$true;$flow.AutoSizeMode='GrowAndShrink';$flow.WrapContents=$false
     $flow.Margin=New-Object Windows.Forms.Padding(0,0,0,12)
     return $flow
 }
@@ -123,7 +124,7 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
     $settingsButton=New-FortressButton $null deviceSettings 'Device settings' nav
     $settingsButton.Dock='Fill';$settingsButton.TextAlign='MiddleLeft';$settingsButton.Margin=New-Object Windows.Forms.Padding(0,0,0,24);$sidebar.Controls.Add($settingsButton,0,3)
     $connectionState=New-FortressControl $null Label connectionState 'Not connected'
-    $connectionState.ForeColor=[Drawing.ColorTranslator]::FromHtml('#A5B4CB');$sidebar.Controls.Add($connectionState,0,4)
+    $connectionState.ForeColor=[Drawing.ColorTranslator]::FromHtml('#A5B4CB');$sidebar.Controls.Add($connectionState,0,4);$state.ConnectionLabel=$connectionState
     $hint=New-FortressControl $null Label backgroundHint 'Backups continue when this window is closed.'
     $hint.ForeColor=[Drawing.ColorTranslator]::FromHtml('#A5B4CB');$hint.Margin=New-Object Windows.Forms.Padding(0,16,0,16);$sidebar.Controls.Add($hint,0,6)
     $close=New-FortressButton $null close 'Close app' nav
@@ -146,12 +147,18 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
     $content=New-FortressControl $null Panel content
     $content.Dock='Fill';$content.Margin=New-Object Windows.Forms.Padding(0);$main.Controls.Add($content,0,1)
     $settings=New-FortressControl $content Panel settings
-    $settings.Dock='Fill';$settings.AutoScroll=$true;$settings.Margin=New-Object Windows.Forms.Padding(0)
-    $settingsLayout=New-FortressTable $settings settingsLayout
+    $settings.Dock='Fill';$settings.Margin=New-Object Windows.Forms.Padding(0)
+    $settingsScroll=New-FortressControl $settings Panel settingsScroll
+    $settingsScroll.Dock='Fill';$settingsScroll.AutoScroll=$true;$settingsScroll.Margin=New-Object Windows.Forms.Padding(0)
+    $settingsLayout=New-FortressTable $settingsScroll settingsLayout
     $connectionCard=New-FortressCard $null connectionCard
     $settingsLayout.Controls.Add($connectionCard,0,0)
+    $connectionHeader=New-FortressTable $null connectionHeader 2
+    $connectionHeader.ColumnStyles[1].SizeType='AutoSize';$connectionCard.Controls.Add($connectionHeader,0,0)
     $connectionTitle=New-FortressControl $null Label connectionTitle 'Connection'
-    $connectionTitle.Font=New-Object Drawing.Font('Segoe UI',12,[Drawing.FontStyle]::Bold);$connectionCard.Controls.Add($connectionTitle,0,0)
+    $connectionTitle.Font=New-Object Drawing.Font('Segoe UI',12,[Drawing.FontStyle]::Bold);$connectionHeader.Controls.Add($connectionTitle,0,0)
+    $editConnection=New-FortressControl $null LinkLabel editConnection 'Edit connection'
+    $editConnection.AutoSize=$true;$editConnection.Dock='None';$editConnection.LinkColor=[Drawing.ColorTranslator]::FromHtml('#4F46E5');$editConnection.Visible=$false;$connectionHeader.Controls.Add($editConnection,1,0)
     $connectionHelp=New-FortressControl $null Label connectionHelp 'Use your enrollment from Managed Clients. Your storage settings load automatically.'
     $connectionHelp.ForeColor=[Drawing.ColorTranslator]::FromHtml('#64748B');$connectionHelp.Margin=New-Object Windows.Forms.Padding(0,0,0,16);$connectionCard.Controls.Add($connectionHelp,0,1)
     $controllerLabel=New-FortressControl $null Label controllerLabel 'Controller HTTPS address';$connectionCard.Controls.Add($controllerLabel,0,2)
@@ -178,20 +185,27 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
     $folderHint.ForeColor=[Drawing.ColorTranslator]::FromHtml('#64748B');$folderCard.Controls.Add($folderHint,0,1)
     $folders=New-FortressControl $null ListBox folders
     $folders.Height=112;$folders.IntegralHeight=$false;$folders.HorizontalScrollbar=$true;$folders.BorderStyle='FixedSingle';$folders.BackColor=[Drawing.Color]::White;$folders.AccessibleName='Backup folders';$folderCard.Controls.Add($folders,0,2)
-    $setupFooter=New-FortressCard $null setupFooter;$settingsLayout.Controls.Add($setupFooter,0,2)
+    $setupFooter=New-FortressCard $settings setupFooter;$setupFooter.Dock='Bottom';$setupFooter.Padding=New-Object Windows.Forms.Padding(16)
     $progress=New-FortressControl $null ProgressBar progress;$progress.Height=6;$progress.Visible=$false;$setupFooter.Controls.Add($progress,0,0)
     $status=New-FortressControl $null TextBox status 'Connect, choose your folders, then save to start protecting this laptop.'
-    $status.Multiline=$true;$status.ReadOnly=$true;$status.ScrollBars='Vertical';$status.BorderStyle='None';$status.BackColor=[Drawing.Color]::White;$status.Height=56;$status.TabStop=$false;$status.AccessibleName='Setup status';$setupFooter.Controls.Add($status,0,1)
+    $status.Multiline=$true;$status.ReadOnly=$true;$status.ScrollBars='Vertical';$status.BorderStyle='None';$status.BackColor=[Drawing.Color]::White;$status.Height=40;$status.TabStop=$false;$status.AccessibleName='Setup status';$setupFooter.Controls.Add($status,0,1)
     $saveActions=New-FortressTable $null saveActions 2;$saveActions.ColumnStyles[1].SizeType='AutoSize';$setupFooter.Controls.Add($saveActions,0,2)
     $saveHint=New-FortressControl $null Label saveHint 'Original files stay on this laptop.';$saveHint.ForeColor=[Drawing.ColorTranslator]::FromHtml('#64748B');$saveHint.Anchor='Left,Right';$saveActions.Controls.Add($saveHint,0,0)
     $install=New-FortressButton $null install 'Save and connect' primary;$install.Margin=New-Object Windows.Forms.Padding(12,0,0,0);$saveActions.Controls.Add($install,1,0)
     $install.Enabled=$false;$add.Enabled=$false;$remove.Enabled=$false
     $form.AcceptButton=$connect;$form.CancelButton=$close
+    $connectionFields=@($connectionHelp,$controllerLabel,$controller,$credentials)
+    $setConnectionEditing={param([bool]$editing)
+        foreach($field in $connectionFields){$field.Visible=$editing}
+        $editConnection.Text=if($editing){'Hide details'}else{'Edit connection'}
+    }.GetNewClosure()
+    $editConnection.Add_Click({ & $setConnectionEditing (!$controller.Visible) }.GetNewClosure())
     $changed={
         if($state.Profile -and !$state.Worker){
             $state.Profile=$null;$state.Token='';$connect.Text='Connect';$connectionState.Text='Connection changed'
             $install.Enabled=$false;$add.Enabled=$false
             $form.AcceptButton=$connect
+            & $setConnectionEditing $true
             $repository.Text='Connection settings changed. Click Connect to load your saved repository.'
         }
     }.GetNewClosure()
@@ -262,6 +276,7 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
             if($state.Worker.Streams.Error.Count -gt 0){throw $state.Worker.Streams.Error[0].Exception}
             if($state.Stage -eq 'connect'){
                 $state.Profile=$result[0];$connect.Text='Refresh connection'
+                $editConnection.Visible=$true; & $setConnectionEditing $false
                 $connectionState.Text='Connected';$connectionState.ForeColor=[Drawing.ColorTranslator]::FromHtml('#86EFAC')
                 $form.AcceptButton=$install
                 $repository.Text='Saved repository: '+$state.Profile.storageName+' / '+$state.Profile.repositoryName
@@ -296,6 +311,7 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
     if(Test-Path -LiteralPath $existingPath){
         try {
             $existing=Get-Content -LiteralPath $existingPath -Raw | ConvertFrom-Json
+            $connectionState.Text='Saved connection'
             $controller.Text=[string]$existing.controllerUrl
             $id.Text=[string]$existing.agentId
             if($existing.agentTokenFile){$token.Text=[IO.File]::ReadAllText([string]$existing.agentTokenFile).Trim()}

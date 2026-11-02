@@ -31,11 +31,13 @@ function Add-RecoveryPanel($Form,$SetupState,$Content,$BackupButton){
     $invokeAPI=${function:Invoke-RecoveryAPI}
     $errorMessage=${function:Get-FortressErrorMessage}
     $panel=New-FortressControl $Content Panel recovery
-    $panel.Dock='Fill';$panel.Visible=$false;$panel.Margin=New-Object Windows.Forms.Padding(0)
+    $panel.Dock='Fill';$panel.AutoScroll=$true;$panel.Visible=$false;$panel.Margin=New-Object Windows.Forms.Padding(0)
     $r=@{Worker=$null;Pending=$null;Job=$null;Operation='';Request=$null;Entries=@();Snapshots=@();Offset=0;More=$false;Directory='/';Snapshot='';AllDevices=$true;Selected=(New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal));NextPoll=[datetime]::MinValue;RestorePath=''}
     $panel.Tag=$r
     $layout=New-FortressTable $panel recoveryLayout
-    $layout.Dock='Fill';$layout.AutoSize=$false
+    $layout.Dock='Top';$layout.AutoSize=$true
+    $fitViewport={ $layout.MinimumSize=New-Object Drawing.Size(0,$panel.ClientSize.Height) }.GetNewClosure()
+    $panel.Add_SizeChanged($fitViewport)
     [void]$layout.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
     [void]$layout.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
     [void]$layout.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::Percent,100)))
@@ -60,7 +62,7 @@ function Add-RecoveryPanel($Form,$SetupState,$Content,$BackupButton){
     $snapshotRow.Controls.Add($versions,0,1);$layout.Controls.Add($snapshotRow,0,1)
     $browser=New-FortressTable $null fileBrowser
     $browser.Dock='Fill';$browser.AutoSize=$false;$browser.BackColor=[Drawing.Color]::White;$browser.Padding=New-Object Windows.Forms.Padding(16)
-    $browser.MinimumSize=New-Object Drawing.Size(0,120);$layout.Controls.Add($browser,0,2)
+    $browser.MinimumSize=New-Object Drawing.Size(0,200);$layout.Controls.Add($browser,0,2)
     [void]$browser.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
     [void]$browser.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::Percent,100)))
     $browserToolbar=New-FortressTable $null browserToolbar 2
@@ -81,14 +83,15 @@ function Add-RecoveryPanel($Form,$SetupState,$Content,$BackupButton){
     $selectionActions=New-FortressFlow $null selectionActions;$selectionActions.Margin=New-Object Windows.Forms.Padding(0);$selection.Controls.Add($selectionActions,1,0)
     $more=New-FortressButton $selectionActions more 'Load more'
     $clear=New-FortressButton $selectionActions clear 'Clear selection'
+    $clear.MinimumSize=New-Object Drawing.Size(0,28);$clear.Padding=New-Object Windows.Forms.Padding(10,2,10,2)
     $restoreActions=New-FortressFlow $null restoreActions;$restoreActions.Margin=New-Object Windows.Forms.Padding(0,12,0,0);$selection.Controls.Add($restoreActions,0,1);$selection.SetColumnSpan($restoreActions,2)
     $restore=New-FortressButton $restoreActions restore 'Restore selected' primary
     $all=New-FortressButton $restoreActions restoreAll 'Restore entire backup'
-    $operation=New-FortressCard $null operation;$operation.Margin=New-Object Windows.Forms.Padding(0);$operation.Padding=New-Object Windows.Forms.Padding(16);$layout.Controls.Add($operation,0,4)
+    $operation=New-FortressCard $null operation;$operation.Margin=New-Object Windows.Forms.Padding(0);$operation.Padding=New-Object Windows.Forms.Padding(12);$layout.Controls.Add($operation,0,4)
     $activity=New-FortressControl $null Label activity 'Ready when you are'
     $activity.Font=New-Object Drawing.Font('Segoe UI',11,[Drawing.FontStyle]::Bold);$operation.Controls.Add($activity,0,0)
     $status=New-FortressControl $null TextBox status 'A backup creates a snapshot: a saved version of your files. Restores go to a new folder, keeping original files safe.'
-    $status.Multiline=$true;$status.ReadOnly=$true;$status.ScrollBars='Vertical';$status.AccessibleName='Restore status';$status.BorderStyle='None';$status.BackColor=[Drawing.Color]::White;$status.Height=48;$status.TabStop=$false;$operation.Controls.Add($status,0,1)
+    $status.Multiline=$true;$status.ReadOnly=$true;$status.ScrollBars='Vertical';$status.AccessibleName='Restore status';$status.BorderStyle='None';$status.BackColor=[Drawing.Color]::White;$status.Height=40;$status.TabStop=$false;$operation.Controls.Add($status,0,1)
     $backupProgress=New-FortressControl $null ProgressBar backupProgress
     $backupProgress.Height=6;$backupProgress.Maximum=1000;$backupProgress.Visible=$false;$backupProgress.AccessibleName='Backup progress';$operation.Controls.Add($backupProgress,0,2)
     $progressText=New-FortressControl $null Label progressText
@@ -174,6 +177,7 @@ function Add-RecoveryPanel($Form,$SetupState,$Content,$BackupButton){
                 $output=$r.Worker.EndInvoke($r.Pending)
                 if($r.Worker.Streams.Error.Count -gt 0){throw $r.Worker.Streams.Error[0].Exception}
                 $r.Job=([string]$output[0] | ConvertFrom-Json)
+                $SetupState.ConnectionLabel.Text='Connected';$SetupState.ConnectionLabel.ForeColor=[Drawing.ColorTranslator]::FromHtml('#86EFAC')
                 $activity.Text=if($r.Job.state -eq 'pending'){'Waiting for the laptop agent'}elseif($r.Job.state -eq 'running'){switch($r.Operation){'backup'{'Backup in progress'} 'restore'{'Restoring files'} default{'Loading saved backups'}}}else{'Ready'}
                 $backupProgress.Visible=$r.Operation -eq 'backup' -and $r.Job.state -in @('pending','running')
                 $progressText.Visible=$backupProgress.Visible
@@ -221,6 +225,7 @@ function Add-RecoveryPanel($Form,$SetupState,$Content,$BackupButton){
             }catch{
                 $activity.Text='Could not finish';$status.ForeColor=[Drawing.ColorTranslator]::FromHtml('#B42318')
                 $status.Text=(& $errorMessage $_)
+                $panel.ScrollControlIntoView($operation)
                 $empty.Text="No files loaded`n`nResolve the message below, then refresh backups."
             }
             finally{$r.Worker.Dispose();$r.Worker=$null;$r.Pending=$null;$SetupState.RecoveryWorker=$false;$r.NextPoll=[datetime]::UtcNow.AddSeconds(2); & $setEnabled (!$r.Job -or $r.Job.state -notin @('pending','running'))}

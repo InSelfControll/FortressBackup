@@ -13,9 +13,17 @@ function Assert-TestLayout($Container){
     foreach($control in $Container.Controls){
         if(!$control.Visible){continue}
         if($control.Right -gt $Container.ClientSize.Width+2){throw ('Control extends past its container: '+$control.Name)}
+        if(!$Container.AutoScroll -and $control.Bottom -gt $Container.ClientSize.Height+2){throw ('Control is cut off vertically: '+$control.Name)}
         if($control -is [Windows.Forms.Button]){
-            $text=[Windows.Forms.TextRenderer]::MeasureText($control.Text,$control.Font,(New-Object Drawing.Size(10000,10000)),[Windows.Forms.TextFormatFlags]::NoPadding)
-            if($text.Width+$control.Padding.Horizontal -gt $control.Width+2 -or $text.Height+$control.Padding.Vertical -gt $control.Height+2){throw ('Button text is clipped: '+$control.Name)}
+            $preferred=$control.GetPreferredSize([Drawing.Size]::Empty)
+            if($preferred.Width -gt $control.Width+2 -or $preferred.Height -gt $control.Height+2){throw ('Button text is clipped: '+$control.Name)}
+        }
+        if($Container -is [Windows.Forms.TableLayoutPanel]){
+            foreach($other in $Container.Controls){
+                if($other -eq $control -or !$other.Visible){continue}
+                $overlap=[Drawing.Rectangle]::Intersect($control.Bounds,$other.Bounds)
+                if($overlap.Width -gt 1 -and $overlap.Height -gt 1){throw ('Controls overlap: '+$control.Name+' / '+$other.Name)}
+            }
         }
         Assert-TestLayout $control
     }
