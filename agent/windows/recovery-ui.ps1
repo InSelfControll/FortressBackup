@@ -62,9 +62,9 @@ function Add-RecoveryPanel($Form,$SetupState){
     $open=Add-RecoveryControl Button open 'Open restored folder' 20 558 190 33
     $back=Add-RecoveryControl Button back 'Configuration' 460 558 170 33
     $backupProgress=Add-RecoveryControl ProgressBar backupProgress '' 20 600 610 14
-    $backupProgress.Maximum=1000;$backupProgress.Visible=$false
+    $backupProgress.Maximum=1000;$backupProgress.Visible=$false;$backupProgress.AccessibleName='Backup progress'
     $progressText=Add-RecoveryControl Label progressText '' 20 622 610 40
-    $progressText.Visible=$false
+    $progressText.Visible=$false;$progressText.AccessibleName='Backup progress details'
     $scope.Add_CheckedChanged({$r.AllDevices=$scope.Checked;$r.Snapshot='';$r.Selected.Clear();$selected.Text='0 selected.';$versions.Items.Clear();$entries.Items.Clear()}.GetNewClosure())
     $setEnabled={param([bool]$enabled)
         $load.Enabled=$enabled;$backup.Enabled=$enabled;$scope.Enabled=$enabled;$versions.Enabled=$enabled;$back.Enabled=$enabled

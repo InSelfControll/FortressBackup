@@ -17,6 +17,6 @@ export function BackupProgress({job}:{job:ManagedAgentJob}){
   <div className="flex justify-between gap-3"><span>{measured?(p!.percentDone>=1?'Finalizing backup':`${percent!.toFixed(1)}%`):'Backup running'}</span><span>{duration(elapsed)} elapsed</span></div>
   <progress aria-label="Backup progress" className="h-3 w-full accent-indigo-500" max={100} value={percent}/>
   {p?<p className="text-xs text-slate-400">{bytes(p.bytesDone)}{p.totalBytes>0?` of ${bytes(p.totalBytes)}`:' processed'} · {p.filesDone.toLocaleString()} files{p.totalFiles>0?` of ${p.totalFiles.toLocaleString()}`:''}{!stale&&p.secondsRemaining>0?` · about ${duration(p.secondsRemaining)} remaining`:''}</p>:<p className="text-xs text-slate-400">Waiting for measured progress. This agent has not reported a percentage.</p>}
-  {stale&&<p className="text-xs text-amber-300">Progress updates delayed. Last update: {new Date(p!.updatedAt).toLocaleTimeString()}. Backup status is unconfirmed until the agent reports.</p>}
+  {stale&&<p className="text-xs text-amber-300">Progress updates delayed. Last update: {new Date(p!.updatedAt).toLocaleTimeString()}.</p>}
  </div>;
 }
