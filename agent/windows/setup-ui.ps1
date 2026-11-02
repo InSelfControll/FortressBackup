@@ -26,6 +26,63 @@ function Start-SetupOperation($State,[scriptblock]$Work,[object[]]$Arguments){
 
 . (Join-Path $PSScriptRoot 'recovery-ui.ps1')
 
+# Native layout and styles are shared by settings and recovery. No extra runtime.
+function New-FortressControl($Parent,[string]$Type,[string]$Name,[string]$Text=''){
+    $c=New-Object ('Windows.Forms.'+$Type)
+    $c.Name=$Name;$c.Text=$Text;$c.Dock='Top'
+    $c.Margin=New-Object Windows.Forms.Padding(0,0,0,8)
+    $c.ForeColor=[Drawing.ColorTranslator]::FromHtml('#1E293B')
+    if($c -is [Windows.Forms.Label]){$c.AutoSize=$true;$c.UseCompatibleTextRendering=$false;$c.UseMnemonic=$false}
+    if($c -is [Windows.Forms.TextBox]){$c.BorderStyle='FixedSingle';$c.BackColor=[Drawing.Color]::White;$c.MinimumSize=New-Object Drawing.Size(0,30)}
+    if($Parent){[void]$Parent.Controls.Add($c)}
+    return $c
+}
+function New-FortressTable($Parent,[string]$Name,[int]$Columns=1){
+    $table=New-FortressControl $Parent TableLayoutPanel $Name
+    $table.AutoSize=$true;$table.AutoSizeMode='GrowAndShrink';$table.ColumnCount=$Columns
+    $table.Margin=New-Object Windows.Forms.Padding(0)
+    for($i=0;$i -lt $Columns;$i++){[void]$table.ColumnStyles.Add((New-Object Windows.Forms.ColumnStyle([Windows.Forms.SizeType]::Percent,(100/$Columns))))}
+    return $table
+}
+function New-FortressButton($Parent,[string]$Name,[string]$Text,[string]$Role='secondary'){
+    $b=New-FortressControl $Parent Button $Name $Text
+    $b.UseMnemonic=$false;$b.AutoSize=$true;$b.AutoSizeMode='GrowAndShrink';$b.Dock='None'
+    $b.MinimumSize=New-Object Drawing.Size(0,38)
+    $horizontal=if($Role -eq 'nav'){8}else{14}
+    $b.Padding=New-Object Windows.Forms.Padding($horizontal,6,$horizontal,6)
+    $b.Margin=New-Object Windows.Forms.Padding(0,0,8,0)
+    $b.FlatStyle='Flat';$b.FlatAppearance.BorderSize=1;$b.UseVisualStyleBackColor=$false;$b.Cursor='Hand'
+    $apply={
+        $primary=$Role -eq 'primary';$nav=$Role -eq 'nav'
+        $background=if(!$b.Enabled){if($nav){'#111827'}else{'#EDF0F5'}}elseif($primary){'#4F46E5'}elseif($nav){'#111827'}else{'#FFFFFF'}
+        $foreground=if(!$b.Enabled){'#7D8799'}elseif($primary -or $nav){'#FFFFFF'}else{'#334155'}
+        $b.BackColor=[Drawing.ColorTranslator]::FromHtml($background);$b.ForeColor=[Drawing.ColorTranslator]::FromHtml($foreground)
+        $b.FlatAppearance.BorderColor=[Drawing.ColorTranslator]::FromHtml($(if($primary -or $nav){$background}else{'#D8DFE9'}))
+        $b.FlatAppearance.MouseOverBackColor=[Drawing.ColorTranslator]::FromHtml($(if($primary){'#4338CA'}elseif($nav){'#253249'}else{'#F3F5FA'}))
+    }.GetNewClosure()
+    & $apply;$b.Add_EnabledChanged($apply)
+    return $b
+}
+function New-FortressFlow($Parent,[string]$Name){
+    $flow=New-FortressControl $Parent FlowLayoutPanel $Name
+    $flow.AutoSize=$true;$flow.AutoSizeMode='GrowAndShrink';$flow.WrapContents=$false
+    $flow.Margin=New-Object Windows.Forms.Padding(0,0,0,12)
+    return $flow
+}
+function New-FortressCard($Parent,[string]$Name){
+    $card=New-FortressTable $Parent $Name
+    $card.BackColor=[Drawing.Color]::White;$card.Padding=New-Object Windows.Forms.Padding(20)
+    $card.Margin=New-Object Windows.Forms.Padding(0,0,0,16)
+    return $card
+}
+function Get-FortressErrorMessage($Record){
+    $errorDetail=$Record.Exception
+    while($errorDetail.InnerException){$errorDetail=$errorDetail.InnerException}
+    $message=([string]$errorDetail.Message -replace '[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]',' ').Trim()
+    if(!$message){return 'The operation could not finish. Check your connection and try again.'}
+    return $message.Substring(0,[Math]::Min(1600,$message.Length))
+}
+
 function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
     # PS 5.1 event closures do not retain script-scoped function lookup.
     $startOperation=${function:Start-SetupOperation}
@@ -35,53 +92,120 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
     if(!(Test-Path -LiteralPath $iconPath)){$iconPath=Join-Path $SetupRoot 'assets\fortress.ico'}
     $form.Icon=New-Object Drawing.Icon($iconPath)
     $form.Text='Fortress Backup'
-    $form.ClientSize=New-Object Drawing.Size(650,605)
-    $form.StartPosition='CenterScreen'
-    $form.FormBorderStyle='FixedDialog'
-    $form.MaximizeBox=$false
-    $form.AutoScaleMode='Dpi'
+    $form.ClientSize=New-Object Drawing.Size(1120,800)
+    $form.MinimumSize=New-Object Drawing.Size(860,620)
+    $form.StartPosition='CenterScreen';$form.FormBorderStyle='Sizable';$form.MaximizeBox=$true
+    $form.AutoScaleMode='Dpi';$form.AutoScaleDimensions=New-Object Drawing.SizeF(96,96)
     $form.Font=New-Object Drawing.Font('Segoe UI',10)
+    $form.BackColor=[Drawing.ColorTranslator]::FromHtml('#F3F5FA')
     $state=@{Worker=$null;Pending=$null;Stage='';Profile=$null;Controller='';Id='';Token=''}
     $form.Tag=$state
-    function Add-SetupControl($Type,$Name,$Text,$X,$Y,$Width,$Height){
-        $control=New-Object ('Windows.Forms.'+$Type)
-        $control.Name=$Name;$control.Text=$Text
-        $control.SetBounds($X,$Y,$Width,$Height)
-        $form.Controls.Add($control)
-        return $control
-    }
-    $heading=Add-SetupControl Label heading 'Connect this laptop to Fortress Backup' 20 15 610 30
-    $heading.Font=New-Object Drawing.Font('Segoe UI',14,[Drawing.FontStyle]::Bold)
-    [void](Add-SetupControl Label intro 'Use the enrollment credentials from Managed Clients. Your saved storage settings are downloaded automatically.' 20 52 610 45)
-    [void](Add-SetupControl Label controllerLabel 'Controller HTTPS address' 20 105 205 25)
-    $controller=Add-SetupControl TextBox controller '' 230 102 400 28
-    [void](Add-SetupControl Label idLabel 'Enrollment client ID' 20 142 205 25)
-    $id=Add-SetupControl TextBox clientId '' 230 139 400 28
-    [void](Add-SetupControl Label tokenLabel 'Enrollment token' 20 179 205 25)
-    $token=Add-SetupControl TextBox token '' 230 176 400 28
-    $token.UseSystemPasswordChar=$true
-    $connect=Add-SetupControl Button connect 'Connect' 490 215 140 33
-    $repository=Add-SetupControl Label repository 'Saved repository: connect to load your assigned storage.' 20 258 610 43
-    [void](Add-SetupControl Label folderLabel 'Backup folders' 20 308 460 25)
-    $folders=Add-SetupControl ListBox folders '' 20 337 455 115
-    $folders.HorizontalScrollbar=$true
-    $add=Add-SetupControl Button addFolder 'Add folder...' 490 337 140 33
-    $remove=Add-SetupControl Button removeFolder 'Remove' 490 378 140 33
-    $progress=Add-SetupControl ProgressBar progress '' 20 469 610 15
-    $status=Add-SetupControl TextBox status 'Connect, choose folders, then save your configuration.' 20 492 610 57
-    $status.Multiline=$true;$status.ReadOnly=$true;$status.ScrollBars='Vertical'
-    $status.BorderStyle='None';$status.BackColor=[Drawing.SystemColors]::Control
-    $status.AccessibleName='Setup status'
-    $install=Add-SetupControl Button install 'Save and connect' 340 558 140 33
-    $close=Add-SetupControl Button close 'Cancel' 490 558 140 33
+    $errorMessage=${function:Get-FortressErrorMessage}
+    $shell=New-FortressTable $form shell 2
+    $shell.Dock='Fill';$shell.AutoSize=$false
+    $shell.ColumnStyles[0].SizeType='Absolute';$shell.ColumnStyles[0].Width=204
+    $shell.ColumnStyles[1].SizeType='Percent';$shell.ColumnStyles[1].Width=100
+    [void]$shell.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::Percent,100)))
+    $sidebar=New-FortressTable $null sidebar
+    $sidebar.Dock='Fill';$sidebar.AutoSize=$false;$sidebar.Padding=New-Object Windows.Forms.Padding(18,24,18,20)
+    $sidebar.BackColor=[Drawing.ColorTranslator]::FromHtml('#111827')
+    $shell.Controls.Add($sidebar,0,0)
+    for($i=0;$i -lt 5;$i++){[void]$sidebar.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))}
+    [void]$sidebar.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::Percent,100)))
+    [void]$sidebar.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
+    [void]$sidebar.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
+    $brand=New-FortressControl $null Label brand 'Fortress Backup'
+    $brand.ForeColor=[Drawing.Color]::White;$brand.Font=New-Object Drawing.Font('Segoe UI',14,[Drawing.FontStyle]::Bold)
+    $brand.Margin=New-Object Windows.Forms.Padding(0,0,0,4);$sidebar.Controls.Add($brand,0,0)
+    $brandNote=New-FortressControl $null Label brandNote 'Your files, protected.'
+    $brandNote.ForeColor=[Drawing.ColorTranslator]::FromHtml('#A5B4CB');$brandNote.Margin=New-Object Windows.Forms.Padding(0,0,0,32);$sidebar.Controls.Add($brandNote,0,1)
+    $recoveryButton=New-FortressButton $null backups 'Snapshots' nav
+    $recoveryButton.Dock='Fill';$recoveryButton.TextAlign='MiddleLeft';$recoveryButton.Margin=New-Object Windows.Forms.Padding(0,0,0,8);$sidebar.Controls.Add($recoveryButton,0,2)
+    $settingsButton=New-FortressButton $null deviceSettings 'Device settings' nav
+    $settingsButton.Dock='Fill';$settingsButton.TextAlign='MiddleLeft';$settingsButton.Margin=New-Object Windows.Forms.Padding(0,0,0,24);$sidebar.Controls.Add($settingsButton,0,3)
+    $connectionState=New-FortressControl $null Label connectionState 'Not connected'
+    $connectionState.ForeColor=[Drawing.ColorTranslator]::FromHtml('#A5B4CB');$sidebar.Controls.Add($connectionState,0,4);$state.ConnectionLabel=$connectionState
+    $hint=New-FortressControl $null Label backgroundHint 'Backups continue when this window is closed.'
+    $hint.ForeColor=[Drawing.ColorTranslator]::FromHtml('#A5B4CB');$hint.Margin=New-Object Windows.Forms.Padding(0,16,0,16);$sidebar.Controls.Add($hint,0,6)
+    $close=New-FortressButton $null close 'Close app' nav
+    $close.Dock='Fill';$close.TextAlign='MiddleLeft';$sidebar.Controls.Add($close,0,7)
+    $main=New-FortressTable $null main
+    $main.Dock='Fill';$main.AutoSize=$false;$main.Padding=New-Object Windows.Forms.Padding(28,24,28,24);$shell.Controls.Add($main,1,0)
+    [void]$main.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
+    [void]$main.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::Percent,100)))
+    $header=New-FortressTable $null pageHeader 2
+    $header.ColumnStyles[1].SizeType='AutoSize';$header.Margin=New-Object Windows.Forms.Padding(0,0,0,20)
+    $main.Controls.Add($header,0,0)
+    $titles=New-FortressTable $null pageTitles
+    $heading=New-FortressControl $null Label heading 'Device settings'
+    $heading.Font=New-Object Drawing.Font('Segoe UI',22,[Drawing.FontStyle]::Bold);$heading.Margin=New-Object Windows.Forms.Padding(0,0,0,6)
+    $titles.Controls.Add($heading,0,0)
+    $intro=New-FortressControl $null Label intro "Manage this laptop's connection and backup folders."
+    $intro.ForeColor=[Drawing.ColorTranslator]::FromHtml('#64748B');$titles.Controls.Add($intro,0,1);$header.Controls.Add($titles,0,0)
+    $backupButton=New-FortressButton $null backupNow 'Backup now' primary
+    $backupButton.Anchor='Top,Right';$backupButton.Margin=New-Object Windows.Forms.Padding(16,4,0,0);$header.Controls.Add($backupButton,1,0)
+    $content=New-FortressControl $null Panel content
+    $content.Dock='Fill';$content.Margin=New-Object Windows.Forms.Padding(0);$main.Controls.Add($content,0,1)
+    $settings=New-FortressControl $content Panel settings
+    $settings.Dock='Fill';$settings.Margin=New-Object Windows.Forms.Padding(0)
+    $settingsScroll=New-FortressControl $settings Panel settingsScroll
+    $settingsScroll.Dock='Fill';$settingsScroll.AutoScroll=$true;$settingsScroll.Margin=New-Object Windows.Forms.Padding(0)
+    $settingsLayout=New-FortressTable $settingsScroll settingsLayout
+    $connectionCard=New-FortressCard $null connectionCard
+    $settingsLayout.Controls.Add($connectionCard,0,0)
+    $connectionHeader=New-FortressTable $null connectionHeader 2
+    $connectionHeader.ColumnStyles[1].SizeType='AutoSize';$connectionCard.Controls.Add($connectionHeader,0,0)
+    $connectionTitle=New-FortressControl $null Label connectionTitle 'Connection'
+    $connectionTitle.Font=New-Object Drawing.Font('Segoe UI',12,[Drawing.FontStyle]::Bold);$connectionHeader.Controls.Add($connectionTitle,0,0)
+    $editConnection=New-FortressControl $null LinkLabel editConnection 'Edit connection'
+    $editConnection.AutoSize=$true;$editConnection.Dock='None';$editConnection.LinkColor=[Drawing.ColorTranslator]::FromHtml('#4F46E5');$editConnection.Visible=$false;$connectionHeader.Controls.Add($editConnection,1,0)
+    $connectionHelp=New-FortressControl $null Label connectionHelp 'Use your enrollment from Managed Clients. Your storage settings load automatically.'
+    $connectionHelp.ForeColor=[Drawing.ColorTranslator]::FromHtml('#64748B');$connectionHelp.Margin=New-Object Windows.Forms.Padding(0,0,0,16);$connectionCard.Controls.Add($connectionHelp,0,1)
+    $controllerLabel=New-FortressControl $null Label controllerLabel 'Controller HTTPS address';$connectionCard.Controls.Add($controllerLabel,0,2)
+    $controller=New-FortressControl $null TextBox controller;$controller.AccessibleName='Controller HTTPS address';$connectionCard.Controls.Add($controller,0,3)
+    $credentials=New-FortressTable $null credentials 2
+    $credentials.Margin=New-Object Windows.Forms.Padding(0,4,0,8);$connectionCard.Controls.Add($credentials,0,4)
+    $idLabel=New-FortressControl $null Label idLabel 'Enrollment client ID';$credentials.Controls.Add($idLabel,0,0)
+    $tokenLabel=New-FortressControl $null Label tokenLabel 'Enrollment token';$credentials.Controls.Add($tokenLabel,1,0)
+    $id=New-FortressControl $null TextBox clientId;$id.AccessibleName='Enrollment client ID';$id.Margin=New-Object Windows.Forms.Padding(0,0,12,0);$credentials.Controls.Add($id,0,1)
+    $token=New-FortressControl $null TextBox token;$token.AccessibleName='Enrollment token';$token.UseSystemPasswordChar=$true;$credentials.Controls.Add($token,1,1)
+    $connectionActions=New-FortressTable $null connectionActions 2
+    $connectionActions.ColumnStyles[1].SizeType='AutoSize';$connectionActions.Margin=New-Object Windows.Forms.Padding(0,8,0,0)
+    $repository=New-FortressControl $null Label repository 'Connect to load your assigned repository.'
+    $repository.ForeColor=[Drawing.ColorTranslator]::FromHtml('#64748B');$repository.Anchor='Left,Right';$repository.Margin=New-Object Windows.Forms.Padding(0,0,12,0);$connectionActions.Controls.Add($repository,0,0)
+    $connect=New-FortressButton $null connect 'Connect';$connect.Margin=New-Object Windows.Forms.Padding(0);$connectionActions.Controls.Add($connect,1,0);$connectionCard.Controls.Add($connectionActions,0,5)
+    $folderCard=New-FortressCard $null folderCard;$settingsLayout.Controls.Add($folderCard,0,1)
+    $folderHeader=New-FortressTable $null folderHeader 2;$folderHeader.ColumnStyles[1].SizeType='AutoSize'
+    $folderLabel=New-FortressControl $null Label folderLabel 'Backup folders';$folderLabel.Font=New-Object Drawing.Font('Segoe UI',12,[Drawing.FontStyle]::Bold);$folderLabel.Anchor='Left,Right';$folderHeader.Controls.Add($folderLabel,0,0)
+    $folderActions=New-FortressFlow $null folderActions;$folderHeader.Controls.Add($folderActions,1,0)
+    $add=New-FortressButton $folderActions addFolder 'Add folder'
+    $remove=New-FortressButton $folderActions removeFolder 'Remove'
+    $folderCard.Controls.Add($folderHeader,0,0)
+    $folderHint=New-FortressControl $null Label folderHint 'Select folders on this laptop. Changes apply after you save.'
+    $folderHint.ForeColor=[Drawing.ColorTranslator]::FromHtml('#64748B');$folderCard.Controls.Add($folderHint,0,1)
+    $folders=New-FortressControl $null ListBox folders
+    $folders.Height=112;$folders.IntegralHeight=$false;$folders.HorizontalScrollbar=$true;$folders.BorderStyle='FixedSingle';$folders.BackColor=[Drawing.Color]::White;$folders.AccessibleName='Backup folders';$folderCard.Controls.Add($folders,0,2)
+    $setupFooter=New-FortressCard $settings setupFooter;$setupFooter.Dock='Bottom';$setupFooter.Padding=New-Object Windows.Forms.Padding(16)
+    $progress=New-FortressControl $null ProgressBar progress;$progress.Height=6;$progress.Visible=$false;$setupFooter.Controls.Add($progress,0,0)
+    $status=New-FortressControl $null TextBox status 'Connect, choose your folders, then save to start protecting this laptop.'
+    $status.Multiline=$true;$status.ReadOnly=$true;$status.ScrollBars='Vertical';$status.BorderStyle='None';$status.BackColor=[Drawing.Color]::White;$status.Height=40;$status.TabStop=$false;$status.AccessibleName='Setup status';$setupFooter.Controls.Add($status,0,1)
+    $saveActions=New-FortressTable $null saveActions 2;$saveActions.ColumnStyles[1].SizeType='AutoSize';$setupFooter.Controls.Add($saveActions,0,2)
+    $saveHint=New-FortressControl $null Label saveHint 'Original files stay on this laptop.';$saveHint.ForeColor=[Drawing.ColorTranslator]::FromHtml('#64748B');$saveHint.Anchor='Left,Right';$saveActions.Controls.Add($saveHint,0,0)
+    $install=New-FortressButton $null install 'Save and connect' primary;$install.Margin=New-Object Windows.Forms.Padding(12,0,0,0);$saveActions.Controls.Add($install,1,0)
     $install.Enabled=$false;$add.Enabled=$false;$remove.Enabled=$false
-    $form.AcceptButton=$connect
-    $form.CancelButton=$close
+    $form.AcceptButton=$connect;$form.CancelButton=$close
+    $connectionFields=@($connectionHelp,$controllerLabel,$controller,$credentials)
+    $setConnectionEditing={param([bool]$editing)
+        foreach($field in $connectionFields){$field.Visible=$editing}
+        $editConnection.Text=if($editing){'Hide details'}else{'Edit connection'}
+    }.GetNewClosure()
+    $editConnection.Add_Click({ & $setConnectionEditing (!$controller.Visible) }.GetNewClosure())
     $changed={
         if($state.Profile -and !$state.Worker){
-            $state.Profile=$null;$state.Token='';$connect.Text='Connect'
+            $state.Profile=$null;$state.Token='';$connect.Text='Connect';$connectionState.Text='Connection changed'
             $install.Enabled=$false;$add.Enabled=$false
             $form.AcceptButton=$connect
+            & $setConnectionEditing $true
             $repository.Text='Connection settings changed. Click Connect to load your saved repository.'
         }
     }.GetNewClosure()
@@ -97,10 +221,11 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
         $state.Controller=$address;$state.Id=$id.Text.Trim();$state.Token=$token.Text
         $state.Stage='connect';$state.Profile=$null
         $install.Enabled=$false;$connect.Enabled=$false;$controller.Enabled=$false;$id.Enabled=$false;$token.Enabled=$false
-        $add.Enabled=$false;$remove.Enabled=$false;$close.Enabled=$false
+        $add.Enabled=$false;$remove.Enabled=$false;$close.Enabled=$false;$backupButton.Enabled=$false;$recoveryButton.Enabled=$false
+        $connectionState.Text='Connecting...';$connectionState.ForeColor=[Drawing.ColorTranslator]::FromHtml('#FCD34D')
         $repository.Text='Saved repository: loading...'
         $status.Text='Connecting securely and retrieving your saved repository...'
-        $progress.Style='Marquee'
+        $progress.Visible=$true;$progress.Style='Marquee'
         & $startOperation $state {
             param($root,$address,$clientId,$secret)
             $ErrorActionPreference='Stop'
@@ -130,10 +255,10 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
     $install.Add_Click({
         if(!$state.Profile -or !$folders.Items.Count){return}
         $state.Stage='install'
-        $install.Enabled=$false;$connect.Enabled=$false;$add.Enabled=$false;$remove.Enabled=$false;$close.Enabled=$false;$folders.Enabled=$false
+        $install.Enabled=$false;$connect.Enabled=$false;$add.Enabled=$false;$remove.Enabled=$false;$close.Enabled=$false;$backupButton.Enabled=$false;$recoveryButton.Enabled=$false;$folders.Enabled=$false
         $controller.Enabled=$false;$id.Enabled=$false;$token.Enabled=$false
-        $progress.Style='Marquee'
-        $status.Text='Installing protected files and checking storage and controller access as SYSTEM. This may take several minutes...'
+        $progress.Visible=$true;$progress.Style='Marquee'
+        $status.Text='Saving your folders and verifying backup access. This may take a few minutes...'
         & $startOperation $state {
             param($root,$profile,$address,$clientId,$secret,$sources)
             $ErrorActionPreference='Stop'
@@ -151,27 +276,29 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
             if($state.Worker.Streams.Error.Count -gt 0){throw $state.Worker.Streams.Error[0].Exception}
             if($state.Stage -eq 'connect'){
                 $state.Profile=$result[0];$connect.Text='Refresh connection'
+                $editConnection.Visible=$true; & $setConnectionEditing $false
+                $connectionState.Text='Connected';$connectionState.ForeColor=[Drawing.ColorTranslator]::FromHtml('#86EFAC')
                 $form.AcceptButton=$install
                 $repository.Text='Saved repository: '+$state.Profile.storageName+' / '+$state.Profile.repositoryName
                 $status.Text=if($state.Profile.runtimeUpdated){'Connected. Background agent updated and verified. Open Snapshots to browse saved backups.'}else{'Connected. Choose backup folders, then click Save and connect to save changes.'}
             }else{
-                $status.Text='Configured and connected. Open Managed Clients to start a backup and follow its progress. Saving the configuration does not mean a backup has completed.'
-                $close.Text='Finish'
+                $status.Text='Settings saved. Use Backup now to protect these folders. The background agent stays connected when you close this window.'
+                $close.Text='Close app'
                 $form.AcceptButton=$install
             }
         }catch{
             $failed=$true
             if($state.Stage -eq 'connect'){
+                $connectionState.Text='Connection needs attention';$connectionState.ForeColor=[Drawing.ColorTranslator]::FromHtml('#FCD34D')
                 $repository.Text='Saved repository: could not connect.'
-                $status.Text='Connection or runtime update failed: '+$_.Exception.Message+' Check HTTPS/DNS and Managed Clients. If a backup is running, retry after it finishes.'
+                $status.Text='Connection failed: '+(& $errorMessage $_)+' Check HTTPS/DNS and Managed Clients. If a backup is running, retry after it finishes.'
             }else{
-                $errorDetail=$_.Exception
-                while($errorDetail.InnerException){$errorDetail=$errorDetail.InnerException}
-                $status.Text='Installation failed: '+$errorDetail.Message+' Check C:\ProgramData\FortressBackup\setup-check.log for verification details.'
+                $status.Text='Installation failed: '+(& $errorMessage $_)+' Check C:\ProgramData\FortressBackup\setup-check.log for verification details.'
             }
         }finally{
             $state.Worker.Dispose();$state.Worker=$null;$state.Pending=$null
-            $progress.Style='Blocks';$progress.Value=0;$close.Enabled=$true
+            $progress.Visible=$false;$progress.Style='Blocks';$progress.Value=0;$close.Enabled=$true;$recoveryButton.Enabled=$true
+            if($state.RecoveryRefresh){ & $state.RecoveryRefresh $true }
             if($true){
                 $connect.Enabled=$true;$controller.Enabled=$true;$id.Enabled=$true;$token.Enabled=$true;$folders.Enabled=$true
                 $add.Enabled=!!$state.Profile;$remove.Enabled=$folders.SelectedIndex -ge 0
@@ -184,6 +311,7 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
     if(Test-Path -LiteralPath $existingPath){
         try {
             $existing=Get-Content -LiteralPath $existingPath -Raw | ConvertFrom-Json
+            $connectionState.Text='Saved connection'
             $controller.Text=[string]$existing.controllerUrl
             $id.Text=[string]$existing.agentId
             if($existing.agentTokenFile){$token.Text=[IO.File]::ReadAllText([string]$existing.agentTokenFile).Trim()}
@@ -191,66 +319,32 @@ function New-SetupWindow([string]$SetupRoot,[bool]$AutoConnect=$true){
             $status.Text='Your saved configuration is loaded. The connection will be validated automatically; your background agent remains independent of this window.'
         }catch{$status.Text='Existing settings could not be loaded. Enter enrollment credentials to configure this laptop again.'}
     }
-    $recoveryPanel=Add-RecoveryPanel $form $state
-    $recoveryButton=Add-SetupControl Button backups 'Snapshots' 20 558 180 33
+    $recoveryPanel=Add-RecoveryPanel $form $state $content $backupButton
+    $showSettings={
+        $recoveryPanel.Visible=$false;$settings.Visible=$true;$settings.BringToFront()
+        $heading.Text='Device settings';$intro.Text="Manage this laptop's connection and backup folders."
+        $settingsButton.BackColor=[Drawing.ColorTranslator]::FromHtml('#29364D');$recoveryButton.BackColor=[Drawing.ColorTranslator]::FromHtml('#111827')
+        $form.AcceptButton=$connect
+    }.GetNewClosure()
+    $showBackups={
+        $settings.Visible=$false;$recoveryPanel.Visible=$true;$recoveryPanel.BringToFront()
+        $heading.Text='Backups & restore';$intro.Text='Browse saved versions and recover the files you need.'
+        $recoveryButton.BackColor=[Drawing.ColorTranslator]::FromHtml('#29364D');$settingsButton.BackColor=[Drawing.ColorTranslator]::FromHtml('#111827')
+        $form.AcceptButton=$null
+    }.GetNewClosure()
+    $settingsButton.Add_Click($showSettings)
     $recoveryButton.Add_Click({
-        if($state.Worker){return}
-        $recoveryPanel.Visible=$true;$recoveryPanel.BringToFront();$form.AcceptButton=$null
-        $recoveryPanel.Controls['load'].PerformClick()
+        & $showBackups
+        if(!$state.Worker){$recoveryPanel.Controls.Find('load',$true)[0].PerformClick()}
     }.GetNewClosure())
-    $backupButton=Add-SetupControl Button backupNow 'Backup now' 20 600 180 33
-    $backupButton.Add_Click({
-        if($state.Worker){return}
-        $recoveryPanel.Visible=$true;$recoveryPanel.BringToFront();$form.AcceptButton=$null
-        $recoveryPanel.Controls['backup'].PerformClick()
+    $backupButton.Add_Click($showBackups)
+    & $showSettings
+    $form.Add_Shown({
+        $area=[Windows.Forms.Screen]::FromControl($form).WorkingArea
+        $form.MinimumSize=New-Object Drawing.Size([Math]::Min($form.MinimumSize.Width,$area.Width-24),[Math]::Min($form.MinimumSize.Height,$area.Height-24))
+        $form.Size=New-Object Drawing.Size([Math]::Min($form.Width,$area.Width-24),[Math]::Min($form.Height,$area.Height-24))
     }.GetNewClosure())
-    Set-FortressTheme $form $recoveryPanel
     if($AutoConnect -and $controller.Text -and $id.Text -and $token.Text){$form.Add_Shown({if(!$state.Worker){$connect.PerformClick()}}.GetNewClosure())}
     $timer.Start()
     return $form
-}
-
-function Set-FortressTheme($Form,$Recovery){
-    $background=[Drawing.ColorTranslator]::FromHtml('#101827')
-    $surface=[Drawing.ColorTranslator]::FromHtml('#1D293B')
-    $text=[Drawing.ColorTranslator]::FromHtml('#E5EAF3')
-    $muted=[Drawing.ColorTranslator]::FromHtml('#A9B6CD')
-    $primary=[Drawing.ColorTranslator]::FromHtml('#6366F1')
-    $Form.ClientSize=New-Object Drawing.Size(940,740)
-    $Form.MinimumSize=New-Object Drawing.Size(640,400);$Form.FormBorderStyle='Sizable';$Form.MaximizeBox=$true
-    $Form.BackColor=$background;$Form.ForeColor=$text
-    $Form.Font=New-Object Drawing.Font('Segoe UI',10)
-    $Form.AutoScroll=$true;$Form.AutoScrollMinSize=New-Object Drawing.Size(930,730)
-    $Form.Add_Shown({$area=[Windows.Forms.Screen]::FromControl($Form).WorkingArea;$Form.Size=New-Object Drawing.Size([Math]::Min($Form.Width,$area.Width-24),[Math]::Min($Form.Height,$area.Height-24))}.GetNewClosure())
-    $placements=@{
-      heading=@(235,28,680,38);intro=@(235,80,675,50)
-      controllerLabel=@(235,148,210,26);controller=@(455,145,455,31)
-      idLabel=@(235,197,210,26);clientId=@(455,194,455,31)
-      tokenLabel=@(235,246,210,26);token=@(455,243,455,31)
-      connect=@(755,290,155,38);repository=@(235,345,675,50)
-      folderLabel=@(235,405,480,28);folders=@(235,442,505,140)
-      addFolder=@(755,442,155,38);removeFolder=@(755,491,155,38)
-      progress=@(235,602,675,8);status=@(235,625,675,50)
-      install=@(20,410,185,44);close=@(20,470,185,40);backups=@(20,176,185,44);backupNow=@(20,235,185,44)
-    }
-    foreach($name in $placements.Keys){$c=$Form.Controls[$name];if($c){$b=$placements[$name];$c.SetBounds($b[0],$b[1],$b[2],$b[3])}}
-    $Form.Controls['heading'].Text='Device protection'
-    $Form.Controls['heading'].Font=New-Object Drawing.Font('Segoe UI',20,[Drawing.FontStyle]::Bold)
-    $Form.Controls['intro'].Text='Configure folders, browse saved versions, and recover files. Once configured, the agent runs independently of this window.'
-    $brand=New-Object Windows.Forms.Label;$brand.Name='brand';$brand.Text='FORTRESS'+"`n"+'BACKUP';$brand.SetBounds(22,30,185,75);$brand.Font=New-Object Drawing.Font('Segoe UI',17,[Drawing.FontStyle]::Bold);$Form.Controls.Add($brand)
-    $nav=New-Object Windows.Forms.Label;$nav.Text='DEVICE SETTINGS';$nav.SetBounds(24,133,185,25);$nav.ForeColor=$muted;$Form.Controls.Add($nav)
-    $hint=New-Object Windows.Forms.Label;$hint.Text='Encrypted backups'+"`n"+'Saved versions'+"`n"+'File recovery';$hint.SetBounds(24,305,180,95);$hint.ForeColor=$muted;$Form.Controls.Add($hint)
-    $Recovery.Dock='None';$Recovery.SetBounds(215,12,710,718);$Recovery.AutoScroll=$true;$Recovery.AutoScrollMinSize=New-Object Drawing.Size(690,620);$Recovery.Anchor='Top,Bottom,Left,Right'
-    $style={param($container)
-      foreach($c in $container.Controls){
-        $c.ForeColor=$text
-        if($c -is [Windows.Forms.Button]){$c.FlatStyle='Flat';$c.FlatAppearance.BorderSize=0;$c.BackColor=$surface;$c.UseVisualStyleBackColor=$false;$c.Cursor='Hand'}
-        elseif($c -is [Windows.Forms.TextBox] -or $c -is [Windows.Forms.ListBox] -or $c -is [Windows.Forms.ComboBox]){$c.BackColor=$surface}
-        else{$c.BackColor=$background}
-        if($c.Name -in @('install','connect','restore','restoreAll','load','backups')){$c.BackColor=$primary}
-      }
-    }.GetNewClosure()
-    & $style $Form;& $style $Recovery
-    $Form.Controls['status'].BackColor=$background
-    $Recovery.BackColor=$background
 }

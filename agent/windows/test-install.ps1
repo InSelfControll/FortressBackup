@@ -3,6 +3,36 @@
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'provision.ps1')
 . (Join-Path $PSScriptRoot 'setup-ui.ps1')
+# Screenshots come from the native Windows controls, using disposable test data.
+function Save-TestWindow($Window,[string]$Name){
+    $Window.PerformLayout();[Windows.Forms.Application]::DoEvents()
+    # Capture the top of the scrollable page consistently, including at larger text.
+    $recoveryView=$Window.Controls.Find('recovery',$true)[0]
+    if($recoveryView -and $recoveryView.Visible){$recoveryView.AutoScrollPosition=[Drawing.Point]::Empty}
+    [Windows.Forms.Application]::DoEvents()
+    $image=New-Object Drawing.Bitmap($Window.Width,$Window.Height)
+    try{$Window.DrawToBitmap($image,(New-Object Drawing.Rectangle(0,0,$Window.Width,$Window.Height)));$image.Save((Join-Path $env:RUNNER_TEMP $Name),[Drawing.Imaging.ImageFormat]::Png)}finally{$image.Dispose()}
+}
+function Assert-TestLayout($Container){
+    foreach($control in $Container.Controls){
+        if(!$control.Visible){continue}
+        if($control.Right -gt $Container.ClientSize.Width+2){throw ('Control extends past its container: '+$control.Name)}
+        if(!$Container.AutoScroll -and $control.Bottom -gt $Container.ClientSize.Height+2){throw ('Control is cut off vertically: '+$control.Name)}
+        if($control -is [Windows.Forms.Button]){
+            $preferred=$control.GetPreferredSize([Drawing.Size]::Empty)
+            if($preferred.Width -gt $control.Width+2 -or $preferred.Height -gt $control.Height+2){throw ('Button text is clipped: '+$control.Name)}
+        }
+        if($Container -is [Windows.Forms.TableLayoutPanel]){
+            foreach($other in $Container.Controls){
+                if($other -eq $control -or !$other.Visible){continue}
+                $overlap=[Drawing.Rectangle]::Intersect($control.Bounds,$other.Bounds)
+                if($overlap.Width -gt 1 -and $overlap.Height -gt 1){throw ('Controls overlap: '+$control.Name+' / '+$other.Name)}
+            }
+        }
+        Assert-TestLayout $control
+    }
+}
+
 $root=Join-Path $env:RUNNER_TEMP ('fortress-setup-test-'+[guid]::NewGuid().ToString('N'))
 $task='FortressBackup-SetupTest'
 $installed=Join-Path $env:ProgramData 'FortressBackup'
@@ -137,36 +167,33 @@ try {
     $window=New-SetupWindow -SetupRoot $PSScriptRoot -AutoConnect:$false
     try {
         $window.Show()
-        $window.Controls['controller'].Clear()
-        $window.Controls['folders'].Items.Clear()
-        $window.Controls['connect'].PerformClick()
-        if($window.Controls['status'].Text -notmatch 'HTTPS'){throw 'GUI did not validate the controller address'}
-        $window.Controls['controller'].Text=$config.controllerUrl
-        $window.Controls['clientId'].Text=$config.agentId
-        $window.Controls['token'].Text=$expectedToken
-        if(!$window.Controls['token'].UseSystemPasswordChar){throw 'GUI enrollment token is visible'}
-        $window.Controls['connect'].PerformClick()
-        if(!$window.Tag.Worker -or $window.Controls['close'].Enabled){throw 'GUI did not enter its busy state'}
+        $window.Controls.Find('controller',$true)[0].Clear()
+        $window.Controls.Find('folders',$true)[0].Items.Clear()
+        $window.Controls.Find('connect',$true)[0].PerformClick()
+        if($window.Controls.Find('status',$true)[0].Text -notmatch 'HTTPS'){throw 'GUI did not validate the controller address'}
+        $window.Controls.Find('controller',$true)[0].Text=$config.controllerUrl
+        $window.Controls.Find('clientId',$true)[0].Text=$config.agentId
+        $window.Controls.Find('token',$true)[0].Text=$expectedToken
+        if(!$window.Controls.Find('token',$true)[0].UseSystemPasswordChar){throw 'GUI enrollment token is visible'}
+        $window.Controls.Find('connect',$true)[0].PerformClick()
+        if(!$window.Tag.Worker -or $window.Controls.Find('close',$true)[0].Enabled){throw 'GUI did not enter its busy state'}
         $window.Close()
         if($window.IsDisposed){throw 'GUI closed during an operation'}
         $deadline=(Get-Date).AddSeconds(40)
         while($window.Tag.Worker -and (Get-Date) -lt $deadline){[Windows.Forms.Application]::DoEvents();Start-Sleep -Milliseconds 50}
-        if(!$window.Tag.Profile){throw ('GUI connection failed: '+$window.Controls['status'].Text)}
-        if($window.Controls['repository'].Text -notmatch 'Saved storage / Saved repository'){throw 'GUI did not display the saved repository'}
-        if($window.Controls['install'].Enabled -or !$window.Controls['addFolder'].Enabled){throw 'GUI allowed installation without folders'}
-        $image=New-Object Drawing.Bitmap($window.Width,$window.Height)
-        try {
-            $window.DrawToBitmap($image,(New-Object Drawing.Rectangle(0,0,$window.Width,$window.Height)))
-            $image.Save((Join-Path $env:RUNNER_TEMP 'fortress-setup-gui.png'),[Drawing.Imaging.ImageFormat]::Png)
-        }finally{$image.Dispose()}
-        [void]$window.Controls['folders'].Items.Add($root)
-        $window.Controls['folders'].SelectedIndex=0
-        $window.Controls['removeFolder'].PerformClick()
-        if($window.Controls['folders'].Items.Count -or $window.Controls['install'].Enabled){throw 'GUI folder removal failed'}
+        if(!$window.Tag.Profile){throw ('GUI connection failed: '+$window.Controls.Find('status',$true)[0].Text)}
+        if($window.Controls.Find('repository',$true)[0].Text -notmatch 'Saved storage / Saved repository'){throw 'GUI did not display the saved repository'}
+        if($window.Controls.Find('install',$true)[0].Enabled -or !$window.Controls.Find('addFolder',$true)[0].Enabled){throw 'GUI allowed installation without folders'}
+        Save-TestWindow $window 'fortress-setup-gui.png'
+        Assert-TestLayout $window
+        [void]$window.Controls.Find('folders',$true)[0].Items.Add($root)
+        $window.Controls.Find('folders',$true)[0].SelectedIndex=0
+        $window.Controls.Find('removeFolder',$true)[0].PerformClick()
+        if($window.Controls.Find('folders',$true)[0].Items.Count -or $window.Controls.Find('install',$true)[0].Enabled){throw 'GUI folder removal failed'}
         $profile=$window.Tag.Profile
-        $window.Controls['controller'].Text='https://changed.example.invalid'
-        if($window.Tag.Profile -or $window.Controls['install'].Enabled){throw 'GUI reused stale credentials after connection settings changed'}
-        $window.Controls['close'].PerformClick()
+        $window.Controls.Find('controller',$true)[0].Text='https://changed.example.invalid'
+        if($window.Tag.Profile -or $window.Controls.Find('install',$true)[0].Enabled){throw 'GUI reused stale credentials after connection settings changed'}
+        $window.Controls.Find('close',$true)[0].PerformClick()
         if($beforeGui -ne (Get-FileHash -LiteralPath $installedCfg -Algorithm SHA256).Hash){throw 'Cancelling GUI setup changed the installed configuration'}
     }finally{if(!$window.IsDisposed){$window.Dispose()}}
     # A newer installed bundle updates the old SYSTEM runtime on automatic reconnect.
@@ -181,7 +208,7 @@ try {
         $window.Show()
         $deadline=(Get-Date).AddSeconds(40)
         while(!$window.Tag.Profile -and (Get-Date) -lt $deadline){[Windows.Forms.Application]::DoEvents();Start-Sleep -Milliseconds 50}
-        if(!$window.Tag.Profile){throw ('Saved enrollment did not reconnect automatically: '+$window.Controls['status'].Text)}
+        if(!$window.Tag.Profile){throw ('Saved enrollment did not reconnect automatically: '+$window.Controls.Find('status',$true)[0].Text)}
         if(!$window.Tag.Profile.runtimeUpdated){throw 'New app did not update the older SYSTEM runtime automatically'}
         if((Get-FileHash -LiteralPath (Join-Path $installed 'restic.exe') -Algorithm SHA256).Hash -ne $resticHash){throw 'Background runtime is still from the older app'}
         if((Get-Content -LiteralPath $installedCfg -Raw | ConvertFrom-Json).sources[0] -ne $root){throw 'Automatic runtime upgrade changed backup folders'}
@@ -208,29 +235,41 @@ try {
     function Wait-RecoveryUI([scriptblock]$Condition){
         $deadline=(Get-Date).AddSeconds(40)
         while(!( & $Condition) -and (Get-Date) -lt $deadline){[Windows.Forms.Application]::DoEvents();Start-Sleep -Milliseconds 50}
-        if(!( & $Condition)){throw ('Recovery GUI timed out: '+$window.Controls['recovery'].Controls['status'].Text)}
+        if(!( & $Condition)){throw ('Recovery GUI timed out: '+$window.Controls.Find('recovery',$true)[0].Controls.Find('status',$true)[0].Text)}
     }
     try{
-        $window.Show();$window.Controls['backups'].PerformClick()
-        $recovery=$window.Controls['recovery']
+        $window.Show();$window.Controls.Find('backups',$true)[0].PerformClick()
+        $recovery=$window.Controls.Find('recovery',$true)[0]
         if(!$recovery.Visible){throw 'Recovery did not open in the existing window'}
-        if($window.Controls['backups'].Text -ne 'Snapshots' -or $window.Controls['backupNow'].Text -ne 'Backup now'){throw 'Snapshot / backup navigation missing'}
-        Wait-RecoveryUI {$recovery.Controls['status'].Text -like '*Client already has an active job*' -and $recovery.Controls['load'].Enabled}
-        $recovery.Controls['load'].PerformClick()
-        Wait-RecoveryUI {$recovery.Controls['snapshots'].Items.Count -eq 1 -and $recovery.Controls['snapshots'].Enabled}
-        $recovery.Controls['snapshots'].SelectedIndex=0
-        $recovery.Controls['snapshots'].GetType().GetMethod('OnSelectionChangeCommitted',[Reflection.BindingFlags]'Instance,NonPublic').Invoke($recovery.Controls['snapshots'],@([EventArgs]::Empty))
-        Wait-RecoveryUI {$recovery.Controls['entries'].Items.Count -eq 1 -and $recovery.Controls['entries'].Enabled}
-        if($recovery.Controls['restore'].Enabled){throw 'GUI allowed an empty selective restore'}
-        $recovery.Controls['entries'].SetItemChecked(0,$true)
-        if(!$recovery.Controls['restore'].Enabled){throw 'GUI did not enable selected-file restore'}
-        $recovery.Controls['restore'].PerformClick()
-        Wait-RecoveryUI {$recovery.Controls['status'].Text -like 'Restored to:*' -and $recovery.Controls['open'].Enabled}
-        $recovery.Controls['back'].PerformClick()
+        if($window.Controls.Find('backups',$true)[0].Text -ne 'Snapshots' -or $window.Controls.Find('backupNow',$true)[0].Text -ne 'Backup now'){throw 'Snapshot / backup navigation missing'}
+        Wait-RecoveryUI {$recovery.Controls.Find('status',$true)[0].Text -like '*Client already has an active job*' -and $recovery.Controls.Find('load',$true)[0].Enabled}
+        if($recovery.Controls.Find('status',$true)[0].Text -match 'EndInvoke|Exception calling'){throw 'Recovery exposed its reflection wrapper instead of the actionable error'}
+        Save-TestWindow $window 'fortress-recovery-error.png'
+        $recovery.Controls.Find('load',$true)[0].PerformClick()
+        Wait-RecoveryUI {$recovery.Controls.Find('snapshots',$true)[0].Items.Count -eq 1 -and $recovery.Controls.Find('snapshots',$true)[0].Enabled}
+        $recovery.Controls.Find('snapshots',$true)[0].SelectedIndex=0
+        $recovery.Controls.Find('snapshots',$true)[0].GetType().GetMethod('OnSelectionChangeCommitted',[Reflection.BindingFlags]'Instance,NonPublic').Invoke($recovery.Controls.Find('snapshots',$true)[0],@([EventArgs]::Empty))
+        Wait-RecoveryUI {$recovery.Controls.Find('entries',$true)[0].Items.Count -eq 1 -and $recovery.Controls.Find('entries',$true)[0].Enabled}
+        if($recovery.Controls.Find('restore',$true)[0].Enabled){throw 'GUI allowed an empty selective restore'}
+        Save-TestWindow $window 'fortress-recovery-gui.png'
+        Assert-TestLayout $window
+        $normalSize=$window.ClientSize
+        $window.ClientSize=New-Object Drawing.Size(860,640)
+        Save-TestWindow $window 'fortress-recovery-compact.png'
+        Assert-TestLayout $window
+        $window.Font=New-Object Drawing.Font('Segoe UI',14)
+        Save-TestWindow $window 'fortress-recovery-large-text.png'
+        Assert-TestLayout $window
+        $window.Font=New-Object Drawing.Font('Segoe UI',10);$window.ClientSize=$normalSize
+        $recovery.Controls.Find('entries',$true)[0].SetItemChecked(0,$true)
+        if(!$recovery.Controls.Find('restore',$true)[0].Enabled){throw 'GUI did not enable selected-file restore'}
+        $recovery.Controls.Find('restore',$true)[0].PerformClick()
+        Wait-RecoveryUI {$recovery.Controls.Find('status',$true)[0].Text -like 'Restored to:*' -and $recovery.Controls.Find('open',$true)[0].Enabled}
+        $window.Controls.Find('deviceSettings',$true)[0].PerformClick()
         if($recovery.Visible){throw 'Configuration did not return in the same window'}
-        $window.Controls['backupNow'].PerformClick()
-        Wait-RecoveryUI {$recovery.Controls['backupProgress'].Visible -and $recovery.Controls['backupProgress'].Value -eq 420}
-        Wait-RecoveryUI {$recovery.Controls['status'].Text -like 'Backup saved.*' -and $recovery.Controls['backup'].Enabled}
+        $window.Controls.Find('backupNow',$true)[0].PerformClick()
+        Wait-RecoveryUI {$recovery.Controls.Find('backupProgress',$true)[0].Visible -and $recovery.Controls.Find('backupProgress',$true)[0].Value -eq 420}
+        Wait-RecoveryUI {$recovery.Controls.Find('status',$true)[0].Text -like 'Backup saved.*' -and $window.Controls.Find('backupNow',$true)[0].Enabled}
         $window.Close()
     }finally{if(!$window.IsDisposed){$window.Dispose()}}
     $beforeKey=(Get-FileHash -LiteralPath $savedConfig.sftpKeyFile -Algorithm SHA256).Hash

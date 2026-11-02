@@ -27,60 +27,111 @@ function Invoke-RecoveryAPI([string]$Route,$Body){
     return ($result | ConvertTo-Json -Depth 12 -Compress)
 }
 
-function Add-RecoveryPanel($Form,$SetupState){
+function Add-RecoveryPanel($Form,$SetupState,$Content,$BackupButton){
     $invokeAPI=${function:Invoke-RecoveryAPI}
-    $panel=New-Object Windows.Forms.Panel
-    $panel.Name='recovery';$panel.Dock='Fill';$panel.Visible=$false
-    $Form.Controls.Add($panel)
+    $errorMessage=${function:Get-FortressErrorMessage}
+    $panel=New-FortressControl $Content Panel recovery
+    $panel.Dock='Fill';$panel.AutoScroll=$true;$panel.Visible=$false;$panel.Margin=New-Object Windows.Forms.Padding(0)
     $r=@{Worker=$null;Pending=$null;Job=$null;Operation='';Request=$null;Entries=@();Snapshots=@();Offset=0;More=$false;Directory='/';Snapshot='';AllDevices=$true;Selected=(New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal));NextPoll=[datetime]::MinValue;RestorePath=''}
-    function Add-RecoveryControl($Type,$Name,$Text,$X,$Y,$Width,$Height){
-        $c=New-Object ('Windows.Forms.'+$Type);$c.Name=$Name;$c.Text=$Text;$c.SetBounds($X,$Y,$Width,$Height);$panel.Controls.Add($c);return $c
-    }
-    $heading=Add-RecoveryControl Label heading 'Saved backups and restore' 20 15 610 30
-    $heading.Font=New-Object Drawing.Font('Segoe UI',14,[Drawing.FontStyle]::Bold)
-    $heading.Width=405
-    $backup=Add-RecoveryControl Button backup 'Backup now' 440 15 190 33
-    [void](Add-RecoveryControl Label explanation 'A backup creates a snapshot: a saved version of your files. Browse saved versions, then restore everything or selected files into a new recovery folder. Original files are preserved.' 20 52 610 65)
-    $load=Add-RecoveryControl Button load 'Refresh snapshots' 20 121 190 33
-    $scope=Add-RecoveryControl CheckBox scope 'Include backups from old / other devices' 230 121 400 33
-    $scope.Checked=$true
-    $versions=Add-RecoveryControl ComboBox snapshots '' 20 167 610 30
-    $versions.DropDownStyle='DropDownList';$versions.DisplayMember='Label'
-    $directory=Add-RecoveryControl Label directory 'Folder: /' 20 207 300 40
-    $enter=Add-RecoveryControl Button enter 'Open folder' 340 207 140 33
-    $up=Add-RecoveryControl Button up 'Up one folder' 490 207 140 33
-    $entries=Add-RecoveryControl CheckedListBox entries '' 20 251 610 180
-    $entries.CheckOnClick=$true;$entries.HorizontalScrollbar=$true
-    $selected=Add-RecoveryControl Label selected 'Select a folder and use Open folder. Checked folders include their contents.' 20 438 610 25
-    $more=Add-RecoveryControl Button more 'Load more' 20 469 110 30
-    $clear=Add-RecoveryControl Button clear 'Clear selection' 140 469 130 30
-    $restore=Add-RecoveryControl Button restore 'Restore selected' 280 469 170 30
-    $all=Add-RecoveryControl Button restoreAll 'Restore entire backup' 460 469 170 30
-    $status=Add-RecoveryControl TextBox status 'Load saved backups using your saved connection. Operations also appear on the dashboard.' 20 507 610 43
-    $status.Multiline=$true;$status.ReadOnly=$true;$status.ScrollBars='Vertical';$status.AccessibleName='Restore status'
-    $cancel=Add-RecoveryControl Button cancel 'Cancel operation' 235 558 200 33
-    $open=Add-RecoveryControl Button open 'Open restored folder' 20 558 190 33
-    $back=Add-RecoveryControl Button back 'Configuration' 460 558 170 33
-    $backupProgress=Add-RecoveryControl ProgressBar backupProgress '' 20 600 610 14
-    $backupProgress.Maximum=1000;$backupProgress.Visible=$false;$backupProgress.AccessibleName='Backup progress'
-    $progressText=Add-RecoveryControl Label progressText '' 20 622 610 40
-    $progressText.Visible=$false;$progressText.AccessibleName='Backup progress details'
-    $scope.Add_CheckedChanged({$r.AllDevices=$scope.Checked;$r.Snapshot='';$r.Selected.Clear();$selected.Text='0 selected.';$versions.Items.Clear();$entries.Items.Clear()}.GetNewClosure())
+    $panel.Tag=$r
+    $layout=New-FortressTable $panel recoveryLayout
+    $layout.Dock='Top';$layout.AutoSize=$true
+    $fitViewport={ $layout.MinimumSize=New-Object Drawing.Size(0,$panel.ClientSize.Height) }.GetNewClosure()
+    $panel.Add_SizeChanged($fitViewport)
+    [void]$layout.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
+    [void]$layout.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
+    [void]$layout.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::Percent,100)))
+    [void]$layout.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
+    [void]$layout.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
+    $toolbar=New-FortressFlow $null snapshotToolbar;$layout.Controls.Add($toolbar,0,0)
+    $load=New-FortressButton $toolbar load 'Refresh backups'
+    $scope=New-FortressControl $toolbar CheckBox scope 'Include old / other devices'
+    $scope.AutoSize=$true;$scope.Dock='None';$scope.Margin=New-Object Windows.Forms.Padding(12,9,0,0);$scope.Checked=$true
+    $snapshotRow=New-FortressTable $null snapshotRow;$snapshotRow.Margin=New-Object Windows.Forms.Padding(0,0,0,12)
+    $snapshotLabel=New-FortressControl $null Label snapshotLabel 'Saved version';$snapshotRow.Controls.Add($snapshotLabel,0,0)
+    $versions=New-FortressControl $null ComboBox snapshots
+    $versions.DropDownStyle='DropDownList';$versions.DisplayMember='Label';$versions.AccessibleName='Saved backup version'
+    $versions.DrawMode='OwnerDrawFixed';$versions.ItemHeight=28
+    $versions.Add_DrawItem({param($sender,$event)
+        $event.DrawBackground()
+        $text=if($event.Index -ge 0){[string]$sender.Items[$event.Index].Label}else{'Choose a saved version...'}
+        $color=if($event.Index -ge 0){$event.ForeColor}else{[Drawing.ColorTranslator]::FromHtml('#64748B')}
+        [Windows.Forms.TextRenderer]::DrawText($event.Graphics,$text,$event.Font,$event.Bounds,$color,([Windows.Forms.TextFormatFlags]::VerticalCenter -bor [Windows.Forms.TextFormatFlags]::EndEllipsis))
+        $event.DrawFocusRectangle()
+    }.GetNewClosure())
+    $snapshotRow.Controls.Add($versions,0,1);$layout.Controls.Add($snapshotRow,0,1)
+    $browser=New-FortressTable $null fileBrowser
+    $browser.Dock='Fill';$browser.AutoSize=$false;$browser.BackColor=[Drawing.Color]::White;$browser.Padding=New-Object Windows.Forms.Padding(16)
+    $browser.MinimumSize=New-Object Drawing.Size(0,200);$layout.Controls.Add($browser,0,2)
+    [void]$browser.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::AutoSize)))
+    [void]$browser.RowStyles.Add((New-Object Windows.Forms.RowStyle([Windows.Forms.SizeType]::Percent,100)))
+    $browserToolbar=New-FortressTable $null browserToolbar 2
+    $browserToolbar.ColumnStyles[1].SizeType='AutoSize';$browserToolbar.Margin=New-Object Windows.Forms.Padding(0,0,0,12);$browser.Controls.Add($browserToolbar,0,0)
+    $directory=New-FortressControl $null Label directory 'Folder: /'
+    $directory.AutoSize=$false;$directory.AutoEllipsis=$true;$directory.Dock='Fill';$directory.TextAlign='MiddleLeft';$directory.Margin=New-Object Windows.Forms.Padding(0,0,12,0);$browserToolbar.Controls.Add($directory,0,0)
+    $browseActions=New-FortressFlow $null browseActions;$browseActions.Margin=New-Object Windows.Forms.Padding(0);$browserToolbar.Controls.Add($browseActions,1,0)
+    $up=New-FortressButton $browseActions up 'Up one folder'
+    $enter=New-FortressButton $browseActions enter 'Open folder'
+    $fileArea=New-FortressControl $null Panel fileArea;$fileArea.Dock='Fill';$fileArea.Margin=New-Object Windows.Forms.Padding(0);$browser.Controls.Add($fileArea,0,1)
+    $entries=New-FortressControl $fileArea CheckedListBox entries
+    $entries.Dock='Fill';$entries.CheckOnClick=$true;$entries.HorizontalScrollbar=$true;$entries.IntegralHeight=$false;$entries.BorderStyle='None';$entries.BackColor=[Drawing.Color]::White;$entries.ItemHeight=24;$entries.AccessibleName='Files and folders in saved backup'
+    $empty=New-FortressControl $fileArea Label emptyFiles "Choose a saved version`n`nFiles and folders will appear here."
+    $empty.AutoSize=$false;$empty.Dock='Fill';$empty.TextAlign='MiddleCenter';$empty.ForeColor=[Drawing.ColorTranslator]::FromHtml('#64748B');$empty.BackColor=[Drawing.Color]::White;$empty.BringToFront()
+    $selection=New-FortressTable $null selection 2;$selection.ColumnStyles[1].SizeType='AutoSize';$selection.Margin=New-Object Windows.Forms.Padding(0,8,0,8);$layout.Controls.Add($selection,0,3)
+    $selected=New-FortressControl $null Label selected '0 selected'
+    $selected.ForeColor=[Drawing.ColorTranslator]::FromHtml('#64748B');$selected.Anchor='Left,Right';$selection.Controls.Add($selected,0,0)
+    $selectionActions=New-FortressFlow $null selectionActions;$selectionActions.Margin=New-Object Windows.Forms.Padding(0);$selection.Controls.Add($selectionActions,1,0)
+    $more=New-FortressButton $selectionActions more 'Load more'
+    $clear=New-FortressButton $selectionActions clear 'Clear selection'
+    $clear.MinimumSize=New-Object Drawing.Size(0,28);$clear.Padding=New-Object Windows.Forms.Padding(10,2,10,2)
+    $restoreActions=New-FortressFlow $null restoreActions;$restoreActions.Margin=New-Object Windows.Forms.Padding(0,8,0,0);$selection.Controls.Add($restoreActions,0,1);$selection.SetColumnSpan($restoreActions,2)
+    $restore=New-FortressButton $restoreActions restore 'Restore selected' primary
+    $all=New-FortressButton $restoreActions restoreAll 'Restore entire backup'
+    $operation=New-FortressCard $null operation;$operation.Margin=New-Object Windows.Forms.Padding(0);$operation.Padding=New-Object Windows.Forms.Padding(12);$layout.Controls.Add($operation,0,4)
+    $activity=New-FortressControl $null Label activity 'Ready when you are'
+    $activity.Font=New-Object Drawing.Font('Segoe UI',11,[Drawing.FontStyle]::Bold);$operation.Controls.Add($activity,0,0)
+    $status=New-FortressControl $null TextBox status 'A backup creates a snapshot: a saved version of your files. Restores go to a new folder, keeping original files safe.'
+    $status.Multiline=$true;$status.ReadOnly=$true;$status.ScrollBars='Vertical';$status.AccessibleName='Restore status';$status.BorderStyle='None';$status.BackColor=[Drawing.Color]::White;$status.Height=40;$status.TabStop=$false;$operation.Controls.Add($status,0,1)
+    $backupProgress=New-FortressControl $null ProgressBar backupProgress
+    $backupProgress.Height=6;$backupProgress.Maximum=1000;$backupProgress.Visible=$false;$backupProgress.AccessibleName='Backup progress';$operation.Controls.Add($backupProgress,0,2)
+    $progressText=New-FortressControl $null Label progressText
+    $progressText.Visible=$false;$progressText.ForeColor=[Drawing.ColorTranslator]::FromHtml('#64748B');$progressText.AccessibleName='Backup progress details';$operation.Controls.Add($progressText,0,3)
+    $operationActions=New-FortressFlow $null operationActions;$operationActions.Margin=New-Object Windows.Forms.Padding(0);$operation.Controls.Add($operationActions,0,4)
+    $cancel=New-FortressButton $operationActions cancel 'Cancel operation'
+    $open=New-FortressButton $operationActions open 'Open restored folder'
+    $backup=$BackupButton
     $setEnabled={param([bool]$enabled)
-        $load.Enabled=$enabled;$backup.Enabled=$enabled;$scope.Enabled=$enabled;$versions.Enabled=$enabled;$back.Enabled=$enabled
+        $enabled=$enabled -and !$r.Worker -and (!$r.Job -or $r.Job.state -notin @('pending','running'))
+        $configured=Test-Path -LiteralPath (Join-Path $env:ProgramData 'FortressBackup\agent.json')
+        $load.Enabled=$enabled -and $configured;$backup.Enabled=$enabled -and $configured -and !$SetupState.Worker;$scope.Enabled=$enabled;$versions.Enabled=$enabled -and $versions.Items.Count -gt 0
         $up.Enabled=$enabled -and $r.Snapshot -and $r.Directory -ne '/'
         $more.Enabled=$enabled -and $r.More
-        $entries.Enabled=$enabled;$clear.Enabled=$enabled;$enter.Enabled=$enabled
+        $entries.Enabled=$enabled;$clear.Enabled=$enabled -and $r.Selected.Count -gt 0;$enter.Enabled=$enabled -and $entries.SelectedIndex -ge 0 -and $r.Entries.Count -gt $entries.SelectedIndex -and $r.Entries[$entries.SelectedIndex].type -eq 'dir'
         $restore.Enabled=$enabled -and $r.Snapshot -and $r.Selected.Count -gt 0 -and $r.Selected.Count -le 100
         $all.Enabled=$enabled -and !!$r.Snapshot
         $cancel.Enabled=!!$r.Job -and $r.Job.state -in @('pending','running') -and !$r.Worker
         $open.Enabled=$enabled -and !!$r.RestorePath
+        $open.Visible=!!$r.RestorePath;$cancel.Visible=$cancel.Enabled
+        $more.Visible=$r.More
+        $browserToolbar.Visible=!!$r.Snapshot
+        $selection.Visible=!!$r.Snapshot -or $r.More
+        $restoreActions.Visible=!!$r.Snapshot
+        $clear.Visible=!!$r.Snapshot;$selected.Visible=!!$r.Snapshot
+        $empty.Visible=$entries.Items.Count -eq 0
+        $entries.Visible=!$empty.Visible
+        if($empty.Visible){$empty.BringToFront()}
+        if(!$configured){$empty.Text="Connect this laptop first`n`nOpen Device settings, choose folders, then Save and connect."}
     }.GetNewClosure()
+    $SetupState.RecoveryRefresh=$setEnabled
+    $scope.Add_CheckedChanged({$r.AllDevices=$scope.Checked;$r.Snapshot='';$r.Selected.Clear();$selected.Text='0 selected.';$versions.Items.Clear();$entries.Items.Clear(); & $setEnabled $true}.GetNewClosure())
     $start={param([string]$operation,$request)
-        if($r.Worker -or ($r.Job -and $r.Job.state -in @('pending','running'))){return}
+        if($SetupState.Worker -or $r.Worker -or ($r.Job -and $r.Job.state -in @('pending','running'))){return}
         if($operation -in @('snapshots','files','restore')){$request.allDevices=$r.AllDevices}
         $r.Operation=$operation;$r.Request=$request;$r.Job=$null;$r.RestorePath=''
-        $status.Text=$operation+': queuing on controller...'; & $setEnabled $false
+        $activity.Text=switch($operation){'snapshots'{'Loading backups'} 'files'{'Loading files'} 'backup'{'Backing up this laptop'} 'restore'{'Restoring files'}}
+        $status.ForeColor=[Drawing.ColorTranslator]::FromHtml('#334155')
+        $empty.Text=$activity.Text+"...`n`nYou can follow the operation on the dashboard."
+        $status.Text='Contacting the controller...'; & $setEnabled $false
         $r.Worker=[PowerShell]::Create()
         [void]$r.Worker.AddScript($invokeAPI.ToString()).AddArgument('request').AddArgument(@{operation=$operation;request=$request})
         $r.Pending=$r.Worker.BeginInvoke();$SetupState.RecoveryWorker=$true
@@ -106,6 +157,7 @@ function Add-RecoveryPanel($Form,$SetupState){
             & $setEnabled (!$r.Worker -and (!$r.Job -or $r.Job.state -notin @('pending','running')))
         }
     }.GetNewClosure())
+    $entries.Add_SelectedIndexChanged({ & $setEnabled (!$r.Worker) }.GetNewClosure())
     $enter.Add_Click({
         if($entries.SelectedIndex -ge 0 -and $r.Entries[$entries.SelectedIndex].type -eq 'dir'){ & $browse ([string]$r.Entries[$entries.SelectedIndex].path)}
     }.GetNewClosure())
@@ -123,7 +175,6 @@ function Add-RecoveryPanel($Form,$SetupState){
         if($target.StartsWith($base,[StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $target -PathType Container)){Start-Process explorer.exe -ArgumentList ('"'+$target+'"')}
     }.GetNewClosure())
     $cancel.Add_Click({if(!$r.Worker -and $r.Job -and $r.Job.state -in @('pending','running')){$r.Worker=[PowerShell]::Create();[void]$r.Worker.AddScript($invokeAPI.ToString()).AddArgument('cancel').AddArgument(@{id=$r.Job.id});$r.Pending=$r.Worker.BeginInvoke();$SetupState.RecoveryWorker=$true}}.GetNewClosure())
-    $back.Add_Click({$panel.Visible=$false;$Form.AcceptButton=$null}.GetNewClosure())
     $timer=New-Object Windows.Forms.Timer;$timer.Interval=200
     $timer.Add_Tick({
         if($r.Worker -and $r.Pending.IsCompleted){
@@ -131,6 +182,9 @@ function Add-RecoveryPanel($Form,$SetupState){
                 $output=$r.Worker.EndInvoke($r.Pending)
                 if($r.Worker.Streams.Error.Count -gt 0){throw $r.Worker.Streams.Error[0].Exception}
                 $r.Job=([string]$output[0] | ConvertFrom-Json)
+                $status.ForeColor=[Drawing.ColorTranslator]::FromHtml('#334155')
+                $SetupState.ConnectionLabel.Text='Connected';$SetupState.ConnectionLabel.ForeColor=[Drawing.ColorTranslator]::FromHtml('#86EFAC')
+                $activity.Text=if($r.Job.state -eq 'pending'){'Waiting for the laptop agent'}elseif($r.Job.state -eq 'running'){switch($r.Operation){'backup'{'Backup in progress'} 'restore'{'Restoring files'} default{'Loading saved backups'}}}else{'Ready'}
                 $backupProgress.Visible=$r.Operation -eq 'backup' -and $r.Job.state -in @('pending','running')
                 $progressText.Visible=$backupProgress.Visible
                 if($backupProgress.Visible){
@@ -147,13 +201,14 @@ function Add-RecoveryPanel($Form,$SetupState){
                 if($r.Job.state -eq 'canceled'){$status.Text='Operation canceled. Original files are preserved.'}
                 if($r.Job.state -eq 'failed'){throw [string]$r.Job.message}
                 if($r.Job.state -eq 'success'){
-                    $data=$r.Job.result
+                    $activity.Text='Ready';$data=$r.Job.result
                     if($r.Operation -eq 'snapshots'){
                         if(!$data -or !$data.PSObject.Properties['snapshots']){throw 'Update the app, then Save and connect to enable browsing.'}
                         foreach($s in @($data.snapshots)){
                             [void]$versions.Items.Add([pscustomobject]@{Id=$s.id;Label=([datetime]$s.time).ToLocalTime().ToString('g')+' / '+$s.id.Substring(0,8)+' / '+$s.hostname})
                         }
                         $r.Offset=$versions.Items.Count;$r.More=[bool]$data.hasMore
+                        $empty.Text=if(!$versions.Items.Count){"No saved backups yet`n`nUse Backup now to create your first saved version."}else{"Choose a saved version`n`nThen browse folders or restore the entire backup."}
                         $status.Text=if(!$versions.Items.Count){'No snapshots found in the selected scope. Use Backup now to create the first saved version.'}else{[string]$versions.Items.Count+' snapshots loaded. Choose a saved version to browse files.'}
                     }elseif($r.Operation -eq 'files'){
                         foreach($entry in @($data.entries)){
@@ -162,15 +217,24 @@ function Add-RecoveryPanel($Form,$SetupState){
                             [void]$entries.Items.Add($label,$r.Selected.Contains([string]$entry.path))
                         }
                         $r.Offset=$r.Entries.Count;$r.More=[bool]$data.hasMore
+                        $empty.Text="This folder is empty`n`nUse Up one folder to keep browsing."
+                        $status.Text='Select files or folders to restore. Checked folders include their contents.'
                     }elseif($r.Operation -eq 'restore'){
                         $r.RestorePath=[string]$data.restorePath
+                        $activity.Text='Restore finished'
                         $status.Text='Restored to: '+$r.RestorePath
                     }elseif($r.Operation -eq 'backup'){
+                        $activity.Text='Backup saved'
                         $status.Text='Backup saved. Refresh snapshots to view the new saved version.'
                     }
                 }
-            }catch{$status.Text='Operation failed: '+$_.Exception.Message}
-            finally{$r.Worker.Dispose();$r.Worker=$null;$r.Pending=$null;$SetupState.RecoveryWorker=$false;$r.NextPoll=[datetime]::UtcNow.AddSeconds(2); & $setEnabled (!$r.Job -or $r.Job.state -notin @('pending','running'))}
+            }catch{
+                $activity.Text='Could not finish';$status.ForeColor=[Drawing.ColorTranslator]::FromHtml('#B42318')
+                $status.Text=(& $errorMessage $_)
+                $panel.ScrollControlIntoView($operation)
+                $empty.Text="No files loaded`n`nResolve the message below, then refresh backups."
+            }
+            finally{$r.Worker.Dispose();$r.Worker=$null;$r.Pending=$null;$SetupState.RecoveryWorker=$false;$r.NextPoll=[datetime]::UtcNow.AddSeconds(2); & $setEnabled (!$r.Job -or $r.Job.state -notin @('pending','running'));if($r.Operation -in @('backup','restore')){$panel.ScrollControlIntoView($operation)}elseif($r.Job -and $r.Job.state -eq 'success'){$panel.AutoScrollPosition=[Drawing.Point]::Empty}}
         }
         if(!$r.Worker -and $r.Job -and $r.Job.state -in @('pending','running') -and [datetime]::UtcNow -ge $r.NextPoll){
             $r.Worker=[PowerShell]::Create()

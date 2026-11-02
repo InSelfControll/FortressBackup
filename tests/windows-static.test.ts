@@ -71,7 +71,7 @@ test('Windows artifact publication finishes before mutable verification tools ru
   expect(verifySteps.join('\n')).toContain('choco install restic');
   // Verification may publish a screenshot, never rebuilt or updated binaries.
   const diagnosticUploads = verify.steps.filter((candidate: any) => candidate.uses?.startsWith('actions/upload-artifact@'));
-  expect(diagnosticUploads.map((candidate: any) => candidate.with.path)).toEqual(['${{ runner.temp }}/fortress-setup-gui.png']);
+  expect(diagnosticUploads.map((candidate: any) => candidate.with.path)).toEqual(['${{ runner.temp }}/fortress-*.png']);
 });
 
 test('Windows CI exercises digest rollback and hostile pre-existing ACLs', () => {

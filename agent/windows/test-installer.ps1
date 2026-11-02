@@ -103,12 +103,12 @@ try {
     if($beforeTask -ne (Export-ScheduledTask -TaskName FortressBackup-Windows)){throw 'Upgrade changed the configured agent task'}
     $window=New-SetupWindow -SetupRoot $appRoot
     try {
-        if($window.Controls['controller'].Text -ne $config.controllerUrl -or $window.Controls['clientId'].Text -ne $config.agentId -or $window.Controls['token'].Text -ne $secret){throw 'Reopening the app did not load saved enrollment'}
-        if($window.Controls['folders'].Items.Count -ne 1 -or $window.Controls['folders'].Items[0] -ne $env:RUNNER_TEMP){throw 'Reopening the app did not load saved folders'}
-        if(!$window.Controls['token'].UseSystemPasswordChar){throw 'Saved token is visible'}
-        if(!$window.Controls['recovery'] -or !$window.Controls['backups']){throw 'Restore controls missing from installed app'}
-        $window.Controls['backups'].PerformClick()
-        if(!$window.Controls['recovery'].Visible -and $window.Visible){throw 'Restore panel did not open in the same window'}
+        if($window.Controls.Find('controller',$true)[0].Text -ne $config.controllerUrl -or $window.Controls.Find('clientId',$true)[0].Text -ne $config.agentId -or $window.Controls.Find('token',$true)[0].Text -ne $secret){throw 'Reopening the app did not load saved enrollment'}
+        if($window.Controls.Find('folders',$true)[0].Items.Count -ne 1 -or $window.Controls.Find('folders',$true)[0].Items[0] -ne $env:RUNNER_TEMP){throw 'Reopening the app did not load saved folders'}
+        if(!$window.Controls.Find('token',$true)[0].UseSystemPasswordChar){throw 'Saved token is visible'}
+        if(!$window.Controls.Find('recovery',$true)[0] -or !$window.Controls.Find('backups',$true)[0]){throw 'Restore controls missing from installed app'}
+        $window.Controls.Find('backups',$true)[0].PerformClick()
+        if(!$window.Controls.Find('recovery',$true)[0].Visible -and $window.Visible){throw 'Restore panel did not open in the same window'}
     }finally{$window.Dispose()}
     # Exercise the shared configuration writer without starting a backup task.
     $writerFixture=Join-Path $env:RUNNER_TEMP ('configuration-writer-'+[guid]::NewGuid().ToString('N'))
