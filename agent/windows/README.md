@@ -44,3 +44,5 @@ dashboard's Lucide icon and includes its license.
 - Install with `install-task.ps1` which validates digests and restricts NTFS ACLs.
 - Guided setup downloads the assigned repository credentials securely from the controller and stores them with protected ACLs; source folders are selected locally.
 - A backup is only production-ready after testing a real VSS backup and restore.
+
+Cloud destinations: Azure, Google Drive, Google Cloud Storage, and OneDrive use the saved Restic repository assigned in Managed Clients. Configure browser sign-in or imported credentials in the dashboard first. See [cloud setup instructions](https://github.com/InSelfControll/FortressBackup/blob/main/docs/CLOUD-STORAGE.md). Google Cloud credentials and Rclone configs are protected for SYSTEM and Administrators.

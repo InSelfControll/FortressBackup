@@ -8,6 +8,7 @@ import { resolveSSHCredentialsFromRequest } from '../../utils/sshCredentials.js'
 import { decrypt } from '../../encryption.js';
 import { getJwtSecret } from '../../middleware/auth.js';
 import type { SSHConfig, BackupJobConfig } from './types.js';
+import {readyCloudLocation} from '../storageOAuth.js';
 
 const mapping:Record<string,BackupJobConfig['tool']>={
   'BorgBackup':'borg','Restic':'restic','Rsync':'rsync',
@@ -18,7 +19,8 @@ export async function buildJobExecutionContext(job:db.Job, credentialsInput:Reco
   if(!apiJob)throw new Error('Backup job not found');
   const system=await db.getSystem(targetSystemId||apiJob.sourceId);
   if(!system)throw new Error('Backup source/target system not found');
-  const destination=await db.getLocation(apiJob.destinationId);
+  const savedDestination=await db.getLocation(apiJob.destinationId);
+  const destination=savedDestination?await readyCloudLocation(savedDestination):null;
   if(!destination)throw new Error('Backup destination not found');
   const credentials=await resolveSSHCredentialsFromRequest(credentialsInput,system.ssh_key_id);
   const tool=mapping[apiJob.tool];

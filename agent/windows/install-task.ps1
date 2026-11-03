@@ -92,7 +92,7 @@ try{
         $config.sftpKnownHostsFile=Join-Path $root 'known_hosts'
     }
     $cloudPayload=@()
-    foreach($entry in @(@('azureKeyFile','azure-key.txt'),@('rcloneConfigFile','rclone.conf'))){
+    foreach($entry in @(@('azureKeyFile','azure-key.txt'),@('rcloneConfigFile','rclone.conf'),@('gcsCredentialsFile','google-credentials.json'))){
         if($config.($entry[0])){
             Copy-Protected (Resolve-Path -LiteralPath $config.($entry[0])).Path (Join-Path $staging $entry[1])
             $config.($entry[0])=Join-Path $root $entry[1]

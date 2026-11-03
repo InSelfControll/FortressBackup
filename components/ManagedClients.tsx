@@ -36,7 +36,7 @@ export const ManagedClients:React.FC=()=>{
  const jobsQuery=useJobs();
  const locationsQuery=useLocations();
  const repositories=(jobsQuery.data||[]).filter(job=>job.tool==='Restic'&&job.hasRepoPassword&&
-  (locationsQuery.data||[]).some(location=>location.id===job.destinationId&&['sftp','azure','gdrive'].includes(location.type)&&location.hasSecretKey));
+  (locationsQuery.data||[]).some(location=>location.id===job.destinationId&&['sftp','azure','gdrive','gcs','onedrive'].includes(location.type)&&location.hasSecretKey));
  const repositoryLabel=(id:string)=>{
   const job=repositories.find(item=>item.id===id);
   return job?job.name+' — '+(locationsQuery.data||[]).find(location=>location.id===job.destinationId)?.name:'Choose a saved repository';

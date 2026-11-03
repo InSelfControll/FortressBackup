@@ -58,6 +58,14 @@ export const saveLocation = async (location:Location):Promise<void> => {
 export const deleteLocation = async (id:string):Promise<void> => {
     await run('DELETE FROM locations WHERE id=?',[id]);
 };
+/** Persist a rotated OAuth token without overwriting a concurrent administrator edit. */
+export async function replaceLocationSecret(id:string,previous:string,next:string):Promise<boolean>{
+    const stored=await rawLocation(id);
+    if(!stored||decryptCredential(stored.secret_key)!==previous)return false;
+    const sealed=encryptCredential(next);
+    await run('UPDATE locations SET secret_key=? WHERE id=? AND secret_key=?',[sealed,id,stored.secret_key]);
+    return (await rawLocation(id))?.secret_key===sealed;
+}
 export const getLocation = async (id:string):Promise<Location|null> => {
     const stored=await rawLocation(id);
     if (!stored) return null;

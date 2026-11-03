@@ -310,31 +310,61 @@ test('dashboard restores old-device snapshots on Windows without the original so
  await api('/managed-agents/admin/'+enrollment.id+'/disable','POST',{});await api('/managed-agents/admin/'+enrollment.id,'DELETE');await api('/jobs/'+repo.id,'DELETE');
 });
 
-test('Azure and Google Drive can be selected, saved, and edited without losing credentials',async({page})=>{
+test('All four cloud destinations can be selected, saved, and edited without losing credentials',async({page})=>{
  await go(page,'Storage Locations');
- for(const type of ['azure','gdrive']){
+ for(const type of ['azure','gdrive','gcs','onedrive']){
   await page.getByRole('button',{name:'Add Location',exact:true}).click();
-  await page.getByRole('button',{name:type==='azure'?'Azure Blob Storage':'Google Drive (Rclone)',exact:true}).click();
+  await page.getByRole('button',{name:({azure:'Azure Blob Storage',gdrive:'Google Drive',gcs:'Google Cloud Storage',onedrive:'OneDrive'} as Record<string,string>)[type],exact:true}).click();
   await page.getByPlaceholder('Production S3 Backup').fill('QA '+type);
   if(type==='azure'){
    await page.getByLabel('Container name',{exact:true}).fill('qa-backups');
    await page.getByLabel('Repository folder (optional)',{exact:true}).fill('laptop');
    await page.getByLabel('Storage account name',{exact:true}).fill('qatestaccount');
    await page.getByLabel('Storage account key',{exact:true}).fill(Buffer.alloc(64,17).toString('base64'));
+  }else if(type==='gcs'){
+   await page.getByLabel('Google Cloud bucket name',{exact:true}).fill('qa-backups');
+   await page.getByLabel('Google Cloud repository folder',{exact:true}).fill('laptop');
+   await page.getByText('Or use a Google service account key',{exact:true}).click();
+   const accountKey=crypto.generateKeyPairSync('rsa',{modulusLength:2048,privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}}).privateKey;
+   await page.getByLabel('Import Google service account JSON',{exact:true}).setInputFiles({name:'account.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({type:'service_account',project_id:'qa-project',client_email:'backup@qa-project.iam.gserviceaccount.com',private_key:accountKey}))});
   }else{
+   await expect(page.getByRole('button',{name:'Sign in with '+(type==='gdrive'?'Google':'Microsoft'),exact:true})).toBeVisible();
+   await page.getByText('Advanced: import an existing Rclone connection',{exact:true}).click();
    await page.getByPlaceholder('myremote:/backup-folder').fill('drive:laptop');
-   await page.getByLabel('Import Rclone config',{exact:true}).setInputFiles({name:'rclone.conf',mimeType:'text/plain',buffer:Buffer.from('[drive]\ntype = drive\ntoken = {"access_token":"qa-access","refresh_token":"qa-refresh"}\n[other]\ntype = local\n')});
+   await page.getByLabel('Import Rclone config',{exact:true}).setInputFiles({name:'rclone.conf',mimeType:'text/plain',buffer:Buffer.from('[drive]\ntype = '+(type==='gdrive'?'drive':'onedrive\ndrive_id = b!qa-drive\ndrive_type = personal')+'\ntoken = {"access_token":"qa-access","refresh_token":"qa-refresh"}\n[other]\ntype = local\n')});
   }
   await page.getByRole('dialog').getByRole('button',{name:'Add Location',exact:true}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
   const saved=(await api('/locations')).find((l:any)=>l.name==='QA '+type);
   expect(saved.hasSecretKey).toBe(true);expect(saved.secret_key).toBeUndefined();
   await page.getByRole('heading',{name:'QA '+type,exact:true}).locator('..').getByTitle('Edit',{exact:true}).click();
-  await expect(page.getByRole('status').filter({hasText:type==='azure'?'Azure credentials saved':'Drive credentials saved'})).toBeVisible();
+  await expect(page.getByRole('status').filter({hasText:type==='azure'?'Azure credentials saved':type==='gcs'?'Google Cloud credentials saved':'Drive credentials saved'})).toBeVisible();
   await page.getByPlaceholder('Production S3 Backup').fill('Edited QA '+type);
   await page.getByRole('button',{name:'Update Location',exact:true}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
   expect((await api('/locations')).find((l:any)=>l.id===saved.id).hasSecretKey).toBe(true);
   await api('/locations/'+saved.id,'DELETE');await page.reload();await page.locator('[data-app-content]').waitFor();await go(page,'Storage Locations');
+ }
+});
+
+test('cloud sign-in setup saves app registrations, redacts secrets, and requires the HTTPS dashboard',async({page})=>{
+ await go(page,'Storage Locations');
+ for(const type of ['gdrive','onedrive','gcs']){
+  await page.getByRole('button',{name:'Add Location',exact:true}).click();
+  await page.getByRole('button',{name:({gdrive:'Google Drive',gcs:'Google Cloud Storage',onedrive:'OneDrive'} as Record<string,string>)[type],exact:true}).click();
+  const name=type==='onedrive'?'Microsoft':'Google';
+  await page.getByRole('button',{name:'Cloud sign-in setup',exact:true}).click();
+  await page.getByLabel('HTTPS dashboard origin',{exact:true}).fill('https://backup.example.invalid');
+  await expect(page.getByLabel(type+' callback URL',{exact:true})).toHaveValue('https://backup.example.invalid/api/storage-oauth/callback/'+type);
+  await page.getByLabel(name+' client ID',{exact:true}).fill(type==='onedrive'?'12345678-1234-1234-1234-123456789012':'qa.apps.googleusercontent.com');
+  await page.getByLabel(name+' client secret',{exact:true}).fill('disposable-oauth-app-secret');
+  await page.getByRole('button',{name:'Save sign-in setup',exact:true}).click();
+  await expect(page.getByRole('status').filter({hasText:'Sign-in setup saved.'})).toBeVisible();
+  await expect(page.getByLabel(name+' client secret',{exact:true})).toHaveValue('');
+  const saved=await api('/storage-oauth/settings');expect(saved[type==='onedrive'?'microsoft':'google'].hasClientSecret).toBe(true);expect(JSON.stringify(saved)).not.toContain('disposable-oauth-app-secret');
+  await page.getByRole('button',{name:'Sign in with '+name,exact:true}).click();
+  await expect(page.getByRole('alert').filter({hasText:'Open the HTTPS dashboard'})).toBeVisible();
+  await expect(page.getByRole('link',{name:'Open the HTTPS dashboard',exact:true})).toHaveAttribute('href','https://backup.example.invalid');
+  await page.getByRole('button',{name:'Close dialog',exact:true}).click();
  }
 });

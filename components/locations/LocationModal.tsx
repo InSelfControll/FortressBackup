@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Location } from '../../types';
 import { useCreateLocation, useUpdateLocation } from '../../client/api/mutations';
 import { toast } from 'react-hot-toast';
+import {CloudSignIn} from './CloudSignIn';
 import { Cloud, Globe, Server, Folder, HardDrive, X } from 'lucide-react';
 
 interface LocationModalProps {
@@ -17,8 +18,8 @@ const LOCATION_TYPES = [
     { id: 'nfs', name: 'NFS/Local Path', icon: Folder, color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
     { id: 'gcs', name: 'Google Cloud Storage', icon: Cloud, color: 'bg-green-500/10 text-green-400 border-green-500/20' },
     { id: 'azure', name: 'Azure Blob Storage', icon: Cloud, color: 'bg-sky-500/10 text-sky-400 border-sky-500/20' },
-    { id: 'gdrive', name: 'Google Drive (Rclone)', icon: HardDrive, color: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' },
-    { id: 'onedrive', name: 'OneDrive (Rclone)', icon: Cloud, color: 'bg-blue-600/10 text-blue-300 border-blue-500/20' },
+    { id: 'gdrive', name: 'Google Drive', icon: HardDrive, color: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' },
+    { id: 'onedrive', name: 'OneDrive', icon: Cloud, color: 'bg-blue-600/10 text-blue-300 border-blue-500/20' },
 ];
 
 type LocationPayload = Omit<Location, 'id' | 'accessKey' | 'secretKey'> & {
@@ -74,7 +75,7 @@ export const getLocationFormState = (location: Location | null): Partial<Locatio
 export const canSubmitLocation = (location: Partial<Location>): boolean => Boolean(
     location.name && location.path && (location.type !== 'sftp' || location.hostPublicKey?.trim()) &&
     (location.type !== 'azure' || ((location.accessKey || location.hasAccessKey) && (location.secretKey || location.hasSecretKey))) &&
-    (location.type !== 'gdrive' || location.secretKey || location.hasSecretKey)
+    (!['gdrive','gcs','onedrive'].includes(location.type||'') || location.secretKey || location.hasSecretKey)
 );
 
 export const buildLocationData = (
@@ -97,6 +98,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
     const createLocationMutation = useCreateLocation();
     const updateLocationMutation = useUpdateLocation();
     const [saveError, setSaveError] = useState('');
+    const [oauthFlowId,setOAuthFlowId]=useState<string|null>(null);
     const isSaving = createLocationMutation.isPending || updateLocationMutation.isPending;
 
     const [newLocation, setNewLocation] = useState<Partial<Location>>(() => getLocationFormState(location));
@@ -105,17 +107,19 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
     );
 
     useEffect(() => {
-        setSaveError('');
+        setSaveError('');setOAuthFlowId(null);
         setNewLocation(getLocationFormState(location));
         setIsCustomS3(!!location?.endpoint && location.endpoint !== 'https://s3.amazonaws.com');
     }, [location, isOpen]);
 
+    const canSave=canSubmitLocation({...newLocation,hasSecretKey:newLocation.hasSecretKey||!!oauthFlowId});
+    const signedIn=(id:string)=>{setOAuthFlowId(id);if(newLocation.type!=='gcs')setNewLocation(current=>({...current,path:'fortress:'+((current.path||'FortressBackup').replace(/^[^:]+:/,''))}))};
     const handleSubmit = () => {
-        if (!canSubmitLocation(newLocation) || isSaving) return;
+        if (!canSave || isSaving) return;
         setSaveError('');
 
         // The API assigns IDs. Client-side UUID generation is unavailable on HTTP LAN addresses.
-        const locationData = buildLocationData(newLocation, isCustomS3, location?.id);
+        const locationData = {...buildLocationData(newLocation, isCustomS3, location?.id),...(oauthFlowId?{oauth_flow_id:oauthFlowId}:{})};
         if (location) {
             updateLocationMutation.mutate({ ...locationData, id: location.id }, {
                 onSuccess: () => {
@@ -252,27 +256,31 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                     </>
                 );
 
+            case 'gcs':
+                return <div className="space-y-4">
+                    <p className="text-sm text-indigo-200">Backup engine: <strong>Restic</strong> — native Google Cloud Storage.</p>
+                    <label className="block text-sm text-slate-300">Bucket name<input aria-label="Google Cloud bucket name" value={newLocation.path||''} onChange={e=>setNewLocation({...newLocation,path:e.target.value})} className="w-full mt-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2" placeholder="my-backup-bucket" /></label>
+                    <label className="block text-sm text-slate-300">Repository folder (optional)<input aria-label="Google Cloud repository folder" value={newLocation.region||''} onChange={e=>setNewLocation({...newLocation,region:e.target.value})} className="w-full mt-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2" placeholder="laptop" /></label>
+                    <CloudSignIn key={newLocation.type} provider="gcs" readyId={oauthFlowId} onReady={signedIn} onReset={()=>setOAuthFlowId(null)} />
+                    <details className="space-y-3"><summary className="cursor-pointer text-sm text-slate-300">Or use a Google service account key</summary>
+                        <label className="block text-sm text-slate-300">Import service account JSON<input aria-label="Import Google service account JSON" type="file" accept=".json" onChange={async e=>{const f=e.target.files?.[0];if(!f)return;if(f.size>16384){setSaveError('Credentials must be 16 KB or smaller');return}const value=await f.text();setOAuthFlowId(null);setNewLocation(current=>current.type==='gcs'?({...current,secretKey:value}):current)}} className="mt-2 block w-full text-sm" /></label>
+                        <textarea aria-label="Google service account JSON" rows={4} value={newLocation.secretKey||''} onChange={e=>{setOAuthFlowId(null);setNewLocation({...newLocation,secretKey:e.target.value})}} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 font-mono text-sm" placeholder='{"type":"service_account",...}' />
+                    </details>
+                    {newLocation.hasSecretKey&&<p role="status" className="text-xs text-emerald-300">Google Cloud credentials saved. Leave blank to keep them.</p>}
+                </div>;
             case 'gdrive':
-                return (
-                    <>
-                        <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl mb-4">
-                            <p className="text-xs text-amber-400">                                Authorize Google Drive once with <code>rclone config</code>, then import its unencrypted config below. Fortress securely provisions the selected remote to Windows and Linux sources. Use Restic for this destination. <a href="https://rclone.org/drive/" target="_blank" rel="noreferrer" className="underline">Google Drive authorization instructions</a>
-                            </p>
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Rclone Remote Name</label>
-                            <input type="text" value={newLocation.path || ''} onChange={e => setNewLocation({ ...newLocation, path: e.target.value })} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500" placeholder="myremote:/backup-folder" />
-                        </div>
-                        <label className="block text-sm text-slate-300">Import Rclone config
-                            <input aria-label="Import Rclone config" type="file" accept=".conf,.ini,.txt" className="block mt-2 w-full text-sm" onChange={async e=>{const file=e.target.files?.[0];if(!file)return;if(file.size>16384){setSaveError('Rclone config must be 16 KB or smaller');return}const config=await file.text();setNewLocation(current=>current.type==='gdrive'?({...current,secretKey:config}):current);setSaveError('')}} />
-                        </label>
-                        <label className="block text-sm text-slate-300">Or paste Rclone config
-                            <textarea aria-label="Rclone config" rows={4} value={newLocation.secretKey||''} onChange={e=>setNewLocation({...newLocation,secretKey:e.target.value})} className="w-full mt-2 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono text-sm" placeholder="[myremote]&#10;type = drive&#10;token = ..." />
-                        </label>
-                        {newLocation.hasSecretKey && <p role="status" className="text-xs text-emerald-400">Drive credentials saved. Leave blank to keep them.</p>}
-                        <p className="text-xs text-slate-400">Only the selected Google Drive OAuth remote is imported. Command hooks and external credential files are rejected. Deploy Restic again on Linux sources to install Rclone. Windows includes it.</p>
-                    </>
-                );
+            case 'onedrive':
+                return <div className="space-y-4">
+                    <p className="text-sm text-indigo-200">Backup engine: <strong>Restic</strong>. Rclone provides the connection to {type==='gdrive'?'Google Drive':'OneDrive'}; Restic creates encrypted backups and snapshots.</p>
+                    <label className="block text-sm text-slate-300">Backup folder<input aria-label="Cloud drive backup folder" value={(newLocation.path||'').replace(/^[^:]+:/,'')} onChange={e=>setNewLocation({...newLocation,path:(oauthFlowId?'fortress:':((newLocation.path||'fortress:').match(/^[^:]+:/)?.[0]||'fortress:'))+e.target.value})} className="w-full mt-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2" placeholder="FortressBackup" /></label>
+                    <CloudSignIn key={newLocation.type} provider={type} readyId={oauthFlowId} onReady={signedIn} onReset={()=>setOAuthFlowId(null)} />
+                    {newLocation.hasSecretKey&&<p role="status" className="text-xs text-emerald-300">Drive credentials saved. Leave blank to keep them.</p>}
+                    <details className="space-y-3"><summary className="cursor-pointer text-sm text-slate-300">Advanced: import an existing Rclone connection</summary>
+                        <label className="block text-sm text-slate-300">Rclone remote and folder<input aria-label="Rclone remote and folder" value={newLocation.path||''} onChange={e=>{setOAuthFlowId(null);setNewLocation({...newLocation,path:e.target.value})}} className="w-full mt-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2" placeholder="myremote:/backup-folder" /></label>
+                        <label className="block text-sm text-slate-300">Import Rclone config<input aria-label="Import Rclone config" type="file" accept=".conf,.ini,.txt" className="block mt-2 w-full text-sm" onChange={async e=>{const f=e.target.files?.[0];if(!f)return;if(f.size>16384){setSaveError('Rclone config must be 16 KB or smaller');return}const value=await f.text();setOAuthFlowId(null);setNewLocation(current=>current.type===type?({...current,secretKey:value}):current);setSaveError('')}} /></label>
+                        <label className="block text-sm text-slate-300">Or paste Rclone config<textarea aria-label="Rclone config" rows={4} value={newLocation.secretKey||''} onChange={e=>{setOAuthFlowId(null);setNewLocation({...newLocation,secretKey:e.target.value})}} className="w-full mt-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 font-mono text-sm" placeholder="[myremote]&#10;type = drive&#10;token = ..." /></label>
+                    </details>
+                </div>;
 
             default:
                 return (
@@ -308,7 +316,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                                 return (
                                     <button
                                         key={type.id}
-                                        onClick={() => {if(newLocation.type!==type.id)setNewLocation({name:newLocation.name,type:type.id as Location['type'],path:'',endpoint:'',region:'',accessKey:'',secretKey:'',hasAccessKey:false,hasSecretKey:false})}}
+                                        onClick={() => {if(newLocation.type!==type.id){setOAuthFlowId(null);setNewLocation({name:newLocation.name,type:type.id as Location['type'],path:'',endpoint:'',region:'',accessKey:'',secretKey:'',hasAccessKey:false,hasSecretKey:false})}}}
                                         className={`p-3 rounded-xl border text-center transition-all ${newLocation.type === type.id ? `${type.color} border-current` : 'bg-slate-800 border-slate-700 hover:border-slate-600'}`}
                                     >
                                         <TypeIcon size={20} className="mx-auto mb-2" />
@@ -323,9 +331,8 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                                 return (
                                     <button
                                         key={type.id}
-                                        disabled={!['azure','gdrive'].includes(type.id)}
-                                        title={['azure','gdrive'].includes(type.id)?'Restic backup destination':'This storage backend is not implemented by the controller'}
-                                        onClick={() => {if(newLocation.type!==type.id)setNewLocation({name:newLocation.name,type:type.id as Location['type'],path:'',endpoint:'',region:'',accessKey:'',secretKey:'',hasAccessKey:false,hasSecretKey:false})}}
+                                        title="Restic backup destination"
+                                        onClick={() => {if(newLocation.type!==type.id){setOAuthFlowId(null);setNewLocation({name:newLocation.name,type:type.id as Location['type'],path:'',endpoint:'',region:'',accessKey:'',secretKey:'',hasAccessKey:false,hasSecretKey:false})}}}
                                         className={`p-3 rounded-xl border text-center transition-all ${newLocation.type === type.id ? `${type.color} border-current` : 'bg-slate-800 border-slate-700 hover:border-slate-600'}`}
                                     >
                                         <TypeIcon size={20} className="mx-auto mb-2" />
@@ -351,7 +358,7 @@ export const LocationModal: React.FC<LocationModalProps> = ({ location, isOpen, 
                     <button onClick={onClose} disabled={isSaving} className="px-6 py-3 text-slate-400 hover:text-white font-bold transition-colors disabled:opacity-50">Cancel</button>
                     <button
                         onClick={handleSubmit}
-                        disabled={!canSubmitLocation(newLocation) || isSaving}
+                        disabled={!canSave || isSaving}
                         className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50"
                     >
                         {isSaving ? 'Saving...' : location ? 'Update Location' : 'Add Location'}

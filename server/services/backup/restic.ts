@@ -8,7 +8,7 @@
 import { BackupJobConfig } from './types.js';
 import { quote as sh, absoluteSources, absoluteRestorePath } from './commandSafety.js';
 import { hostKeyEntry, trustFileSetup, validateHostPublicKey } from './rsync.js';
-import {azureRepository, driveConfig} from './cloudStorage.js';
+import {azureRepository, rcloneConfig,gcsCredentials,gcsRepository} from './cloudStorage.js';
 
 type ResticConfig = BackupJobConfig & { destinationHostPublicKey?: string };
 
@@ -23,7 +23,8 @@ export const getRepository = (config: BackupJobConfig): string => {
                 : `s3:s3.${config.destinationRegion || 'us-east-1'}.amazonaws.com/${path}`;
         case 'b2': return `b2:${path}`;
         case 'azure': return azureRepository(config);
-        case 'gdrive': driveConfig(path,config.destinationSecretKey);return `rclone:${path}`;
+        case 'gdrive':case 'onedrive': rcloneConfig(config.destinationType,path,config.destinationSecretKey);return `rclone:${path}`;
+        case 'gcs': return gcsRepository(config);
         case 'nfs': return path;
         default: throw new Error('Unsupported Restic destination type');
     }
@@ -54,16 +55,20 @@ const resticPrefix = (config: ResticConfig): string => {
         .filter((entry): entry is [string, string] => entry[1] !== undefined && entry[1] !== '')
         .map(([key, value]) => `${key}=${sh(value)}`).join(' ');
     const repository=getRepository(config);
-    if(config.destinationType==='gdrive'){
-        const encoded=Buffer.from(driveConfig(config.destinationPath,config.destinationSecretKey)).toString('base64');
+    if(['gdrive','onedrive','gcs'].includes(config.destinationType)){
+        const google=config.destinationType==='gcs';
+        const credentials=google?gcsCredentials(config.destinationSecretKey):rcloneConfig(config.destinationType as 'gdrive'|'onedrive',config.destinationPath,config.destinationSecretKey);
+        const encoded=Buffer.from(credentials).toString('base64');
+        const file=google?'google.json':'rclone.conf';
+        const credentialEnv=google?'GOOGLE_APPLICATION_CREDENTIALS':'RCLONE_CONFIG';
         return [
-            'command -v rclone >/dev/null 2>&1 || { echo "Rclone is required on this source. Deploy Restic again from Systems." >&2; exit 1; }',
+            ...(google?[]:['command -v rclone >/dev/null 2>&1 || { echo "Rclone is required on this source. Deploy Restic again from Systems." >&2; exit 1; }']),
             'umask 077',
             "trap 'exit 1' HUP INT TERM",
             'FORTRESS_CLOUD_DIR=$(mktemp -d /tmp/fortress-cloud.XXXXXXXX) || exit 1',
             'trap \'rm -rf -- "$FORTRESS_CLOUD_DIR"\' EXIT',
-            `printf '%s' '${encoded}' | base64 -d > "$FORTRESS_CLOUD_DIR/rclone.conf" || exit 1`,
-            `RCLONE_CONFIG="$FORTRESS_CLOUD_DIR/rclone.conf" ${env ? env+' ' : ''}restic -r ${sh(repository)}`
+            `printf '%s' '${encoded}' | base64 -d > "$FORTRESS_CLOUD_DIR/${file}" || exit 1`,
+            `${credentialEnv}="$FORTRESS_CLOUD_DIR/${file}" ${env ? env+' ' : ''}restic -r ${sh(repository)}`
         ].join('\n');
     }
     if(config.destinationType!=='sftp')return `${env ? env + ' ' : ''}restic -r ${sh(repository)}`;

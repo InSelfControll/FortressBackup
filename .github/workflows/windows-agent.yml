@@ -56,7 +56,7 @@ jobs:
       - name: Build verification executable
         shell: powershell
         run: ./agent/windows/build.ps1
-      - name: Verify protected Azure and Drive setup
+      - name: Verify protected Azure, Drive, GCS and OneDrive setup
         shell: powershell
         run: ./agent/windows/test-cloud-setup.ps1
       - name: Validate protected managed scheduled task

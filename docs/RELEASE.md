@@ -13,6 +13,10 @@
 
 ## Current changes
 
+- Google Drive, Google Cloud Storage, and OneDrive are selectable Restic destinations on Linux and Windows. Drive/OneDrive identify Rclone as their connection adapter; Cloud Storage uses native Restic.
+- Add Google/Microsoft browser sign-in with admin-only app registration fields, exact callback URLs, encrypted secrets, PKCE, browser-bound sessions, and setup instructions in [Cloud storage](CLOUD-STORAGE.md). Real sign-in requires your own provider app registration and consent.
+- Add protected Google Cloud credential installation and OneDrive token refresh, using the same saved credentials for backup, snapshot browsing, and restore.
+
 - Windows app redesign: a light workspace, compact navigation, collapsible connection details, persistent Save and connect action, and a resizable backup browser. Normal, compact, and larger-text layouts are verified on Windows.
 - Backup and restore status shows the actionable operation error. Loading, empty, progress, and recovery states remain readable in the same app window.
 
