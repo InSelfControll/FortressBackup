@@ -20,8 +20,8 @@ const LOCATION_TYPES = [
     { id: 'nfs', name: 'NFS/Local Path', icon: Folder, color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
     { id: 'gcs', name: 'Google Cloud Storage', icon: Cloud, color: 'bg-green-500/10 text-green-400 border-green-500/20' },
     { id: 'azure', name: 'Azure Blob Storage', icon: Cloud, color: 'bg-sky-500/10 text-sky-400 border-sky-500/20' },
-    { id: 'gdrive', name: 'Google Drive (Rclone)', icon: HardDrive, color: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' },
-    { id: 'onedrive', name: 'OneDrive (Rclone)', icon: Cloud, color: 'bg-blue-600/10 text-blue-300 border-blue-500/20' },
+    { id: 'gdrive', name: 'Google Drive', icon: HardDrive, color: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' },
+    { id: 'onedrive', name: 'OneDrive', icon: Cloud, color: 'bg-blue-600/10 text-blue-300 border-blue-500/20' },
 ];
 
 const getLocationConfig = (type: string) => {
@@ -55,7 +55,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({
             <p className="text-xs text-slate-500 font-mono truncate mb-4" title={location.path}>{location.path}</p>
 
             {location.region && (
-                <p className="text-[10px] text-slate-600 mb-4">{location.type==='azure'?'Repository folder':'Region'}: {location.region}</p>
+                <p className="text-[10px] text-slate-600 mb-4">{['azure','gcs'].includes(location.type)?'Repository folder':'Region'}: {location.region}</p>
             )}
 
             <div className="flex flex-wrap gap-3 justify-between items-center pt-4 border-t border-slate-700/50">

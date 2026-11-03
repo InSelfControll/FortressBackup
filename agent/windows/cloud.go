@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -29,9 +30,23 @@ func cloudOptions(c Config) ([]string, []string, error) {
 		}
 		env = append(env, "AZURE_ACCOUNT_NAME="+c.AzureAccountName, "AZURE_ACCOUNT_KEY="+strings.TrimSpace(string(key)))
 	}
+	if strings.HasPrefix(c.Repository, "gs:") {
+		if !regular(c.GCSCredentialsFile) {
+			return nil, nil, errors.New("Google Cloud Storage requires a protected Google credential file")
+		}
+		data, err := os.ReadFile(c.GCSCredentialsFile)
+		var credentials struct {
+			Type     string `json:"type"`
+			TokenURI string `json:"token_uri"`
+		}
+		if err != nil || len(data) > 16384 || json.Unmarshal(data, &credentials) != nil || (credentials.Type != "service_account" && credentials.Type != "authorized_user") || credentials.TokenURI != "https://oauth2.googleapis.com/token" {
+			return nil, nil, errors.New("invalid Google Cloud credential file")
+		}
+		env = append(env, "GOOGLE_APPLICATION_CREDENTIALS="+c.GCSCredentialsFile)
+	}
 	if strings.HasPrefix(c.Repository, "rclone:") {
 		if !regular(c.RclonePath) || !strings.EqualFold(filepath.Ext(c.RclonePath), ".exe") || !regular(c.RcloneConfigFile) {
-			return nil, nil, errors.New("Google Drive requires the bundled Rclone executable and protected config file")
+			return nil, nil, errors.New("Cloud drives require the bundled Rclone executable and protected config file")
 		}
 		// Restic's option parser consumes CSV; preserve paths containing spaces/commas.
 		var option strings.Builder

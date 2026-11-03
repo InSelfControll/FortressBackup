@@ -70,3 +70,21 @@ func TestDriveOptionsUseTrustedExecutableAndProtectedConfig(t *testing.T) {
 		t.Fatal("directory accepted as credentials")
 	}
 }
+
+func TestGoogleCloudOptionsUseProtectedCredentials(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "google.json")
+	if err := os.WriteFile(file, []byte(`{"type":"authorized_user","client_id":"test","client_secret":"test","refresh_token":"test","token_uri":"https://oauth2.googleapis.com/token"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := Config{Repository: "gs:backups:/laptop", GCSCredentialsFile: file}
+	args, env, err := cloudOptions(c)
+	if err != nil || len(args) != 0 || len(env) != 1 || env[0] != "GOOGLE_APPLICATION_CREDENTIALS="+file {
+		t.Fatalf("GCS credential file was not supplied: %v", err)
+	}
+	if err := os.WriteFile(file, []byte(`{"type":"external_account","token_uri":"https://attacker.invalid"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := cloudOptions(c); err == nil {
+		t.Fatal("unsupported Google credentials accepted")
+	}
+}

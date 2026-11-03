@@ -6,7 +6,7 @@ import { run, getOne } from './helpers.js';
 import { currentConfig } from './connection.js';
 import { seal, open } from '../security/credentialEnvelope.js';
 
-const encryptedKeys=new Set(['ai_config','sso_config','db_config']);
+const encryptedKeys=new Set(['ai_config','sso_config','db_config','storage_oauth']);
 type Envelope={fortressEncryptedVersion:1;payload:string};
 function decode<T>(key:string,value:string):{value:T;legacy:boolean}{
     const parsed=JSON.parse(value) as T|Envelope;

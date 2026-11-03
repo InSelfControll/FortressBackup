@@ -6,21 +6,32 @@ import {spawn} from 'node:child_process';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {azureRepository,driveConfig} from './backup/cloudStorage.js';
+import {azureRepository,rcloneConfig,gcsCredentials,gcsRepository} from './backup/cloudStorage.js';
+import {readyCloudLocation} from './storageOAuth.js';
 
 /** Storage-only read probe: no initialization, repository password or backup lease. */
 export async function checkCloudLocation(location:Location):Promise<void>{
+    location=await readyCloudLocation(location);
     const directory=await mkdtemp(join(tmpdir(),'fortress-cloud-check-'));
     try{
         const env={...process.env,RCLONE_CONFIG:join(directory,'rclone.conf')};
         let target:string;
-        if(location.type==='gdrive'){
-            await writeFile(env.RCLONE_CONFIG,driveConfig(location.path,location.secret_key),{mode:0o600});
+        if(location.type==='gdrive'||location.type==='onedrive'){
+            await writeFile(env.RCLONE_CONFIG,rcloneConfig(location.type,location.path,location.secret_key),{mode:0o600});
             target=location.path;
         }else if(location.type==='azure'){
             azureRepository({destinationPath:location.path,destinationRegion:location.region,destinationAccessKey:location.access_key,destinationSecretKey:location.secret_key});
             Object.assign(env,{RCLONE_AZUREBLOB_ACCOUNT:location.access_key,RCLONE_AZUREBLOB_KEY:location.secret_key});
             target=`:azureblob:${location.path}/${location.region||''}`;
+        }else if(location.type==='gcs'){
+            gcsRepository({destinationPath:location.path,destinationRegion:location.region,destinationSecretKey:location.secret_key});
+            const credentials=gcsCredentials(location.secret_key);
+            const user=JSON.parse(credentials);
+            const body=user.type==='service_account'
+                ? '[fortress]\ntype = google cloud storage\nservice_account_credentials = '+credentials+'\n'
+                : '[fortress]\ntype = google cloud storage\nclient_id = '+user.client_id+'\nclient_secret = '+user.client_secret+'\ntoken = '+JSON.stringify({refresh_token:user.refresh_token,token_type:'Bearer',expiry:'2000-01-01T00:00:00Z'})+'\n';
+            await writeFile(env.RCLONE_CONFIG,body,{mode:0o600});
+            target=`fortress:${location.path}/${location.region||''}`;
         }else throw new Error('Unsupported cloud connection test');
         await new Promise<void>((resolve,reject)=>{
             const child=spawn('rclone',['lsf',target,'--max-depth','1','--retries','1','--low-level-retries','1','--contimeout','8s','--timeout','15s'],{env,stdio:'ignore'});

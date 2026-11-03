@@ -44,6 +44,7 @@ type Config struct {
 	AzureKeyFile       string `json:"azureKeyFile,omitempty"`
 	RclonePath         string `json:"rclonePath,omitempty"`
 	RcloneConfigFile   string `json:"rcloneConfigFile,omitempty"`
+	GCSCredentialsFile string `json:"gcsCredentialsFile,omitempty"`
 }
 
 func loadConfig(path string) (Config, error) {
@@ -78,7 +79,7 @@ func loadConfig(path string) (Config, error) {
 	if c.Repository == "" || c.PasswordFile == "" || len(c.Sources) == 0 {
 		return c, errors.New("repository, passwordFile and sources required")
 	}
-	if !strings.HasPrefix(c.Repository, "sftp:") && !strings.HasPrefix(c.Repository, "rest:") && !strings.HasPrefix(c.Repository, "s3:") && !strings.HasPrefix(c.Repository, "b2:") && !strings.HasPrefix(c.Repository, "azure:") && !strings.HasPrefix(c.Repository, "rclone:") {
+	if !strings.HasPrefix(c.Repository, "sftp:") && !strings.HasPrefix(c.Repository, "rest:") && !strings.HasPrefix(c.Repository, "s3:") && !strings.HasPrefix(c.Repository, "b2:") && !strings.HasPrefix(c.Repository, "azure:") && !strings.HasPrefix(c.Repository, "rclone:") && !strings.HasPrefix(c.Repository, "gs:") {
 		return c, errors.New("repository must use an explicit remote backend")
 	}
 	if c.Host == "" {
